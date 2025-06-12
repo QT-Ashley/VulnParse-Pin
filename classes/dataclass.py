@@ -15,6 +15,7 @@ class Finding:
     cvss_vector: Optional[str] = None
     exploit_available: Optional[bool] = None
     risk: Optional[str] = None
+    risk_score: Optional[float] = None
     affected_port: Optional[int] = None
     protocol: Optional[str] = None
     detection_plugin: Optional[str] = None
@@ -31,6 +32,7 @@ class Asset:
     hostname: str
     ip_address: str
     criticality: Optional[str] = None
+    avg_risk_score: Optional[float] = None
     findings: List[Finding] = field(default_factory=list)
     shodan_data: Optional[dict] = None
     
@@ -41,6 +43,7 @@ class ScanMetaData:
     scan_date: datetime
     asset_count: int
     vulnerability_count: int
+    parsed_at: Optional[str] = None
     
 @dataclass
 class ScanResult:

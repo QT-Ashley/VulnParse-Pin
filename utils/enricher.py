@@ -5,9 +5,11 @@ import csv
 import requests
 import os
 import json
-
+from .cvss_utils import is_valid_cvss_vector, parse_cvss_vector
 from classes.dataclass import ScanResult
 from utils.triage_priority_helper import determine_triage_priority
+from .logger import *
+from . import logger_instance as log
 
 def get_epss_score(cves: List[str], epss_data: Dict[str, float]) -> float:
     # Let's return the highest EPSS score found for a list of CVES.
@@ -132,6 +134,7 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
     kev_data = kev_data or {}
     epss_data = epss_data or {}
     
+    
     for asset in results.assets:
         for finding in asset.findings:
             if finding.cves:
@@ -143,13 +146,48 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
                 finding.epss_score = 0.0
                 finding.cisa_kev = False
                 
+            # Get CVSS Vectors
+            vector = finding.cvss_vector
+            if vector:
+                if is_valid_cvss_vector(vector):
+                    cvss_data = parse_cvss_vector(vector)
+                    if cvss_data:
+                        log.log.print_info(f"{finding.vuln_id} Base score from vector: {cvss_data['base']}")
+                        
+                        # Auto-Reconcile CVSS base score if it differs by tolerance.
+                        if abs(cvss_data['base'] - (finding.cvss_score or 0.0)) > 0.1:
+                            log.log.print_warning(f"Score mismatch for {finding.vuln_id}: vector {cvss_data['base']} vs field: {finding.cvss_score}")
+                            log.log.print_success(f"Overwriting cvss score with value from CVSS Vector: {cvss_data['base']}")
+                            finding.cvss_score = cvss_data['base']
+                            
+                    else:
+                        log.logger.debug(f"Invalid CVSS vector for {finding.vuln_id}")
+                else:
+                    log.log.print_error(f"Invalid CVSS vector format for {finding.vuln_id}: {vector}")
+                    
+            # Calculate Risk_Score
+            finding.risk_score = round(
+                (finding.cvss_score / 10.0 * 0.4) +
+                (finding.epss_score * 0.3) +
+                (1.0 if finding.cisa_kev else 0.0) * 0.2 +
+                (1.0 if finding.exploit_available else 0.0) * 0.1, 2
+            )
+                
             # Recalculate Triage Priority
             finding.triage_priority = determine_triage_priority(
                 finding.severity,
+                finding.cvss_score or 0.0,
                 finding.epss_score or 0.0,
                 finding.cisa_kev,
                 finding.exploit_available
             )
             
             # Update enrichment flag
-            finding.enriched = bool(finding.epss_score or finding.cisa_kev or finding.exploit_available)
+            finding.enriched = any([
+                finding.epss_score > 0.0,
+                finding.cisa_kev,
+                finding.exploit_available])
+            
+        asset.avg_risk_score = round(
+            sum(f.risk_score for f in asset.findings) / len(asset.findings), 2
+        ) if asset.findings else 0.0

@@ -1,42 +1,139 @@
 import json
 from parsers.nessus_parser import NessusParser
 from dataclasses import asdict
+from utils import logger_instance
 from utils.enricher import enrich_scan_results, load_epss_from_csv, load_kev_from_json
-from pprint import pprint
 import argparse
 import sys
+from utils.banner import print_banner
+from utils.logger import *
+import utils.logger_instance as log
 
+def print_summary_banner(scan_result, output_file=None):
+    '''
+    Prints a formatted summary banner with key metrics from the scan result.
+    
+    Args:
+        scan_result (ScanResult): The final processed scan results.
+        output_file (str, optional): The path to the output JSON file.
+        
+    Returns:
+        None
+    '''
+    total_assets = len(scan_result.assets)
+    total_findings = sum(len(asset.findings) for asset in scan_result.assets)
+    avg_risk_score = round(
+        sum(asset.avg_risk_score for asset in scan_result.assets) / total_assets, 2
+    ) if total_assets else 0.0
+    highest_risk_asset = max(
+        scan_result.assets, key=lambda a: a.avg_risk_score, default=None
+    )
+    enriched_findings = sum(
+        sum(1 for f in asset.findings if f.enriched) for asset in scan_result.assets
+    )
+    critical_findings = sum(
+        sum(1 for f in asset.findings if f.severity.lower() == 'critical') for asset in scan_result.assets
+    )
+    high_findings = sum(
+        sum(1 for f in asset.findings if f.severity.lower() == 'high') for asset in scan_result.assets
+    )
+    medium_findings = sum(
+        sum(1 for f in asset.findings if f.severity.lower() == 'medium') for asset in scan_result.assets
+    )
+    low_findings = sum(
+        sum(1 for f in asset.findings if f.severity.lower() == 'low') for asset in scan_result.assets
+    )
+    
+    print("\n" + "="*60)
+    print("🛡️                  VulnParse-Pin Scan Summary             🛡️")
+    print("="*60)
+    print(f" Total Assets Analyzed        : {total_assets}")
+    print(f" Total Findings Triaged      : {total_findings}")
+    print(f" Average Asset Risk Score   : {avg_risk_score}")
+    if highest_risk_asset:
+        print(f" Highest Risk Asset     : {highest_risk_asset.hostname} (Score: {highest_risk_asset.avg_risk_score})")
+    else:
+        print(" Highest Risk Asset: N/A")
+    print(f" Critical Findings          : {critical_findings}")
+    print(f" High Findings              : {high_findings}")
+    print(f" Medium Findings            : {medium_findings}")
+    print(f" Low Findings               : {low_findings}")
+    print(f" Enriched Findings          : {enriched_findings}")
+    if output_file:
+        print(f" Output Location            : {output_file}")
+    print("="*60 + "\n")
+    log.log.logger.info(f"Assets Analyzed: {total_assets}," 
+                f"Findings Triaged: {total_findings}," 
+                f"Average Risk Score: {avg_risk_score},"
+                f"Highest Risk Asset: {highest_risk_asset.hostname if highest_risk_asset else 'N/A'}")
+
+def write_output(data, file_path, pretty_print=False):
+    '''
+    Function to handle file writing operations for JSON results with the option of pretty printing JSON if the --pretty-print argument is True.
+    
+    Args:
+        data ([dict]): JSON dict obj being dumped.
+        file_path ([str]): File path/file that is being written to. 
+        pretty_print ([bool]): True if --pretty-print argument is supplied.
+        
+    Returns:
+        None: Write operations are completed with status messages printed to console.
+    '''
+    with open(file_path, 'w', encoding='utf-8') as f:
+        if pretty_print:
+            log.log.print_info(f"Pretty-printing JSON - Standby...")
+            try:
+                json.dump(asdict(data), f, indent=4)
+                log.log.print_success(f"Parsed results are stored in: {file_path}")
+            except Exception as e:
+                log.log.print_error(f"Error attempt to dump to JSON: {e}")
+                sys.exit(1)
+        else:
+            try:
+                log.log.print_info(f"[*] Dumping JSON results...")
+                json.dump(asdict(data), f)
+                log.log.print_success(f"JSON results available in: {file_path}")
+            except Exception as e:
+                log.log.print_error(f"Error attempt to dump to JSON: {e}")
+                log.logger.exception(f"Exception: {e}")
+                sys.exit(1)
+                
 
 def parse_args():
     parser = argparse.ArgumentParser(description="VulnParse-Pin: Vulnerability triage tool", usage="%(prog)s -f file [options]")
-    
     parser.add_argument("--file", "-f", help="Path to vulnerability scan file", required=True)
-    
     parser.add_argument("--enrich-kev", nargs="?", const="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
-    
     parser.add_argument("--enrich-epss", nargs="?", const="https://epss.cyentia.com/epss_scores-current.csv.gz", help="Path/URL to EPSS CSV or CSV.gz file. If omitted, use official EPSS feed.")
-    
     parser.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Default is JSON")
+    parser.add_argument("--pretty-print", action="store_true", help="Output the JSON results with identation for readability to cli")
+    parser.add_argument("--log-file", default="vulnparse_pin.log", help="Log File destination.")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRTICAL"], help="Sets Logging level for log.")
     # TODO: More args to come
     return parser.parse_args()
 
 def main():
+    print_banner()
+    
     args = parse_args()
     
-    print("[!] Starting up VulnParse-Pin... - Developer: QTShade")
-    print(f"Loading file: {args.file}")
+    log.log = LoggerWrapper(args.log_file, args.log_level)
+    
+    log.log.print_info("Starting up VulnParse-Pin...")
+    log.log.print_info(f"Loading file: {args.file}")
     
     # Load JSON report
     try:
         with open(args.file, 'r', encoding='utf-8') as f:
             report_json = json.load(f)
+            log.log.print_success(f"File Loaded: {args.file}")
     except Exception as e:
-        print(f"[!] Error loading file: {e}")
+        log.log.print_error(f"Error loading file: {e}")
         sys.exit(1)
         
     # Available parsers
-    parsers = [NessusParser()]
+    parsers = [NessusParser()] #TODO: Extend Parser classes
     
+    log.log.print_info("Scanning JSON structure to determine the type of parser to use...")
     parser_used = None
     for parser in parsers:
         if parser.detect(report_json):
@@ -44,10 +141,10 @@ def main():
             break
     
     if not parser_used:
-        print("[!] No compatible parsed found for this file.")
+        log.log.print_error("No compatible parsed found for this file.")
         sys.exit(1)
         
-    print(f"[+] Detected parser for JSON structure: {parser_used.__class__.__name__}")
+    log.log.print_success(f"Detected parser for JSON structure: {Fore.LIGHTMAGENTA_EX}{parser_used.__class__.__name__}{Style.RESET_ALL}")
     scan_result = parser_used.parse(report_json)
     
     
@@ -55,28 +152,32 @@ def main():
     epss_data = None
     
     if args.enrich_kev:
-        print(f"[+] Loading CISA KEV data from {args.enrich_kev}")
+        log.log.print_info(f"Loading CISA KEV data from {Fore.LIGHTYELLOW_EX}{args.enrich_kev}{Style.RESET_ALL}")
         kev_data = load_kev_from_json(args.enrich_kev)
+        log.log.print_success(f"Loaded CISA KEV data from {Fore.LIGHTYELLOW_EX}{args.enrich_kev}{Style.RESET_ALL}")
         
     if args.enrich_epss:
-        print(f"[+] Loading EPSS data from {args.enrich_epss}")
+        log.log.print_info(f"Loading EPSS data from {Fore.LIGHTYELLOW_EX}{args.enrich_epss}{Style.RESET_ALL}")
         epss_data = load_epss_from_csv(args.enrich_epss)
+        log.log.print_success(f"Loaded EPSS data from {Fore.LIGHTYELLOW_EX}{args.enrich_epss}{Style.RESET_ALL}")
         
     # Apply enrichments
     if kev_data or epss_data:
         enrich_scan_results(scan_result, kev_data, epss_data)
-        print(f"[+] Applied enrichments.")
+        log.log.print_success(f"Enrichments Applied")
         
-    print(f"[+] Parsed {len(scan_result.assets)} assets, {sum(len(a.findings) for a in scan_result.assets)} findings")
+    log.log.print_success(f"Parsed {len(scan_result.assets)} assets, {sum(len(a.findings) for a in scan_result.assets)} findings")
         
     if args.output:
-        try:
-            with open(args.output, 'w', encoding='utf-8') as out_file:
-                json.dump(asdict(scan_result), out_file, indent=4)
-        except Exception as e:
-            print(f"Error attempting to dump json to {args.output}: {e}")
-    else:
-        pprint(json.dumps(asdict(scan_result), indent=4))
+        write_output(data=scan_result, file_path=args.output, pretty_print=args.pretty_print)
+        
+    if args.pretty_print and not args.output:
+        log.log.print_info("Displaying results to console...")
+        print(json.dumps(asdict(scan_result), indent=4))
+        
+    print_summary_banner(scan_result, args.output if args.output else None)
+
+                
             
 if __name__ == "__main__":
     main()

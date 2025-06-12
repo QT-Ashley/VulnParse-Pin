@@ -1,10 +1,12 @@
 
+from datetime import timezone
 from typing import Any, Dict, List, Optional
 import ipaddress
 from classes.dataclass import ScanMetaData, ScanResult, Asset, Finding
 from parsers.base_parser import BaseParser
 from utils.normalizer import *
 from collections import Counter, defaultdict
+import utils.logger_instance as log
 
 
 class NessusParser(BaseParser):
@@ -31,7 +33,7 @@ class NessusParser(BaseParser):
                 if pattern(data):
                     return True
             except Exception as e:
-                print(f"[!] Pattern check failed: {e}")
+                log.log.print_error(f"Pattern check failed: {e}")
                 continue
         
         return False
@@ -92,12 +94,14 @@ class NessusParser(BaseParser):
                 description = coerce_str(self.get_key_case_ins(item, ["description"], default="Description Not Available"))
                 solution = coerce_str(self.get_key_case_ins(item, ["solution"], default="Solution Not Available"))
                 plugin_output = coerce_str(self.get_key_case_ins(item, ["plugin_output"], default="Unavailable"))
-                risk = coerce_str(self.get_key_case_ins(item, ["risk_factor"], default="Unknown"))
+                risk = coerce_str(self.get_key_case_ins(item, ["risk_factor", "risk"], default="Unknown"))
                 severity = risk.capitalize() if risk else coerce_severity(self.get_key_case_ins(item, ["severity"], default="Low"), default="Low")
                 cves = coerce_list(self.get_key_case_ins(item, ["cves", "cve_list", "cve"], default=[]))
                 references = coerce_list(self.get_key_case_ins(item, ["see also", "references"], default=[]))
                 if isinstance(cves, str):
                     cves = [c.strip() for c in cves.split(",") if c.strip()]
+                if not risk:
+                    risk = severity
                 
                 
                 exploit_indicators = ["exploit", "metasploit", "public exploit", "poc available"]
@@ -117,9 +121,11 @@ class NessusParser(BaseParser):
                     plugin_output=plugin_output,
                     cves=cves,
                     cvss_score=cvss_score,
+                    cvss_vector=None,
                     epss_score=0.0,
                     cisa_kev=False,
                     exploit_available=exploit_available,
+                    risk=risk,
                     triage_priority=None,
                     enriched=False,
                     affected_port=affected_port,
@@ -142,7 +148,8 @@ class NessusParser(BaseParser):
             source=source,
             scan_date=scan_date,
             asset_count=asset_count,
-            vulnerability_count=vuln_count
+            vulnerability_count=vuln_count,
+            parsed_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         )
                 
         result = ScanResult(
@@ -224,20 +231,20 @@ class NessusParser(BaseParser):
 
     def detect_and_transform_flat_json(self, some_json):
         if isinstance(some_json, list):
-            print("[*] Detected flat list JSON format.")
+            log.log.print_info("Detected flat list JSON format.")
             return self.transform_flat_list(some_json)
 
         elif isinstance(some_json, dict):
             if "results" in some_json and isinstance(some_json["results"], list):
-                print("[*] Detected 'results' key with flat list.")
+                log.log.print_info("Detected 'results' key with flat list.")
                 return self.transform_flat_list(some_json["results"])
 
             elif "assets" in some_json:
-                print("[*] Detected already normalized scheme.")
+                log.log.print_info("Detected already normalized schema.")
                 return some_json
             
             elif "scan" in some_json and "hosts" in some_json["scan"]:
-                print("[*] Detected 'scan' top-level key with 'hosts'. Extracting hosts list.")
+                log.log.print_info("Detected 'scan' top-level key with 'hosts'. Extracting hosts list.")
                 # Return a normalized dict with "assets" key, mapping hosts to assets for parser.
                 hosts = some_json["scan"]["hosts"]
                 assets_list = []
@@ -250,10 +257,12 @@ class NessusParser(BaseParser):
                     }
                     assets_list.append(asset)
                     
+                scan_metadata = some_json["scan"]["info"]
+                    
                 return {
                     "scan_metadata": {
-                        "source": some_json["scan"].get("policy", "Unknown"),
-                        "scan_date": some_json["scan"].get("start_time", None),
+                        "source": scan_metadata.get("name", "Unknown"),
+                        "scan_date": scan_metadata.get("start_time", "Unavailable"),
                         "asset_count": len(assets_list),
                         "vulnerability_count": sum(len(a["findings"]) for a in assets_list)
                     },
@@ -261,11 +270,11 @@ class NessusParser(BaseParser):
                 }
 
             else:
-                print("[!] Unknown dict formation - returning as-is.")
+                log.log.print_warning("Unknown dict formation - returning as-is.")
                 return some_json
 
         else:
-            print("[!] Unrecognized JSON structure - returning as-is.")
+            log.log.print_warning("Unrecognized JSON structure - returning as-is.")
             return some_json
         
     # ==========Schema detectors and normalizers=========
@@ -290,7 +299,7 @@ class NessusParser(BaseParser):
         elif self.is_results_based(data):
             return self.normalize_results_based(data)
         else:
-            print(f"[!] Unknown JSON structure: top-level keys: {list(data.keys())}")
+            log.log.print_warning(f"Unknown JSON structure: top-level keys: {list(data.keys())}")
             return {
                 "source": "Unknown",
                 "scan_date": None
