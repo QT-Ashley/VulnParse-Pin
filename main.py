@@ -130,9 +130,9 @@ def get_args():
     parser.add_argument("--enrich-kev", nargs="?", const="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
     parser.add_argument("--enrich-epss", nargs="?", const="https://epss.cyentia.com/epss_scores-current.csv.gz", help="Path/URL to EPSS CSV or CSV.gz file. If omitted, use official EPSS feed.")
     parser.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Default is JSON")
-    parser.add_argument("--pretty-print", action="store_true", help="Output the JSON results with identation for readability to cli")
+    parser.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
     parser.add_argument("--log-file", default="vulnparse_pin.log", help="Log File destination.")
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRTICAL"], help="Sets Logging level for log.", type=valid_log_level)
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
     parser.add_argument("--version", "-v", action="version", version="VulnParse-Pin v0.3", help="Show program version and exit.")
     parser.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
     parser.add_argument("--exploit-db", "-edb", type=str, default=DEFAULT_LOCAL_PATH, help="Path to offline exploit database (CSV)")
@@ -153,9 +153,17 @@ def main():
     print_banner()
     
     args = get_args()
-    
-    
     log.log = LoggerWrapper(args.log_file, args.log_level)
+    
+    if args.exploit_source == "offline":
+        if not os.path.isfile(args.exploit_db):
+            log.log.print_error(f"Exploit database file not found at: {args.exploit_db}")
+            sys.exit(1)
+        if not os.access(args.exploit_db, os.R_OK):
+            log.log.print_error(f"Exploit database file is not readable: {args.exploit_db}")
+            sys.exit(1)
+    
+    
     
     log.log.print_info("Starting up VulnParse-Pin...")
     log.log.print_info(f"Loading file: {args.file}")
@@ -241,3 +249,4 @@ def main():
 if __name__ == "__main__":
     main()
 
+ 

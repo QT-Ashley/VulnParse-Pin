@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 
 @dataclass
@@ -14,6 +14,7 @@ class Finding:
     cisa_kev: Optional[bool] = None
     cvss_vector: Optional[str] = None
     exploit_available: Optional[bool] = None
+    exploit_references: Optional[List[Dict]] = None
     risk: Optional[str] = None
     raw_risk_score: Optional[float] = None
     risk_score: Optional[float] = None
