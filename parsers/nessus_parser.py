@@ -104,12 +104,12 @@ class NessusParser(BaseParser):
             for item in report_host.get("findings", []):
                 vuln_id = coerce_str(self.get_key_case_ins(item, ["plugin_id", "vuln_id", "id"], default="unknown"))
                 title = coerce_str(self.get_key_case_ins(item, ["plugin_name", "title", "vuln_title"], default="No Title"))
-                description = coerce_str(self.get_key_case_ins(item, ["description"], default="Description Not Available"))
-                solution = coerce_str(self.get_key_case_ins(item, ["solution"], default="Solution Not Available"))
+                description = coerce_str(self.get_key_case_ins(item, ["description"], default="Not Available"))
+                solution = coerce_str(self.get_key_case_ins(item, ["solution"], default="Not Available"))
                 plugin_output = coerce_str(self.get_key_case_ins(item, ["plugin_output"], default="Unavailable"))
                 risk = coerce_str(self.get_key_case_ins(item, ["risk_factor", "risk"], default="Unknown"))
-                severity = risk.capitalize() if risk else coerce_severity(self.get_key_case_ins(item, ["severity"], default="Low"), default="Low")
-                cves = coerce_list(self.get_key_case_ins(item, ["cves", "cve_list", "cve"], default=[]))
+                severity = risk.capitalize() if risk != "Unknown" else coerce_severity(self.get_key_case_ins(item, ["severity"], default="Low"), default="Low")
+                cves = coerce_list_of_strs(self.get_key_case_ins(item, ["cves", "cve_list", "cve"], default=[]))
                 references = coerce_list(self.get_key_case_ins(item, ["see also", "references"], default=[]))
                 if isinstance(cves, str):
                     cves = [c.strip() for c in cves.split(",") if c.strip()]

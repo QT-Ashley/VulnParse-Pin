@@ -1,7 +1,7 @@
 import json
 from parsers.nessus_parser import NessusParser
 from dataclasses import asdict
-from utils.enricher import enrich_scan_results, load_epss_from_csv, load_kev_from_json
+from utils.enricher import enrich_scan_results, load_epss_from_csv, load_kev_from_json, update_enrichment_status
 import argparse
 import sys
 from utils.banner import print_banner
@@ -11,6 +11,7 @@ import utils.logger_instance as log
 import os
 from parsers.__init__ import *
 from utils.exploit_enrichment_service import *
+from utils.validations import *
 
 def print_summary_banner(scan_result, output_file=None):
     '''
@@ -168,14 +169,10 @@ def main():
     log.log.print_info("Starting up VulnParse-Pin...")
     log.log.print_info(f"Loading file: {args.file}")
     
-    # Load JSON report
-    try:
-        with open(args.file, 'r', encoding='utf-8') as f:
-            report_json = json.load(f)
-            log.log.print_success(f"File Loaded: {args.file}")
-    except Exception as e:
-        log.log.print_error(f"Error loading file: {e}")
-        sys.exit(1)
+    # Check and validate json structure.
+    validator = FileInputValidator(args.file)
+    report_json = validator.validate()
+    
         
     # Available parsers
     parsers = [NessusParser(), OpenVASParser()] #TODO: Extend Parser classes
@@ -207,6 +204,7 @@ def main():
         
     log.log.print_success(f"Parsed {len(scan_result.assets)} assets, {sum(len(a.findings) for a in scan_result.assets)} findings")
     
+    # 1 Load enrichment data sources
     if args.enrich_kev:
         log.log.print_info(f"Loading CISA KEV data from {Fore.LIGHTYELLOW_EX}{args.enrich_kev}{Style.RESET_ALL}")
         kev_data = load_kev_from_json(args.enrich_kev)
@@ -217,19 +215,24 @@ def main():
         epss_data = load_epss_from_csv(args.enrich_epss)
         log.log.print_success(f"Loaded EPSS data from {Fore.LIGHTYELLOW_EX}{args.enrich_epss}{Style.RESET_ALL}")
         
-    # Apply enrichments
-    if kev_data or epss_data:
-        enrich_scan_results(scan_result, kev_data, epss_data)
-        log.log.print_success(f"Enrichments Applied")
-
-    # Apply exploit enrichments
+    # 2 Apply exploit enrichments
     if args.enrich_exploit and exploit_data:
         for asset in scan_result.assets:
             enriched_findings = enrich_exploit_availability(asset.findings, exploit_data)
             asset.findings = enriched_findings
         log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Exploit enrichment applied to findings.")
     
-    # Do Post-Processing enrichment status update.
+    # 3 Apply heuristic tagging *before* enrichment and risk scoring
+    for asset in scan_result.assets:
+        for finding in asset.findings:
+            apply_heuristic_exploit_tag(finding)
+    
+    # 4 Apply enrichments
+    if kev_data or epss_data:
+        enrich_scan_results(scan_result, kev_data, epss_data)
+        log.log.print_success(f"Enrichments Applied")
+    
+    # 5 Do Post-Processing enrichment status update.
     for asset in scan_result.assets:
         for finding in asset.findings:
             update_enrichment_status(finding)

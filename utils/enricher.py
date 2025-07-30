@@ -10,6 +10,7 @@ import os
 import json
 import re
 
+from utils.cve_selector import select_authoritative_cve
 from .cvss_utils import CVSS3_REGEX_L, is_valid_cvss_vector, parse_cvss_vector
 from classes.dataclass import ScanResult, TriageConfig
 from utils.triage_priority_helper import determine_triage_priority
@@ -69,7 +70,7 @@ def load_epss_from_csv(path_url: str) -> Dict[str, float]:
     
     # Download or open local .gz file
     if path_url.startswith("http"):
-        response = requests.get(path_url)
+        response = requests.get(path_url, timeout=5, allow_redirects=True)
         response.raise_for_status()
         compressed_data = response.content
         # Open gzip file from bytes in memory
@@ -117,7 +118,7 @@ def load_kev_from_json(path_url: str) -> Dict[str, bool]:
                 kev_data[cve.upper()] = True
                 
     if path_url.startswith('http'):
-        response = requests.get(path_url)
+        response = requests.get(path_url, allow_redirects=True, timeout=5)
         response.raise_for_status()
         content_type = response.headers.get('Content-Type', '')
         
@@ -174,7 +175,7 @@ def calculate_risk_score(cvss_score: float, exploit_available: bool, cisa_kev: b
         raw_risk_score += weights["cisa_kev"]
     if epss_score >= 0.8:
         raw_risk_score += weights["epss_score_high"]
-    elif epss_score >= 0.7:
+    elif epss_score >= 0.5:
         raw_risk_score += weights["epss_score_medium"]
         
     # Cap raw risk at configured max
@@ -190,7 +191,7 @@ def calculate_risk_score(cvss_score: float, exploit_available: bool, cisa_kev: b
     return raw_risk_score, risk_score, risk_band
 
 def determine_risk_band(raw_risk_score):
-    if raw_risk_score >= 12:
+    if raw_risk_score >= 10:
         return "Critical+"
     elif raw_risk_score >= 8:
         return "High"
@@ -227,7 +228,7 @@ def fetch_nvd_data(cve_id: str, base_url: str = BASE_NVD_URL, cache_dir: str = '
         
     # Otherwise, fetch the data from NVD
     nvd_url = f"{BASE_NVD_URL}?cveID={cve_id.upper()}"
-    response = requests.get(nvd_url)
+    response = requests.get(nvd_url, allow_redirects=False, timeout=5)
     
     if response.status_code == 200:
         cve_data = response.json()
@@ -261,7 +262,7 @@ def fetch_cvedetails_data(cve_id: str):
     try:
         time.sleep(1)
         session = requests.Session()
-        response = session.get(url, headers=headers, timeout=10)
+        response = session.get(url, headers=headers, timeout=5, allow_redirects=False)
         response.raise_for_status()
         
         # Parse HTML content
@@ -359,20 +360,35 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
                                 sec_cvss_metrics = vulnerability["cve"]["metrics"]
                                 
                                 sec_cvss_vector = "N/A"
+                                primary_vector = None
+                                secondary_vector = None
+                                
                                 
                                 for metric in sec_cvss_metrics["cvssMetricV31"]:
-                                    if metric.get("type") in ["Primary", "Secondary"]:
-                                        sec_cvss_vector = metric["cvssData"]["vectorString"].strip()
-                                        sec_cvss_vectors.append(sec_cvss_vector)
-                                        break
-                                    else:
-                                        log.log.print_warning(f"CVSS Vector not found for {cve}")
-                                        break
+                                    metric_type = metric.get("type")
+                                    vector = metric.get("cvssData", {}).get("vectorString", "").strip()
+                                    
+                                    if metric_type == "Primary" and is_valid_cvss_vector(vector):
+                                        primary_vector = vector
                                         
-                                if sec_cvss_vector:
-                                    log.log.print_success(f"{Fore.LIGHTMAGENTA_EX}[NVDData]{Style.RESET_ALL} CVSS Vector Found in NVD Data for cve: {cve}")
+                                    elif metric_type == "Secondary" and is_valid_cvss_vector(vector):
+                                        secondary_vector = vector
+                                        
+                                if primary_vector:
+                                    sec_cvss_vector = primary_vector
+                                    log.log.print_info(f"[CVSSVector] Using PRIMARY vector for {cve}")
+                                    
+                                elif secondary_vector:
+                                    sec_cvss_vector = secondary_vector
+                                    log.log.print_info(f"[CVSSVector] Using SECONDARY vector for {cve}")
+                                    
                                 else:
-                                    print(f"Primary CVSS vector not found.")
+                                    sec_cvss_vector = None
+                                    log.log.print_warning(f"[CVSSVector] No usable vector found for {cve}")
+                                    
+                                if sec_cvss_vector:
+                                    sec_cvss_vectors.append(sec_cvss_vector)
+                                    log.log.print_success(f"{Fore.LIGHTMAGENTA_EX}[NVDData]{Style.RESET_ALL} CVSS Vector Found in NVD Data for {cve}")
                                 
                     else:
                         log.log.print_error(f"Could not retrieve cvss_vector from nvd source for {cve}")
@@ -388,10 +404,41 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
                         epss_scores.append(0.0)
                         total_epss_misses += 1
                         miss_logger.log_miss(cve, cisa_kev=kev_hit, epss_score=None)
+                
+                #TODO: Build small dict of enriched cve info
+                enrichment_map = {}
+                
+                for idx, cve in enumerate(finding.cves):
+                    enrichment_map[cve] = {
+                        "epss_score": epss_data.get(cve, 0.0),
+                        "cisa_kev": kev_data.get(cve.upper(), False),
+                        "exploit_available": finding.exploit_available if len(finding.cves) > 1 else False,
+                        "cvss_score": 0.0,
+                        "cvss_vector": None
+                    }
+                    
+                    if idx < len(sec_cvss_vectors):
+                        vector = sec_cvss_vectors[idx]
+                        if is_valid_cvss_vector(vector):
+                            enrichment_map[cve]["cvss_vector"] = vector
+                            enrichment_map[cve]["cvss_score"] = parse_cvss_vector(vector)[0]
+                            
+                authoritative_cve = select_authoritative_cve(list(enrichment_map.keys()), enrichment_map)
+                
+                if authoritative_cve:
+                    best = enrichment_map[authoritative_cve]
+                    finding.epss_score = best["epss_score"]
+                    finding.cisa_kev = best["cisa_kev"]
+                    finding.exploit_available = best["exploit_available"]
+                    finding.enrichment_source_cve = authoritative_cve
+                    log.log.print_info(
+                        f"{Fore.LIGHTMAGENTA_EX}[Enrichment]{Style.RESET_ALL} "
+                        f"Authoritative CVE: {authoritative_cve} => "
+                        f"EPSS={best['epss_score']} | KEV={best['cisa_kev']} | Exploit={best['exploit_available']}"
+                    )
+                else:
+                    log.log.print_warning(f"[Enrichment] No authoritative CVE selected for {finding.vuln_id}")
 
-            # Assign KEV and max EPSS to finding level
-            finding.cisa_kev = any(cisa_hits)
-            finding.epss_score = max(epss_scores) if epss_scores else 0.0
                 
             # Get CVSS Vectors w/ Validation / Reconciliation
             if sec_cvss_vectors:

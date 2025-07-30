@@ -28,6 +28,7 @@ class Finding:
     references: Optional[List[str]] = field(default_factory=list)
     triage_priority: Optional[str] = None
     enriched: Optional[bool] = None
+    enrichment_source_cve: Optional[str] = None
     assetid: Optional[str] = None
     
 @dataclass

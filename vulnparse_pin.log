@@ -109,3 +109,603 @@
 2025-07-03 12:58:52,777 - INFO - Pretty-printing JSON - Standby...
 2025-07-03 12:58:52,778 - INFO - Parsed results are stored in: test.json
 2025-07-03 12:58:52,780 - INFO - Assets Analyzed: 6,Findings Triaged: 9,Average Risk Score: 8.49,Highest Risk Asset: dbserver-01.example.com,Critical+: 4, High: 2, Medium: 2, Low: 0
+2025-07-16 20:25:09,466 - INFO - Starting up VulnParse-Pin...
+2025-07-16 20:25:09,466 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-16 20:25:09,488 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-16 20:25:09,488 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-16 20:25:09,488 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-16 20:25:09,489 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-07-16 20:25:09,489 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-07-16 20:25:09,805 - INFO - [92m[Enrich-Exploit][0mLoaded 15354 CVE entries from exploit database.
+2025-07-16 20:25:09,805 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15354 CVEs with exploits)
+2025-07-16 20:25:09,805 - INFO - Parsed 2 assets, 2 findings
+2025-07-16 20:25:09,806 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:25:10,003 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:25:10,003 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:25:12,885 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:25:12,885 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-5678 | CVE-2024-1234)
+2025-07-16 20:25:12,885 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-07-16 20:25:12,886 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-16 20:25:12,886 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-16 20:25:12,886 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-16 20:25:12,936 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-16 20:25:12,937 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-16 20:25:12,937 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00346
+2025-07-16 20:25:12,937 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-16 20:25:12,946 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-16 20:25:12,946 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-16 20:25:12,946 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-16 20:25:12,947 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:L/I:L/A:L
+2025-07-16 20:25:12,947 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-16 20:25:12,947 - INFO - CVE-2024-1234 Base score from vector: 4.7
+2025-07-16 20:25:12,947 - WARNING - Score mismatch for CVE-2024-1234: vector 4.7 vs field: 0.0
+2025-07-16 20:25:12,947 - INFO - Overwriting cvss score with value from CVSS Vector: 4.7
+2025-07-16 20:25:12,948 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m6.7[0m
+2025-07-16 20:25:12,949 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m6.7[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:25:12,949 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-16 20:25:12,956 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-16 20:25:12,956 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-16 20:25:12,982 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-16 20:25:12,982 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-16 20:25:12,982 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-16 20:25:12,982 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:25:12,983 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-16 20:25:12,983 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-16 20:25:12,983 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-16 20:25:12,983 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-16 20:25:12,984 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-16 20:25:12,984 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:25:12,985 - INFO -    Total CVEs Processed : 4
+2025-07-16 20:25:12,985 - INFO -    Total CISA KEV Hits : 0
+2025-07-16 20:25:12,985 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-16 20:25:12,985 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-16 20:25:12,985 - INFO -    Total EPSS Misses : 1
+2025-07-16 20:25:12,986 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-16 20:25:12,987 - INFO - Enrichments Applied
+2025-07-16 20:25:12,987 - INFO - Displaying results to console...
+2025-07-16 20:25:12,990 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 6.75,Highest Risk Asset: dbserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-16 20:25:36,921 - INFO - Starting up VulnParse-Pin...
+2025-07-16 20:25:36,921 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-16 20:25:36,921 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-16 20:25:36,921 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-16 20:25:36,922 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-16 20:25:36,922 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-07-16 20:25:36,922 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-07-16 20:25:37,467 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-07-16 20:25:37,712 - INFO - [92m[Enrich-Exploit][0mLoaded 15383 CVE entries from exploit database.
+2025-07-16 20:25:37,713 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15383 CVEs with exploits)
+2025-07-16 20:25:37,713 - INFO - Parsed 2 assets, 2 findings
+2025-07-16 20:25:37,714 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:25:37,847 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:25:37,847 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:25:40,534 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:25:40,534 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-16 20:25:40,534 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-07-16 20:25:40,534 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-16 20:25:40,534 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-16 20:25:40,535 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-16 20:25:40,535 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-16 20:25:40,535 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-16 20:25:40,536 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-16 20:25:40,536 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-16 20:25:40,536 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-16 20:25:40,536 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-16 20:25:40,536 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00346
+2025-07-16 20:25:40,537 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:25:40,537 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-16 20:25:40,537 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-16 20:25:40,537 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-16 20:25:40,537 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-16 20:25:40,538 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-16 20:25:40,538 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:25:40,538 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-16 20:25:40,539 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-16 20:25:40,539 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-16 20:25:40,539 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-16 20:25:40,540 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-16 20:25:40,540 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-16 20:25:40,540 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:25:40,540 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-16 20:25:40,541 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-16 20:25:40,541 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-16 20:25:40,541 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-16 20:25:40,542 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-16 20:25:40,542 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:25:40,542 - INFO -    Total CVEs Processed : 4
+2025-07-16 20:25:40,542 - INFO -    Total CISA KEV Hits : 0
+2025-07-16 20:25:40,542 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-16 20:25:40,543 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-16 20:25:40,543 - INFO -    Total EPSS Misses : 1
+2025-07-16 20:25:40,543 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-16 20:25:40,544 - INFO - Enrichments Applied
+2025-07-16 20:25:40,544 - INFO - Displaying results to console...
+2025-07-16 20:25:40,547 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 7.1,Highest Risk Asset: webserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-16 20:42:02,839 - INFO - Starting up VulnParse-Pin...
+2025-07-16 20:42:02,839 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-16 20:42:02,840 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-16 20:42:02,840 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-16 20:42:02,840 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-16 20:42:02,841 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-07-16 20:42:02,841 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-07-16 20:42:03,486 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-07-16 20:42:03,734 - INFO - [92m[Enrich-Exploit][0mLoaded 15383 CVE entries from exploit database.
+2025-07-16 20:42:03,734 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15383 CVEs with exploits)
+2025-07-16 20:42:03,735 - INFO - Parsed 2 assets, 2 findings
+2025-07-16 20:42:03,735 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:42:03,897 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:42:03,898 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:42:06,753 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:42:06,754 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-16 20:42:06,754 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-1111 | CVE-2023-2222)
+2025-07-16 20:42:06,754 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-16 20:42:06,754 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-16 20:42:06,754 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-16 20:42:06,755 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-16 20:42:06,755 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-16 20:42:06,755 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-16 20:42:06,755 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-16 20:42:06,756 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-16 20:42:06,756 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-16 20:42:06,756 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00346
+2025-07-16 20:42:06,756 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:42:06,757 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-16 20:42:06,757 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-16 20:42:06,757 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-16 20:42:06,757 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-16 20:42:06,758 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-16 20:42:06,758 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:42:06,758 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-16 20:42:06,759 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-16 20:42:06,759 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-16 20:42:06,759 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-16 20:42:06,759 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-16 20:42:06,759 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-16 20:42:06,760 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:42:06,760 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-16 20:42:06,760 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-16 20:42:06,760 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-16 20:42:06,760 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-16 20:42:06,761 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-16 20:42:06,761 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:42:06,761 - INFO -    Total CVEs Processed : 4
+2025-07-16 20:42:06,762 - INFO -    Total CISA KEV Hits : 0
+2025-07-16 20:42:06,762 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-16 20:42:06,762 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-16 20:42:06,762 - INFO -    Total EPSS Misses : 1
+2025-07-16 20:42:06,762 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-16 20:42:06,763 - INFO - Enrichments Applied
+2025-07-16 20:42:06,764 - INFO - Pretty-printing JSON - Standby...
+2025-07-16 20:42:06,764 - INFO - Parsed results are stored in: .\tests\enriched_online.json
+2025-07-16 20:42:06,766 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 7.1,Highest Risk Asset: webserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-16 20:42:20,403 - INFO - Starting up VulnParse-Pin...
+2025-07-16 20:42:20,404 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-16 20:42:20,404 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-16 20:42:20,404 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-16 20:42:20,404 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-16 20:42:20,405 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-07-16 20:42:20,405 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-07-16 20:42:20,641 - INFO - [92m[Enrich-Exploit][0mLoaded 15383 CVE entries from exploit database.
+2025-07-16 20:42:20,641 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15383 CVEs with exploits)
+2025-07-16 20:42:20,641 - INFO - Parsed 2 assets, 2 findings
+2025-07-16 20:42:20,641 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:42:20,759 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:42:20,759 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:42:23,446 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:42:23,446 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-5678 | CVE-2024-1234)
+2025-07-16 20:42:23,446 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-07-16 20:42:23,446 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-16 20:42:23,447 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-16 20:42:23,447 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-16 20:42:23,447 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-16 20:42:23,448 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-16 20:42:23,448 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00346
+2025-07-16 20:42:23,448 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-16 20:42:23,448 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-16 20:42:23,448 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-16 20:42:23,449 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-16 20:42:23,449 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:L/I:L/A:L
+2025-07-16 20:42:23,449 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-16 20:42:23,449 - INFO - CVE-2024-1234 Base score from vector: 4.7
+2025-07-16 20:42:23,449 - WARNING - Score mismatch for CVE-2024-1234: vector 4.7 vs field: 0.0
+2025-07-16 20:42:23,449 - INFO - Overwriting cvss score with value from CVSS Vector: 4.7
+2025-07-16 20:42:23,450 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m6.7[0m
+2025-07-16 20:42:23,450 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m6.7[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:42:23,451 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-16 20:42:23,451 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-16 20:42:23,451 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-16 20:42:23,452 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-16 20:42:23,452 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-16 20:42:23,452 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-16 20:42:23,452 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:42:23,452 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-16 20:42:23,452 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-16 20:42:23,453 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-16 20:42:23,453 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-16 20:42:23,454 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-16 20:42:23,454 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:42:23,454 - INFO -    Total CVEs Processed : 4
+2025-07-16 20:42:23,454 - INFO -    Total CISA KEV Hits : 0
+2025-07-16 20:42:23,454 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-16 20:42:23,454 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-16 20:42:23,455 - INFO -    Total EPSS Misses : 1
+2025-07-16 20:42:23,455 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-16 20:42:23,455 - INFO - Enrichments Applied
+2025-07-16 20:42:23,456 - INFO - Pretty-printing JSON - Standby...
+2025-07-16 20:42:23,457 - INFO - Parsed results are stored in: .\tests\enriched_offline.json
+2025-07-16 20:42:23,459 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 6.75,Highest Risk Asset: dbserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-16 20:59:31,593 - INFO - Starting up VulnParse-Pin...
+2025-07-16 20:59:31,594 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-16 20:59:31,594 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-16 20:59:31,594 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-16 20:59:31,595 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-16 20:59:31,595 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-07-16 20:59:31,595 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-07-16 20:59:32,264 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-07-16 20:59:32,508 - INFO - [92m[Enrich-Exploit][0mLoaded 15383 CVE entries from exploit database.
+2025-07-16 20:59:32,508 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15383 CVEs with exploits)
+2025-07-16 20:59:32,509 - INFO - Parsed 2 assets, 2 findings
+2025-07-16 20:59:32,509 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:59:32,638 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 20:59:32,639 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:59:35,428 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 20:59:35,428 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-16 20:59:35,428 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-07-16 20:59:35,429 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-16 20:59:35,429 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-16 20:59:35,429 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-16 20:59:35,430 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-16 20:59:35,430 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-16 20:59:35,430 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-16 20:59:35,430 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-16 20:59:35,431 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-16 20:59:35,431 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-16 20:59:35,431 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00346
+2025-07-16 20:59:35,431 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:59:35,432 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-16 20:59:35,432 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-16 20:59:35,432 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-16 20:59:35,432 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-16 20:59:35,433 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-16 20:59:35,433 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:59:35,434 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-16 20:59:35,434 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-16 20:59:35,434 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-16 20:59:35,435 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-16 20:59:35,435 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-16 20:59:35,435 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-16 20:59:35,435 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 20:59:35,435 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-16 20:59:35,436 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-16 20:59:35,436 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-16 20:59:35,436 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-16 20:59:35,437 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-16 20:59:35,437 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 20:59:35,437 - INFO -    Total CVEs Processed : 4
+2025-07-16 20:59:35,437 - INFO -    Total CISA KEV Hits : 0
+2025-07-16 20:59:35,438 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-16 20:59:35,438 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-16 20:59:35,438 - INFO -    Total EPSS Misses : 1
+2025-07-16 20:59:35,438 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-16 20:59:35,439 - INFO - Enrichments Applied
+2025-07-16 20:59:35,439 - INFO - Displaying results to console...
+2025-07-16 20:59:35,442 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 7.1,Highest Risk Asset: webserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-16 21:00:33,236 - INFO - Starting up VulnParse-Pin...
+2025-07-16 21:00:33,236 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-16 21:00:33,237 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-16 21:00:33,237 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-16 21:00:33,237 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-16 21:00:33,238 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-07-16 21:00:33,238 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-07-16 21:00:33,952 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-07-16 21:00:34,195 - INFO - [92m[Enrich-Exploit][0mLoaded 15383 CVE entries from exploit database.
+2025-07-16 21:00:34,196 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15383 CVEs with exploits)
+2025-07-16 21:00:34,196 - INFO - Parsed 2 assets, 2 findings
+2025-07-16 21:00:34,197 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 21:00:34,357 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-16 21:00:34,358 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 21:00:37,103 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-16 21:00:37,104 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-16 21:00:37,104 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-07-16 21:00:37,104 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-16 21:00:37,104 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-16 21:00:37,105 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-16 21:00:37,105 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-16 21:00:37,105 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-16 21:00:37,105 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-16 21:00:37,106 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-16 21:00:37,106 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-16 21:00:37,107 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-16 21:00:37,107 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00346
+2025-07-16 21:00:37,107 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 21:00:37,107 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-16 21:00:37,107 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-16 21:00:37,108 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-16 21:00:37,108 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-16 21:00:37,108 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-16 21:00:37,108 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 21:00:37,108 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-16 21:00:37,109 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-16 21:00:37,109 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-16 21:00:37,110 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-16 21:00:37,110 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-16 21:00:37,110 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-16 21:00:37,110 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-16 21:00:37,110 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-16 21:00:37,111 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-16 21:00:37,111 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-16 21:00:37,111 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-16 21:00:37,111 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-16 21:00:37,111 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-16 21:00:37,112 - INFO -    Total CVEs Processed : 4
+2025-07-16 21:00:37,112 - INFO -    Total CISA KEV Hits : 0
+2025-07-16 21:00:37,112 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-16 21:00:37,112 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-16 21:00:37,112 - INFO -    Total EPSS Misses : 1
+2025-07-16 21:00:37,113 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-16 21:00:37,113 - INFO - Enrichments Applied
+2025-07-16 21:00:37,114 - INFO - Displaying results to console...
+2025-07-16 21:00:37,117 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 7.1,Highest Risk Asset: webserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-29 22:52:24,539 - INFO - Starting up VulnParse-Pin...
+2025-07-29 22:52:24,539 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-29 22:52:24,551 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-29 22:52:24,551 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-29 22:52:24,552 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-29 22:52:24,552 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-07-29 22:52:24,552 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-07-29 22:52:25,429 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-07-29 22:52:25,676 - INFO - [92m[Enrich-Exploit][0mLoaded 15401 CVE entries from exploit database.
+2025-07-29 22:52:25,677 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15401 CVEs with exploits)
+2025-07-29 22:52:25,677 - INFO - Parsed 2 assets, 2 findings
+2025-07-29 22:52:25,677 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:52:25,860 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:52:25,860 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:52:28,708 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:52:28,709 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-29 22:52:28,709 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-1111 | CVE-2023-2222)
+2025-07-29 22:52:28,709 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-29 22:52:28,709 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-29 22:52:28,709 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-29 22:52:28,719 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-29 22:52:28,719 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-29 22:52:28,719 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-29 22:52:28,720 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-29 22:52:28,782 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-29 22:52:28,782 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-29 22:52:28,782 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00482
+2025-07-29 22:52:28,806 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 22:52:28,806 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-29 22:52:28,807 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-29 22:52:28,807 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-29 22:52:28,807 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-29 22:52:28,807 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-29 22:52:28,807 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 22:52:28,808 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-29 22:52:28,828 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-29 22:52:28,828 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-29 22:52:28,828 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-29 22:52:28,829 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-29 22:52:28,836 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-29 22:54:24,194 - INFO - Starting up VulnParse-Pin...
+2025-07-29 22:54:24,195 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-29 22:54:24,195 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-29 22:54:24,195 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-29 22:54:24,196 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-29 22:54:24,196 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-07-29 22:54:24,196 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-07-29 22:54:24,878 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-07-29 22:54:25,121 - INFO - [92m[Enrich-Exploit][0mLoaded 15401 CVE entries from exploit database.
+2025-07-29 22:54:25,122 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15401 CVEs with exploits)
+2025-07-29 22:54:25,122 - INFO - Parsed 2 assets, 2 findings
+2025-07-29 22:54:25,122 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:54:25,301 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:54:25,301 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:54:28,192 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:54:28,192 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-5678 | CVE-2024-1234)
+2025-07-29 22:54:28,192 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-1111 | CVE-2023-2222)
+2025-07-29 22:54:28,192 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-29 22:54:28,192 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-29 22:54:28,193 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-29 22:54:28,193 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-29 22:54:28,193 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-29 22:54:28,193 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00482
+2025-07-29 22:54:28,194 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-29 22:54:28,194 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-29 22:54:28,194 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-29 22:54:28,194 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-29 22:54:28,198 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:L/I:L/A:L
+2025-07-29 22:54:28,198 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-29 22:54:28,199 - INFO - CVE-2024-1234 Base score from vector: 4.7
+2025-07-29 22:54:28,199 - WARNING - Score mismatch for CVE-2024-1234: vector 4.7 vs field: 0.0
+2025-07-29 22:54:28,199 - INFO - Overwriting cvss score with value from CVSS Vector: 4.7
+2025-07-29 22:54:28,199 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m6.7[0m
+2025-07-29 22:54:28,199 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m6.7[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 22:54:28,199 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-29 22:54:28,200 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-29 22:54:28,200 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-29 22:54:28,200 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-29 22:54:28,200 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-29 22:54:28,201 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-29 22:54:28,203 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 22:54:28,203 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-29 22:54:28,204 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-29 22:54:28,204 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-29 22:54:28,204 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-29 22:54:28,204 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-29 22:54:28,204 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 22:54:28,204 - INFO -    Total CVEs Processed : 4
+2025-07-29 22:54:28,205 - INFO -    Total CISA KEV Hits : 0
+2025-07-29 22:54:28,205 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-29 22:54:28,205 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-29 22:54:28,205 - INFO -    Total EPSS Misses : 1
+2025-07-29 22:54:28,205 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-29 22:54:28,211 - INFO - Enrichments Applied
+2025-07-29 22:54:28,211 - INFO - Displaying results to console...
+2025-07-29 22:54:28,214 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 6.75,Highest Risk Asset: dbserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-29 22:57:01,984 - INFO - Starting up VulnParse-Pin...
+2025-07-29 22:57:01,984 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-29 22:57:01,985 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-29 22:57:01,985 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-29 22:57:01,985 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-29 22:57:01,986 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-07-29 22:57:01,986 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-07-29 22:57:02,562 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-07-29 22:57:02,801 - INFO - [92m[Enrich-Exploit][0mLoaded 15401 CVE entries from exploit database.
+2025-07-29 22:57:02,802 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15401 CVEs with exploits)
+2025-07-29 22:57:02,802 - INFO - Parsed 2 assets, 2 findings
+2025-07-29 22:57:02,802 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:57:02,928 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:57:02,928 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:57:05,713 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:57:05,713 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-29 22:57:05,713 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-07-29 22:57:05,713 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-29 22:57:05,714 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-29 22:57:05,714 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-29 22:57:05,715 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-29 22:57:05,715 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-29 22:57:05,715 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-29 22:57:05,715 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-29 22:57:05,716 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-29 22:57:05,716 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-29 22:57:05,716 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00482
+2025-07-29 22:57:05,720 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 22:57:05,720 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-29 22:57:05,720 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-29 22:57:05,721 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-29 22:57:05,721 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-29 22:57:05,721 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-29 22:57:05,721 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 22:57:05,721 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-29 22:57:05,722 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-29 22:57:05,722 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-29 22:57:05,722 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-29 22:57:05,723 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-29 22:57:05,723 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-29 22:57:05,725 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 22:57:05,726 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-29 22:57:05,726 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-29 22:57:05,726 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-29 22:57:05,726 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-29 22:57:05,726 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-29 22:57:05,727 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 22:57:05,727 - INFO -    Total CVEs Processed : 4
+2025-07-29 22:57:05,727 - INFO -    Total CISA KEV Hits : 0
+2025-07-29 22:57:05,727 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-29 22:57:05,728 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-29 22:57:05,728 - INFO -    Total EPSS Misses : 1
+2025-07-29 22:57:05,728 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-29 22:57:05,729 - INFO - Enrichments Applied
+2025-07-29 22:57:05,729 - INFO - Displaying results to console...
+2025-07-29 22:57:05,732 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 7.1,Highest Risk Asset: webserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-29 22:57:34,664 - INFO - Starting up VulnParse-Pin...
+2025-07-29 22:57:34,665 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-29 22:57:34,665 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-29 22:57:34,665 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-29 22:57:34,666 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-29 22:57:34,666 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-07-29 22:57:34,666 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-07-29 22:57:34,899 - INFO - [92m[Enrich-Exploit][0mLoaded 15401 CVE entries from exploit database.
+2025-07-29 22:57:34,900 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15401 CVEs with exploits)
+2025-07-29 22:57:34,900 - INFO - Parsed 2 assets, 2 findings
+2025-07-29 22:57:34,900 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:57:35,093 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 22:57:35,093 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:57:37,755 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 22:57:37,756 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-29 22:57:37,756 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-07-29 22:57:37,756 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-29 22:57:37,756 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-29 22:57:37,757 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-29 22:57:37,757 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-29 22:57:37,757 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-29 22:57:37,757 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-29 22:57:37,758 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-29 22:57:37,758 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-29 22:57:37,758 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-29 22:57:37,758 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00482
+2025-07-29 22:57:37,762 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 22:57:37,763 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-29 22:57:37,763 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-29 22:57:37,763 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-29 22:57:37,763 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-29 22:57:37,763 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-29 22:57:37,764 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 22:57:37,764 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-29 22:57:37,764 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-29 22:57:37,765 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-29 22:57:37,765 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-29 22:57:37,765 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-29 22:57:37,765 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-29 22:57:37,768 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 22:57:37,768 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-29 22:57:37,768 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-29 22:57:37,769 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-29 22:57:37,769 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-29 22:57:37,769 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-29 22:57:37,769 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 22:57:37,770 - INFO -    Total CVEs Processed : 4
+2025-07-29 22:57:37,770 - INFO -    Total CISA KEV Hits : 0
+2025-07-29 22:57:37,770 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-29 22:57:37,770 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-29 22:57:37,770 - INFO -    Total EPSS Misses : 1
+2025-07-29 22:57:37,771 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-29 22:57:37,771 - INFO - Enrichments Applied
+2025-07-29 22:57:37,772 - INFO - Displaying results to console...
+2025-07-29 22:57:37,775 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 7.1,Highest Risk Asset: webserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-07-29 23:01:28,223 - INFO - Starting up VulnParse-Pin...
+2025-07-29 23:01:28,223 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-07-29 23:01:28,224 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-07-29 23:01:28,224 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-07-29 23:01:28,224 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-07-29 23:01:28,225 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-07-29 23:01:28,225 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-07-29 23:01:28,460 - INFO - [92m[Enrich-Exploit][0mLoaded 15401 CVE entries from exploit database.
+2025-07-29 23:01:28,460 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15401 CVEs with exploits)
+2025-07-29 23:01:28,461 - INFO - Parsed 2 assets, 2 findings
+2025-07-29 23:01:28,461 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 23:01:28,623 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-07-29 23:01:28,624 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 23:01:31,354 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-07-29 23:01:31,354 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-07-29 23:01:31,354 - WARNING - No exploits found for CVE MySQL Remote Exploit Detection (CVE-2023-1111 | CVE-2023-2222)
+2025-07-29 23:01:31,354 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+2025-07-29 23:01:31,354 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-07-29 23:01:31,355 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-07-29 23:01:31,355 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-1234
+2025-07-29 23:01:31,355 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-1234
+2025-07-29 23:01:31,356 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.038
+2025-07-29 23:01:31,356 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-07-29 23:01:31,356 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2024-5678
+2025-07-29 23:01:31,356 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2024-5678
+2025-07-29 23:01:31,357 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00482
+2025-07-29 23:01:31,357 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2024-1234 => EPSS=0.038 | KEV=False | Exploit=True
+2025-07-29 23:01:31,357 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 23:01:31,357 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-07-29 23:01:31,358 - INFO - CVE-2024-1234 Base score from vector: 5.4
+2025-07-29 23:01:31,358 - WARNING - Score mismatch for CVE-2024-1234: vector 5.4 vs field: 0.0
+2025-07-29 23:01:31,358 - INFO - Overwriting cvss score with value from CVSS Vector: 5.4
+2025-07-29 23:01:31,358 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Raw Risk Score: [91m7.4[0m
+2025-07-29 23:01:31,358 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m7.4[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 23:01:31,358 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-07-29 23:01:31,359 - INFO - [CVSSVector] Using PRIMARY vector for CVE-2023-1111
+2025-07-29 23:01:31,359 - INFO - [95m[NVDData][0m CVSS Vector Found in NVD Data for CVE-2023-1111
+2025-07-29 23:01:31,359 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-07-29 23:01:31,359 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-07-29 23:01:31,360 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-07-29 23:01:31,360 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-1111 => EPSS=0.00087 | KEV=False | Exploit=True
+2025-07-29 23:01:31,360 - INFO - [95m[CVSSVector][0m Assigned CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N
+2025-07-29 23:01:31,361 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-07-29 23:01:31,361 - INFO - CVE-2023-1111 Base score from vector: 4.8
+2025-07-29 23:01:31,361 - WARNING - Score mismatch for CVE-2023-1111: vector 4.8 vs field: 0.0
+2025-07-29 23:01:31,361 - INFO - Overwriting cvss score with value from CVSS Vector: 4.8
+2025-07-29 23:01:31,362 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m6.8[0m
+2025-07-29 23:01:31,362 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m6.8[0m | Triage Priority: [91mMedium[0m | 
+2025-07-29 23:01:31,363 - INFO -    Total CVEs Processed : 4
+2025-07-29 23:01:31,363 - INFO -    Total CISA KEV Hits : 0
+2025-07-29 23:01:31,363 - INFO -    Total CVSS Vectors Assigned : 2
+2025-07-29 23:01:31,363 - INFO -    Total CVSS Vectors Validated : 2
+2025-07-29 23:01:31,364 - INFO -    Total EPSS Misses : 1
+2025-07-29 23:01:31,364 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-07-29 23:01:31,365 - INFO - Enrichments Applied
+2025-07-29 23:01:31,365 - INFO - Displaying results to console...
+2025-07-29 23:01:31,368 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 7.1,Highest Risk Asset: webserver-01.example.com,Critical+: 0, High: 0, Medium: 2, Low: 0

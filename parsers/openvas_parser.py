@@ -72,11 +72,12 @@ class OpenVASParser(BaseParser):
                 )
                 
                 
-            tags = self.get_key_cins(item.get("nvt", {}), ["tags"], default="")
+            tags = self.get_key_cins(item.get("nvt", {}), ["tags"], default="Not Available")
 
-
+            
             vuln_id = self.get_vuln_id(item)
-            title = coerce_str(self.get_key_cins(item["nvt"], ["name", "title"], default="N/A"))
+            
+            title = coerce_str(self.get_key_cins(item.get("nvt", {}), ["name", "title"], default="N/A"))
             description = coerce_str(self.get_key_cins(item, ["description"], default="N/A"))
             if description in ["null", ""] or None:
                 description = "No description available"
@@ -84,16 +85,19 @@ class OpenVASParser(BaseParser):
             cves_raw = self.convert_cves_str_list(self.get_key_cins(item.get("nvt", {}), ["cve", "cves"], default=[]))
             cves_raw = list(set(cves_raw))
             
+            cvss_score = None # Initialize cvss_score
+            
             if tags:
                 cvss_score = self.parse_cvss_score(tags)
+            
             if not cvss_score:
-                coerce_float(self.get_key_cins(item["nvt"], ["cvss_base", "cvss", "cvss_score", "cvss_base_score"], default=0.0))
+                coerce_float(self.get_key_cins(item.get("nvt", {}), ["cvss_base", "cvss", "cvss_score", "cvss_base_score"], default=0.0))
             else:
                 cvss_score = 0.0
-            cvss_vector = coerce_str(self.get_key_cins(item["nvt"], ["cvss_base_vector", "cvss_vector"], default="N/A"))
+            cvss_vector = coerce_str(self.get_key_cins(item.get("nvt", {}), ["cvss_base_vector", "cvss_vector"], default="N/A"))
             if not is_valid_cvss_vector(cvss_vector):
                 cvss_vector = "Unknown"
-            references_raw = coerce_str(self.get_key_cins(item["nvt"], ["tags", "references"], default=""))
+            references_raw = coerce_str(self.get_key_cins(item.get("nvt", {}), ["tags", "references"], default=""))
             references_list = coerce_list([ref.strip() for ref in references_raw.split(";")] if references_raw else [])
             affected_port_raw = coerce_str(self.get_key_cins(item, ["port"], default="N/A"))
             affected_port = affected_port_raw
@@ -402,9 +406,9 @@ class OpenVASParser(BaseParser):
             elif isinstance(vuln_id, str) and vuln_id.strip():
                 return [c.strip() for c in vuln_id.split(",") if c.strip()][0]
         except (ValueError, IndexError, KeyError, TypeError) as e:
-            log.log.print_error(f"ValueError when retrieving vuln_id: {e}")
+            log.log.print_error(f"Error when retrieving vuln_id: {e}.")
         
-        host = item.get("host", "unknown_post")
+        host = item.get("host", "unknown_host")
         port = item.get("port", "unknown_port")
         title = nvt_key.get("name", "unknown_title")
         

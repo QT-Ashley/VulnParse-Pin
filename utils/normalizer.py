@@ -1,3 +1,4 @@
+from hmac import new
 import ipaddress
 from typing import get_type_hints, List, Union, Any, Optional
 from dataclasses import fields, is_dataclass
@@ -138,18 +139,19 @@ def coerce_date(value: str, default: Optional[str] = None) -> Optional[str]:
         return default
     
 def coerce_severity(value: str, default: Optional[str] = "Low") -> Optional[str]:
+    valid = {
+        "critical": "Critical",
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low",
+        "info": "Info",
+        "informational": "Informational",
+        "none": "None",
+        "unknown": "Unknown"
+    }
     try:
-        valid = {
-            "critical": "Critical",
-            "high": "High",
-            "medium": "Medium",
-            "low": "Low",
-            "info": "Info",
-            "informational": "Informational",
-            "none": "None",
-            "unknown": "Unknown"
-        }
-        return valid.get(str(value).strip().lower(), default)
+        normalized = str(value).strip().lower()
+        return valid.get(normalized, default)
     except Exception:
         return default
 
@@ -176,8 +178,10 @@ def coerce_float(value, default: Optional[float] = 0.0) -> Optional[float]:
     try:
         if isinstance(value, float):
             return float(value)
+        else:
+            return float(value)
     except (ValueError, TypeError):
-        return default
+        return float(default)
         
 
 # Fail Hard Helper
