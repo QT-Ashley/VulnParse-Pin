@@ -70,7 +70,7 @@ class OpenVASParser(BaseParser):
         
         
         for item in report_data["results"]:
-            hostname = coerce_str(self.get_key_cins(item, ["host", "hostname", "host-name", "host_name"], default="N/A"))
+            hostname = coerce_str(self.get_key_cins(item, ["host", "hostname", "host-name", "host_name"]), default="unknown_host")
             ip_address = coerce_str(self.get_key_cins(item, ["ip", "host-ip", "ip-address", "ip_address", "host_ip"], default="N/A"))
             asset_id_raw = hostname or ip_address or "N/A"
             asset_id = coerce_str(asset_id_raw, default="N/A")
@@ -90,12 +90,12 @@ class OpenVASParser(BaseParser):
             
             vuln_id = self.get_vuln_id(item)
             
-            title = coerce_str(self.get_key_cins(item.get("nvt", {}), ["name", "title"], default="N/A"))
-            description = coerce_str(self.get_key_cins(item, ["description"], default="N/A"))
-            if description in ["null", ""] or None:
+            title = coerce_str(self.get_key_cins(item.get("nvt", {}), ["name", "title"]) or self.get_key_cins(item, ["name", "title"]), default="N/A")
+            description = coerce_str(self.get_key_cins(item, ["description"]) or self.get_key_cins(item.get("nvt", {}), ["description"]))
+            if description in ["null", "", "N/A"] or None:
                 description = "No description available"
-            severity = coerce_severity(self.get_key_cins(item, ["threat", "severity"], default="N/A"))
-            cves_raw = self.convert_cves_str_list(self.get_key_cins(item.get("nvt", {}), ["cve", "cves"], default=[]))
+            severity = coerce_severity(self.get_key_cins(item, ["threat", "severity"], default="unknown"))
+            cves_raw = self.convert_cves_str_list(self.get_key_cins(item.get("nvt", {}), ["cve", "cves"]) or self.get_key_cins(item, ["cve", "cves"], default=[]))
             cves_raw = list(set(cves_raw))
             
             cvss_score = None # Initialize cvss_score
@@ -112,18 +112,18 @@ class OpenVASParser(BaseParser):
                 cvss_vector = "Unknown"
             references_raw = coerce_str(self.get_key_cins(item.get("nvt", {}), ["tags", "references"], default=""))
             references_list = coerce_list([ref.strip() for ref in references_raw.split(";")] if references_raw else [])
-            affected_port_raw = coerce_str(self.get_key_cins(item, ["port"], default="N/A"))
+            affected_port_raw = coerce_str(self.get_key_cins(item, ["port"], default="unknown_port"))
             affected_port = affected_port_raw
-            if affected_port != "N/A":
+            if affected_port != "unknown_port":
                 affected_port = coerce_int(affected_port_raw.split("/")[0])
             solution = coerce_str(self.get_key_cins(item, ["solution"], default="N/A"))
-            protocol = coerce_str(self.get_key_cins(item, ["port"], default="N/A"))
-            if protocol != "N/A" and protocol is not isinstance(protocol, int):
+            protocol = coerce_str(self.get_key_cins(item, ["port"], default="unknown"))
+            if protocol != "unknown" and protocol is not isinstance(protocol, int):
                 parts = protocol.split("/")
                 if len(parts) > 1:
                     protocol = parts[1]
                 else:
-                    protocol = "N/A"
+                    protocol = "unknown"
             
             exploit_indicators = ["exploit", "metasploit", "public exploit", "poc available", "poc"]
             search_text = f"{solution or ''} {description or ''}".lower()
@@ -448,7 +448,6 @@ class OpenVASParser(BaseParser):
         return metadata[0], report
     
     def normalize_gvm_cli_format(self, data):
-        print("[DEBUG] GVM_CLI IS RUNNING")
         report = data["report"]
         scan_start = data["report"].get("scan_start", "N/A")
         scan_end = data["report"].get("scan_end", "N/A")
@@ -500,7 +499,6 @@ class OpenVASParser(BaseParser):
     def normalize_omp_api_format(self, data):
         scan_start = data.get("scan", {}).get("info", {}).get("start_time", "N/A")
         scan_end = data.get("scan", {}).get("info", {}).get("end_time", "N/A")
-        metadata = (scan_start, scan_end)
         
         results = []
         
@@ -511,7 +509,7 @@ class OpenVASParser(BaseParser):
         
         elif not isinstance(hosts, list):
             log.log.logger.warning("[OMPNormalizer] Malformed results structure. Skipping...")
-            return metadata[0], {
+            return {
                 "report": {
                     "scan_start": scan_start,
                     "scan_end": scan_end,
@@ -629,7 +627,7 @@ class OpenVASParser(BaseParser):
         nvt_key = item.get("nvt", {})
         
         try:
-            vuln_id = nvt_key.get("cve") or nvt_key.get("oid")
+            vuln_id = nvt_key.get("cve") or nvt_key.get("oid") or item.get("cve") or item.get("cves")
             if isinstance(vuln_id, list):
                 return vuln_id[0]
             elif isinstance(vuln_id, str) and vuln_id.strip():
@@ -647,7 +645,7 @@ class OpenVASParser(BaseParser):
         
         hashed_fb = hashlib.sha256(data_to_hash.encode('utf-8')).hexdigest()[:12]
         
-        return str(hashed_fb)
+        return f"unknown_(hashed_fb)"
     
     def detect_nested_key(self, data: Any, target_key: str) -> Any:
         '''

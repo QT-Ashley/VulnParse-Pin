@@ -1,4 +1,3 @@
-from logging import Logger
 import pytest
 from parsers.nessus_parser import NessusParser
 from classes.dataclass import ScanResult, Asset
