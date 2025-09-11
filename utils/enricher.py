@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+import hashlib
 import random
 import time
 from typing import Dict, List
@@ -39,7 +41,79 @@ def is_cisa_kev(cves: List[str], kev_data: Dict[str, bool]) -> bool:
 #    }
 #    '''
 
-def load_epss_from_csv(path_url: str) -> Dict[str, float]:
+def print_cache_metadata(cache_path: str):
+    meta_path = cache_path + ".meta"
+    if os.path.exists(meta_path):
+        with open(meta_path, 'r') as f:
+            meta = json.load(f)
+            log.log.print_info(f"{os.path.basename(cache_path)} last updated: {meta['last_updated']}")
+
+def save_metadata_file(cache_path: str, source_url: str):
+    meta_path = cache_path + ".meta"
+    metadata = {
+        "last_updated": datetime.now(timezone.utc).isoformat().replace("00:00", "Z"),
+        "source_url": source_url,
+        "fetched_by": "vulnparse-pin v1.0"
+    }
+    with open(meta_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    log.log.print_info(f"Metadata written to {meta_path}")
+
+def save_with_checksum(data_byes: bytes, cache_path: str):
+    # Save the data
+    with open(cache_path, 'wb') as f:
+        f.write(data_byes)
+        
+    # Save checksum
+    sha256 = hashlib.sha256(data_byes).hexdigest()
+    with open(cache_path + ".sha256", 'w') as f:
+        f.write(sha256)
+
+def validate_checksum(cache_path: str) -> bool:
+    '''
+    Validates the checksum of a cached file (either .json or .csv.gz) using corresponding .sha256 file.
+    
+    Args:
+        cache_path (str): Base path without extension.
+        
+    Returns:
+        bool: True if checksum is valid, False otherwise.
+    '''
+    
+    if not os.path.exists(cache_path):
+        log.log.print_error(f"File not found: {cache_path}")
+        return False
+
+    checksum_path = cache_path + ".sha256"
+    
+    if not os.path.exists(checksum_path):
+        log.log.print_warning(f"No checksum found for cache file: {cache_path}")
+        return False
+    
+    try:
+        with open(cache_path, 'rb') as f:
+            file_data = f.read()
+            computed_hash = hashlib.sha256(file_data).hexdigest()
+            
+        with open(checksum_path, 'r') as f:
+            expected_hash = f.read().strip()
+            
+        if computed_hash == expected_hash:
+            log.log.print_success(f"Checksum valid for {cache_path}!")
+            return True
+        else:
+            log.log.print_error(f"Checksum mismatch for {cache_path}")
+            log.log.print_error(f"Expected: {expected_hash}")
+            log.log.print_error(f"Computed: {computed_hash}")
+            return False
+        
+    except Exception as e:
+        log.log.print_error(f"Error validating checksum for {cache_path}")
+        return False
+
+
+
+def load_epss_from_csv(path_url: str, cache_path: str = "./data/epss_cache.csv.gz") -> Dict[str, float]:
     '''
     Load EPSS data from a CSV file or URL into a dict {cve: epss_score}.
     CSV assumed to have columns: 'cve', 'epss_score'
@@ -73,6 +147,17 @@ def load_epss_from_csv(path_url: str) -> Dict[str, float]:
         response = requests.get(path_url, timeout=5, allow_redirects=True)
         response.raise_for_status()
         compressed_data = response.content
+        
+        # Save downloaded content to local cache
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        with open(cache_path, 'wb') as f:
+            f.write(response.content)
+        
+        # Save checksum
+        save_with_checksum(response.content, cache_path)
+        log.log.print_success(f"EPSS feed cached locally at {cache_path}")
+        save_metadata_file(cache_path, "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz")
+        
         # Open gzip file from bytes in memory
         with gzip.GzipFile(fileobj=io.BytesIO(compressed_data)) as gz:
             # Read decoded text lines from gzip
@@ -99,11 +184,14 @@ def load_epss_from_csv(path_url: str) -> Dict[str, float]:
     if epss_data is None:
         log.log.print_error(f"Error loading epss_data. EPSS_Data is empty: {epss_data}")
         
-    time.sleep(1)
+    if not validate_checksum("./data/epss_cache.csv.gz"):
+        raise ValueError(f"Corrupted or tampered cache file: {cache_path}")
+    
+    print_cache_metadata(cache_path)
     
     return epss_data
 
-def load_kev_from_json(path_url: str) -> Dict[str, bool]:
+def load_kev_from_json(path_url: str, cache_path: str = "./data/kev_cache.json.gz") -> Dict[str, bool]:
     '''
     Load CISA KEV data from a JSON file or URL into a dict {cve: True}.
     JSON assumed to have CVE's under a 'cveID' or 'CVE' key in each entry
@@ -124,10 +212,30 @@ def load_kev_from_json(path_url: str) -> Dict[str, bool]:
         
         if 'application/gzip' in content_type or path_url.endswith('.gz'):
             compressed_data = response.content
+            
+            # Save content to local cache
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            with open(cache_path, 'wb') as f:
+                f.write(response.content)
+                
+            # Save with checksum
+            save_with_checksum(response.content, cache_path)
+            log.log.print_success(f"KEV feed cached locally at {cache_path}")
+            save_metadata_file(cache_path, "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json")
+            
             with gzip.GzipFile(fileobj=io.BytesIO(compressed_data)) as gz:
                 data = json.load(gz)
                 parse_json(data)
         else:
+            # Save json data content to local cache
+            os.makedirs(os.path.dirname("./data/kev_cache.json"), exist_ok=True)
+            with open("./data/kev_cache.json", 'w', encoding='utf-8') as f:
+                json.dump(response.json(), f, indent=2)
+            # Save with checksum
+            save_with_checksum(response.content, "./data/kev_cache.json")
+            log.log.print_success(f"KEV JSON feed cached locally at {cache_path}")
+            save_metadata_file("./data/kev_cache.json", "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json")
+            
             data = response.json()
             parse_json(data)
             
@@ -143,6 +251,17 @@ def load_kev_from_json(path_url: str) -> Dict[str, bool]:
                 
     else:
         raise FileNotFoundError(f'File or URL not found: {path_url}')
+    
+    for path in ["./data/kev_cache.json", "./data/kev_cache.json.gz"]:
+        if os.path.exists(path) and validate_checksum(path):
+            break
+    else:
+        raise ValueError(f"Corrupted or tampered cache file: {path}")
+        
+    for path in ["./data/kev_cache.json", "./data/kev_cache.json.gz"]:
+        if os.path.exists(path):
+            print_cache_metadata(path)
+            break
     
     return kev_data
 
@@ -204,7 +323,7 @@ def determine_risk_band(raw_risk_score):
     
 BASE_NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
-def fetch_nvd_data(cve_id: str, base_url: str = BASE_NVD_URL, cache_dir: str = './nvd_cache'):
+def fetch_nvd_data(cve_id: str, base_url: str = BASE_NVD_URL, cache_dir: str = './nvd_cache', offline_mode: bool = False):
     '''
     Funtion to retrieve CVE data from the NIST NVD database.
     
@@ -225,11 +344,18 @@ def fetch_nvd_data(cve_id: str, base_url: str = BASE_NVD_URL, cache_dir: str = '
     if os.path.exists(cache_file):
         with open(cache_file, 'r') as f:
             return json.load(f)
-        
+     
+    
+    # Offline mode prevents outbound requests
+    if offline_mode:
+        log.log.print_warning(f"[Offline Mode] No cache available for {cve_id}, skipping NVD fallback.")
+        with open("logs/missed_nvd_fallbacks.log", 'a') as f:
+            f.write(f"{cve_id}\n")
+        return None
+       
     # Otherwise, fetch the data from NVD
     nvd_url = f"{BASE_NVD_URL}?cveID={cve_id.upper()}"
     response = requests.get(nvd_url, allow_redirects=False, timeout=5)
-    
     if response.status_code == 200:
         cve_data = response.json()
         
@@ -302,7 +428,7 @@ def update_enrichment_status(finding):
     else:
         finding.enriched = False
 
-def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, epss_data: Dict[str, float] = None) -> None:
+def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, epss_data: Dict[str, float] = None, offline_mode: bool = False) -> None:
     '''
     Enrich the findings in a ScanResult object with EPSS Score, CISA KEV status, exploit indicators, and recalculate triage priority.
     
@@ -351,7 +477,7 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
                         miss_logger.log_miss(cve, cisa_kev=False, epss_score=None)
                         
                     # Fetch nvd_data as secondary source
-                    nist_nvd_data = fetch_nvd_data(cve)
+                    nist_nvd_data = fetch_nvd_data(cve, offline_mode=offline_mode)
                     if nist_nvd_data:
                         if "vulnerabilities" in nist_nvd_data and nist_nvd_data["vulnerabilities"]:
                             vulnerability = nist_nvd_data["vulnerabilities"][0]

@@ -1,4 +1,5 @@
 import json
+import time
 from parsers.nessus_parser import NessusParser
 from dataclasses import asdict
 from utils.enricher import enrich_scan_results, load_epss_from_csv, load_kev_from_json, update_enrichment_status
@@ -128,16 +129,17 @@ def get_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("--file", "-f", help="Path to vulnerability scan file", required=True, type=valid_input_file)
-    parser.add_argument("--enrich-kev", nargs="?", const="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
-    parser.add_argument("--enrich-epss", nargs="?", const="https://epss.empiricalsecurity.com/epss_scores-current.csv.gz", help="Path/URL to EPSS CSV or CSV.gz file. If omitted, use official EPSS feed.")
+    parser.add_argument("--enrich-kev", nargs="?", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
+    parser.add_argument("--enrich-epss", nargs="?", help="Path/URL to EPSS .csv or CSV.gz file. If omitted, use official EPSS feed.")
     parser.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Default is JSON")
     parser.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
     parser.add_argument("--log-file", default="vulnparse_pin.log", help="Log File destination.")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
-    parser.add_argument("--version", "-v", action="version", version="VulnParse-Pin v0.3", help="Show program version and exit.")
+    parser.add_argument("--version", "-v", action="version", version="VulnParse-Pin v1.0", help="Show program version and exit.")
     parser.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
     parser.add_argument("--exploit-db", "-edb", type=str, default=DEFAULT_LOCAL_PATH, help="Path to offline exploit database (CSV)")
     parser.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.")
+    parser.add_argument("--mode", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
     
     args = parser.parse_args()
     
@@ -156,6 +158,40 @@ def main():
     args = get_args()
     log.log = LoggerWrapper(args.log_file, args.log_level)
     
+    # Resolve feed sources.
+    def resolve_feed_path(arg_val, offline_mode: bool, default_online: str, default_offline: str):
+        if arg_val:
+            return arg_val
+        elif offline_mode:
+            return default_offline
+        else:
+            return default_online
+    
+    kev_source = resolve_feed_path(
+        arg_val=args.enrich_kev,
+        offline_mode=args.mode == "offline",
+        default_online="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        default_offline="./data/kev_cache.json"
+    )
+    epss_source = resolve_feed_path(
+        arg_val=args.enrich_epss,
+        offline_mode=args.mode == "offline",
+        default_online="https://epss.empiricalsecurity.com/epss_scores-current.csv.gz",
+        default_offline="./data/epss_cache.csv.gz"
+    )
+    
+    
+    if args.mode == "offline":
+        log.log.print_info("[*] Offline mode enabled. Enrichment will use local cache only.\n")
+        if not os.path.exists(kev_source):
+            log.log.print_error(f"[OFFLINE] KEV cache not found: {kev_source}")
+            raise FileNotFoundError(f"Missing KEV cache.")
+        if not os.path.exists(epss_source):
+            log.log.print_error(f"[OFFLINE] EPSS cache not found: {epss_source}")
+            raise FileNotFoundError(f"Missing EPSS cache.")
+        
+        
+    
     if args.exploit_source == "offline":
         if not os.path.isfile(args.exploit_db):
             log.log.print_error(f"Exploit database file not found at: {args.exploit_db}")
@@ -171,7 +207,10 @@ def main():
     
     # Check and validate json structure.
     validator = FileInputValidator(args.file)
-    report_json = validator.validate()
+    try:
+        report_json = validator.validate()
+    except Exception:
+        sys.exit(1)
     
         
     # Available parsers
@@ -198,29 +237,30 @@ def main():
     # Load Exploit-DB if flagged.
     exploit_data = None
     if args.enrich_exploit:
+        print()
         log.log.print_info(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}{args.exploit_source.upper()}{Style.RESET_ALL} source...")
         exploit_data = load_exploit_data(args.exploit_source, args.exploit_db)
-        log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Loaded Exploit-DB data ({len(exploit_data)} CVEs with exploits)")
+        log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Loaded Exploit-DB data ({len(exploit_data)} CVEs with exploits)\n")
         
     log.log.print_success(f"Parsed {len(scan_result.assets)} assets, {sum(len(a.findings) for a in scan_result.assets)} findings")
     
     # 1 Load enrichment data sources
-    if args.enrich_kev:
-        log.log.print_info(f"Loading CISA KEV data from {Fore.LIGHTYELLOW_EX}{args.enrich_kev}{Style.RESET_ALL}")
-        kev_data = load_kev_from_json(args.enrich_kev)
-        log.log.print_success(f"Loaded CISA KEV data from {Fore.LIGHTYELLOW_EX}{args.enrich_kev}{Style.RESET_ALL}")
+    if kev_source:
+        log.log.print_info(f"Loading CISA KEV data from {Fore.LIGHTYELLOW_EX}{kev_source}{Style.RESET_ALL}")
+        kev_data = load_kev_from_json(kev_source)
+        log.log.print_success(f"Loaded CISA KEV data from {Fore.LIGHTYELLOW_EX}{kev_source}{Style.RESET_ALL}")
         
-    if args.enrich_epss:
-        log.log.print_info(f"Loading EPSS data from {Fore.LIGHTYELLOW_EX}{args.enrich_epss}{Style.RESET_ALL}")
-        epss_data = load_epss_from_csv(args.enrich_epss)
-        log.log.print_success(f"Loaded EPSS data from {Fore.LIGHTYELLOW_EX}{args.enrich_epss}{Style.RESET_ALL}")
+    if epss_source:
+        log.log.print_info(f"Loading EPSS data from {Fore.LIGHTYELLOW_EX}{epss_source}{Style.RESET_ALL}")
+        epss_data = load_epss_from_csv(epss_source)
+        log.log.print_success(f"Loaded EPSS data from {Fore.LIGHTYELLOW_EX}{epss_source}{Style.RESET_ALL}\n" + "="*25 + "Exploit Enrichment Results" + "="*25)
         
     # 2 Apply exploit enrichments
     if args.enrich_exploit and exploit_data:
         for asset in scan_result.assets:
             enriched_findings = enrich_exploit_availability(asset.findings, exploit_data)
             asset.findings = enriched_findings
-        log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Exploit enrichment applied to findings.")
+        log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Exploit enrichment applied to findings.\n" + "="*25 + "Enrichment Processing" + "="*25)
     
     # 3 Apply heuristic tagging *before* enrichment and risk scoring
     for asset in scan_result.assets:
@@ -229,7 +269,7 @@ def main():
     
     # 4 Apply enrichments
     if kev_data or epss_data:
-        enrich_scan_results(scan_result, kev_data, epss_data)
+        enrich_scan_results(scan_result, kev_data, epss_data, offline_mode=args.mode == "offline")
         log.log.print_success(f"Enrichments Applied")
     
     # 5 Do Post-Processing enrichment status update.
@@ -245,12 +285,13 @@ def main():
         log.log.print_info("Displaying results to console...")
         print(json.dumps(asdict(scan_result), indent=4))
         
-    if args.enrich_kev or args.enrich_epss:
+    if kev_source or epss_source:
         print_summary_banner(scan_result, args.output if args.output else None)
 
                 
             
 if __name__ == "__main__":
+    start = time.time()
     main()
-
+    print(f"Total runtime: {(time.time() - start):.2f} seconds")
  
