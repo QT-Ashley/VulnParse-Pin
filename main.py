@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import time
 from parsers.nessus_parser import NessusParser
@@ -13,6 +14,7 @@ import os
 from parsers.__init__ import *
 from utils.exploit_enrichment_service import *
 from utils.validations import *
+from utils.nvdcacher import NVDCache
 
 def print_summary_banner(scan_result, output_file=None):
     '''
@@ -140,6 +142,7 @@ def get_args():
     parser.add_argument("--exploit-db", "-edb", type=str, default=DEFAULT_LOCAL_PATH, help="Path to offline exploit database (CSV)")
     parser.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.")
     parser.add_argument("--mode", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
+    parser.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
     
     args = parser.parse_args()
     
@@ -157,6 +160,7 @@ def main():
     
     args = get_args()
     log.log = LoggerWrapper(args.log_file, args.log_level)
+    
     
     # Resolve feed sources.
     def resolve_feed_path(arg_val, offline_mode: bool, default_online: str, default_offline: str):
@@ -244,6 +248,15 @@ def main():
         
     log.log.print_success(f"Parsed {len(scan_result.assets)} assets, {sum(len(a.findings) for a in scan_result.assets)} findings")
     
+    if not args.no_nvd:
+        log.log.print_info(f"{Fore.LIGHTYELLOW_EX}[NVD Cache]{Style.RESET_ALL} Initializing NVD Cache...")
+        nvd_cache = NVDCache(cache_dir="./nvd_cache", refresh_days=1, offline=(args.mode == "offline"))
+        nvd_cache.refresh(years=list(range(2017, datetime.now().year + 1))) # skips download if offline
+        log.log.print_success("NVD Cache ready.")
+    else:
+        nvd_cache = None
+        log.log.print_warning("Skipping NVD enrichment per user flag.")
+    
     # 1 Load enrichment data sources
     if kev_source:
         log.log.print_info(f"Loading CISA KEV data from {Fore.LIGHTYELLOW_EX}{kev_source}{Style.RESET_ALL}")
@@ -254,6 +267,7 @@ def main():
         log.log.print_info(f"Loading EPSS data from {Fore.LIGHTYELLOW_EX}{epss_source}{Style.RESET_ALL}")
         epss_data = load_epss_from_csv(epss_source)
         log.log.print_success(f"Loaded EPSS data from {Fore.LIGHTYELLOW_EX}{epss_source}{Style.RESET_ALL}\n" + "="*25 + "Exploit Enrichment Results" + "="*25)
+        
         
     # 2 Apply exploit enrichments
     if args.enrich_exploit and exploit_data:
@@ -269,7 +283,7 @@ def main():
     
     # 4 Apply enrichments
     if kev_data or epss_data:
-        enrich_scan_results(scan_result, kev_data, epss_data, offline_mode=args.mode == "offline")
+        enrich_scan_results(scan_result, kev_data, epss_data, offline_mode=args.mode == "offline", nvd_cache=nvd_cache)
         log.log.print_success(f"Enrichments Applied")
     
     # 5 Do Post-Processing enrichment status update.

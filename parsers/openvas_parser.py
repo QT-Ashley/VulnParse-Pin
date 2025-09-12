@@ -1,3 +1,4 @@
+from importlib.metadata import entry_points
 import re
 from datetime import datetime, timezone
 import hashlib
@@ -331,6 +332,54 @@ class OpenVASParser(BaseParser):
                     "schema_version": "native_flat_list"
                 }
             }
+            
+        elif (isinstance(data, dict)
+              and "results" in data
+              and isinstance(data["results"], list)
+              and all (
+                  isinstance(entry, dict)
+                  and any(k in entry for k in ("name", "description", "cve", "cvss_base_vector")) for entry in data["results"][:5]
+              )
+        ):
+            log.log.print_info("Detected simplified OpenVAS flat JSON (name/desc/cve/cvss format).")
+            
+            results = []
+            for entry in data["results"]:
+                cves = self.get_key_cins(entry, ["cves", "cve"], default=[])
+                if not cves:
+                    nested_cve = self.detect_nested_key(entry, "cve")
+                    if nested_cve:
+                        try:
+                            cves = nested_cve.get("cve", [])
+                        except Exception as e:
+                            log.log.logger.exception(f"Exception while extraction nested CVE: {e}")
+                cves = self.convert_cves_str_list(cves) if cves else []
+                
+                result_item = {
+                    "host": self.get_key_cins(entry, ["host", "hostname", "ip"], default="N/A"),
+                    "ip": self.get_key_cins(entry, ["ip", "ip_address"], default="N/A"),
+                    "port": self.get_key_cins(entry, ["port"], default="N/A"),
+                    "description": self.get_key_cins(entry, ["description"], default="N/A"),
+                    "severity": entry.get("severity", "N/A"),
+                    "nvt": {
+                        "cve": cves,
+                        "cvss_base_vector": self.get_key_cins(entry, ["cvss_base_vector"], default=""),
+                        "name": self.get_key_cins(entry, ["name"], default="N/A"),
+                        "cvss_base": self.get_key_cins(entry, ["cvss_base", "cvss_base_score"], default="N/A"),
+                        "tags": self.get_key_cins(entry, ["tags", "references"], default="N/A")
+                    }
+                }
+                results.append(result_item)
+                
+            return {
+                "report": {
+                "scan_start": data.get("scan_start", "N/A"),
+                "scan_end": data.get("scan_end", "N/A"),
+                "results": results,
+                "schema_version": "simplified_flat"
+                }
+            }
+            
                 
         else:
             log.log.print_warning("Unknown dict formation - returning as-is.")
@@ -389,29 +438,46 @@ class OpenVASParser(BaseParser):
             isinstance(data, dict)
             and "scan_id" in data
             and "vulns" in data
-            and isinstance(data["vulns", list])
+            and isinstance(data["vulns"], list)
             and all(
                 isinstance(v, dict)
-                and "plugin_name" in v
+                and (
+                    "plugin_name" in v
+                    or "name" in v
+                    )
                 and not isinstance(v.get("nvt"), dict)
                 for v in data["vulns"][:5]
             )
         )
     
     def is_flat_results_openvas(self, data) -> bool:
-        return (
-            isinstance(data, dict)
-            and "results" in data
-            and isinstance(data["results"], list)
-            and all(
-                isinstance(entry, dict)
-                and "host" in entry
-                and "port" in entry
-                and "plugin_name" in entry
-                and not isinstance(entry.get("nvt"), dict)
-                for entry in data["results"][:5]
-            )
+        if not (isinstance(data, dict) and "results" in data and isinstance(data["results"], list)):
+            return False
+        
+        sample_entries = data["results"][:5]
+        if not sample_entries:
+            return False
+        
+        # Case 1: Traditional flat structure with host/port/plugin_name
+        flat_with_host = all(
+            isinstance(entry, dict)
+            and "host" in entry
+            and "port" in entry
+            and "plugin_name" in entry
+            for entry in sample_entries
         )
+        if flat_with_host:
+            return True
+        
+        # Case 2: simplified flat structure (has at least name/description or cve/cvss)
+        flat_simplified = all(
+            isinstance(entry, dict)
+            and any(k in entry for k in ("name", "description", "cve", "cvss_base_vector")) for entry in sample_entries
+        )
+        if flat_simplified:
+            return True
+        
+        return False
     
     def is_gvm_cli_format(self, data) -> bool:
         return "report" in data and isinstance(data["report"].get("results", {}).get("result", []), list)

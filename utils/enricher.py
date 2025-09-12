@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import hashlib
 import random
 import time
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 import gzip
 import io
 import csv
@@ -428,7 +428,7 @@ def update_enrichment_status(finding):
     else:
         finding.enriched = False
 
-def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, epss_data: Dict[str, float] = None, offline_mode: bool = False) -> None:
+def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, epss_data: Dict[str, float] = None, offline_mode: bool = False, nvd_cache: Optional[Any] = None) -> None:
     '''
     Enrich the findings in a ScanResult object with EPSS Score, CISA KEV status, exploit indicators, and recalculate triage priority.
     
@@ -436,6 +436,8 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
         results (ScanResult Obj): The parsed vulnerability scan results.
         kev_data (Dict[str, bool], Optional): Mapping of CVE IDs to CISA KEV status.
         epss_data (Dict[str, float], Optional): Mapping of CVE IDs to EPSS Scores.
+        offline_mode (Bool): If True, will ignore online fetches for enrichment data pulls.
+        nvd_cache (Optional[Any]): Optional parameter, if supplied, will utilize NVD feed cache module for CVE data.
     '''
     miss_logger = EnrichmentMissLogger()
     
@@ -477,47 +479,16 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
                         miss_logger.log_miss(cve, cisa_kev=False, epss_score=None)
                         
                     # Fetch nvd_data as secondary source
-                    nist_nvd_data = fetch_nvd_data(cve, offline_mode=offline_mode)
-                    if nist_nvd_data:
-                        if "vulnerabilities" in nist_nvd_data and nist_nvd_data["vulnerabilities"]:
-                            vulnerability = nist_nvd_data["vulnerabilities"][0]
-                            
-                            if "metrics" in vulnerability["cve"] and "cvssMetricV31" in vulnerability["cve"]["metrics"]:
-                                sec_cvss_metrics = vulnerability["cve"]["metrics"]
-                                
-                                sec_cvss_vector = "N/A"
-                                primary_vector = None
-                                secondary_vector = None
-                                
-                                
-                                for metric in sec_cvss_metrics["cvssMetricV31"]:
-                                    metric_type = metric.get("type")
-                                    vector = metric.get("cvssData", {}).get("vectorString", "").strip()
-                                    
-                                    if metric_type == "Primary" and is_valid_cvss_vector(vector):
-                                        primary_vector = vector
-                                        
-                                    elif metric_type == "Secondary" and is_valid_cvss_vector(vector):
-                                        secondary_vector = vector
-                                        
-                                if primary_vector:
-                                    sec_cvss_vector = primary_vector
-                                    log.log.print_info(f"[CVSSVector] Using PRIMARY vector for {cve}")
-                                    
-                                elif secondary_vector:
-                                    sec_cvss_vector = secondary_vector
-                                    log.log.print_info(f"[CVSSVector] Using SECONDARY vector for {cve}")
-                                    
-                                else:
-                                    sec_cvss_vector = None
-                                    log.log.print_warning(f"[CVSSVector] No usable vector found for {cve}")
-                                    
-                                if sec_cvss_vector:
-                                    sec_cvss_vectors.append(sec_cvss_vector)
-                                    log.log.print_success(f"{Fore.LIGHTMAGENTA_EX}[NVDData]{Style.RESET_ALL} CVSS Vector Found in NVD Data for {cve}")
-                                
-                    else:
-                        log.log.print_error(f"Could not retrieve cvss_vector from nvd source for {cve}")
+                    if nvd_cache:
+                        nvd_record = nvd_cache.get(cve)
+                        
+                        if nvd_record.get("vector"):
+                            sec_cvss_vector = nvd_record["vector"]
+                            sec_cvss_vectors.append(sec_cvss_vector)
+                            log.log.print_success(f"{Fore.LIGHTMAGENTA_EX}[NVDData]{Style.RESET_ALL} CVSS Vector Found in NVD Cache for {cve}")
+                            log.log.print_info(f"[CVSSVector] Using vector {sec_cvss_vector} for {cve}")
+                        else:
+                            log.log.print_warning(f"[CVSSVector] No usable CVSS vector found for {cve} in NVD Cache")
                     
                     
                     # EPSS Score Enrichment
