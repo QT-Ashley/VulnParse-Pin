@@ -37,6 +37,7 @@ class Asset:
     ip_address: str
     criticality: Optional[str] = None
     avg_risk_score: Optional[float] = None
+    os: Optional[str] = None
     findings: List[Finding] = field(default_factory=list)
     shodan_data: Optional[dict] = None
     

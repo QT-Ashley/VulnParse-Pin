@@ -86,4 +86,4 @@ class FileInputValidator:
             log.log.print_error("Top-level JSON structure is not an object.")
             sys.exit(1)
             
-        return self.report_json
+        return self.file_path

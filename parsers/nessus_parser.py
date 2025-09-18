@@ -1,10 +1,8 @@
-
+import json
 from datetime import timezone
-from operator import itemgetter
 from typing import Any, Dict, List, Optional
 import ipaddress
 from classes.dataclass import ScanMetaData, ScanResult, Asset, Finding
-from json_parser import get_key_case_ins
 from parsers.base_parser import BaseParser
 from utils.normalizer import *
 from collections import Counter, defaultdict
@@ -12,7 +10,20 @@ import utils.logger_instance as log
 
 
 class NessusParser(BaseParser):
-        
+    
+    @classmethod
+    def detect_file(cls, filepath):
+        """Lightweight file-level detection for Nessus JSON."""
+        if filepath.lower().endswith(".json"):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    head = f.read(900)
+                    return '"plugin_id"' in head or '"plugin_name"' in head
+            except Exception:
+                return False
+        else:
+            return False
+    
     def detect(self, data: dict) -> bool:
         # Logic that detects if the JSON data looks like a Nessus report.
         # Example: check for a key or structure unique for Nessus
@@ -50,9 +61,13 @@ class NessusParser(BaseParser):
         
         return False
         
-    
+    def parse(self, nessus_json: dict = None) -> ScanResult:
+        if nessus_json is None:
+            with open(self.filepath, "r", encoding="utf-8") as f:
+                nessus_json = json.load(f)
+            return self._parse_json(nessus_json)
 
-    def parse(self, nessus_json: Dict[str, Any]) -> ScanResult:
+    def _parse_json(self, nessus_json: Dict[str, Any]) -> ScanResult:
         """
         Parse a Nessus JSON vulnerability scan report into structured Python objects.
 
@@ -66,6 +81,7 @@ class NessusParser(BaseParser):
         Returns:
             ScanResult: An object containing structured scan metadata, assets, and vulnerability findings.
         """
+        
         nessus_json = self.detect_and_transform_flat_json(nessus_json)
         if "scan_metadata" in nessus_json and "scan_date" in nessus_json["scan_metadata"]:
             scan_date = nessus_json["scan_metadata"].get("scan_date")

@@ -758,3 +758,1705 @@
 2025-09-02 16:55:40,870 - INFO - Enrichments Applied
 2025-09-02 16:55:40,870 - INFO - Displaying results to console...
 2025-09-02 16:55:40,873 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 5.7,Highest Risk Asset: 10.0.0.2,Critical+: 0, High: 0, Medium: 2, Low: 0
+2025-09-14 21:25:52,513 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-14 21:25:52,553 - INFO - Starting up VulnParse-Pin...
+2025-09-14 21:25:52,553 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-14 21:25:52,563 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-14 21:25:52,564 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-09-14 21:25:52,564 - INFO - Detected parser for JSON structure: [95mNessusParser[0m
+2025-09-14 21:25:52,564 - INFO - Detected 'scan' top-level key with 'hosts'. Extracting hosts list.
+2025-09-14 21:25:52,565 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-14 21:25:52,565 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-14 21:25:52,595 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-14 21:25:52,595 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-14 21:25:52,596 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-14 21:25:52,604 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-14 21:25:52,837 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-14 21:25:52,838 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-14 21:25:52,838 - INFO - Parsed 6 assets, 9 findings
+2025-09-14 21:25:52,845 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-14 21:26:00,251 - INFO - NVD Cache ready.
+2025-09-14 21:26:00,251 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-14 21:26:00,336 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-14 21:26:00,342 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-14 21:26:00,343 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-14 21:26:00,343 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-14 21:26:01,851 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-14 21:26:01,857 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-14 21:26:01,857 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-14 21:26:01,858 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for Nessus Scan Information, skipping exploit check.
+2025-09-14 21:26:01,858 - WARNING - No exploits found for WordPress Directory Traversal (CVE-2017-1001000)
+2025-09-14 21:26:01,858 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Microsoft SQL Server RCE (CVE-2020-0618)
+2025-09-14 21:26:01,858 - WARNING - No exploits found for Apache Httpd mod_ssl Heartbleed (CVE-2014-0160)
+2025-09-14 21:26:01,858 - WARNING - No exploits found for PHP CGI Arg Injection (CVE-2012-1823)
+2025-09-14 21:26:01,858 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Cisco IOS Path Traversal (CVE-2018-0171)
+2025-09-14 21:26:01,858 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for MS Windows SMBv1 Remote Code Execution (CVE-2017-0144)
+2025-09-14 21:26:01,858 - WARNING - No exploits found for Adobe Flash Player Use-After-Free (CVE-2020-9715)
+2025-09-14 21:26:01,858 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for OpenSSH Username Enumeration (CVE-2018-15473)
+2025-09-14 21:26:01,859 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-14 21:26:01,859 - WARNING - [Enrichment] No authoritative CVE selected for 19506
+2025-09-14 21:26:01,859 - ERROR - Invalid CVSS vector format for 19506: None
+2025-09-14 21:26:01,860 - INFO - [91m[RiskCalc][0m 19506 Raw Risk Score: [91m0.0[0m
+2025-09-14 21:26:01,860 - INFO - [91m[RiskCalc][0m 19506 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-14 21:26:01,860 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2017-1001000.
+2025-09-14 21:26:01,860 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-1001000 in NVD Cache
+2025-09-14 21:26:01,860 - INFO - [95m[Enrichment][0m CVE-2017-1001000 EPSS Score: 0.79728
+2025-09-14 21:26:01,861 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-1001000 => EPSS=0.79728 | KEV=False | Exploit=False
+2025-09-14 21:26:01,861 - ERROR - Invalid CVSS vector format for 10018: None
+2025-09-14 21:26:01,861 - INFO - [91m[RiskCalc][0m 10018 Raw Risk Score: [91m8.5[0m
+2025-09-14 21:26:01,861 - INFO - [91m[RiskCalc][0m 10018 Final Risk Score: [91m8.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-14 21:26:01,861 - INFO - [95m[Enrichment][0m CVE-2020-0618 found in CISA KEV
+2025-09-14 21:26:01,862 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-0618 in NVD Cache
+2025-09-14 21:26:01,862 - INFO - [95m[Enrichment][0m CVE-2020-0618 EPSS Score: 0.94252
+2025-09-14 21:26:01,862 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-0618 => EPSS=0.94252 | KEV=True | Exploit=True
+2025-09-14 21:26:01,862 - ERROR - Invalid CVSS vector format for 46930: None
+2025-09-14 21:26:01,862 - WARNING - [91m[RiskCalc][0m Risk Score for 46930 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-14 21:26:01,863 - INFO - [91m[RiskCalc][0m 46930 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:26:01,863 - INFO - [95m[Enrichment][0m CVE-2014-0160 found in CISA KEV
+2025-09-14 21:26:01,863 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2014-0160 in NVD Cache
+2025-09-14 21:26:01,863 - INFO - [95m[Enrichment][0m CVE-2014-0160 EPSS Score: 0.94436
+2025-09-14 21:26:01,863 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2014-0160 => EPSS=0.94436 | KEV=True | Exploit=True
+2025-09-14 21:26:01,864 - ERROR - Invalid CVSS vector format for 10802: None
+2025-09-14 21:26:01,864 - WARNING - [91m[RiskCalc][0m Risk Score for 10802 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-14 21:26:01,864 - INFO - [91m[RiskCalc][0m 10802 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:26:01,864 - INFO - [95m[Enrichment][0m CVE-2012-1823 found in CISA KEV
+2025-09-14 21:26:01,864 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2012-1823 in NVD Cache
+2025-09-14 21:26:01,864 - INFO - [95m[Enrichment][0m CVE-2012-1823 EPSS Score: 0.94293
+2025-09-14 21:26:01,865 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2012-1823 => EPSS=0.94293 | KEV=True | Exploit=True
+2025-09-14 21:26:01,865 - ERROR - Invalid CVSS vector format for 16455: None
+2025-09-14 21:26:01,865 - WARNING - [91m[RiskCalc][0m Risk Score for 16455 capped at 10.0 (Raw Score: [91m11.35[0m)
+2025-09-14 21:26:01,865 - INFO - [91m[RiskCalc][0m 16455 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:26:01,865 - INFO - [95m[Enrichment][0m CVE-2018-0171 found in CISA KEV
+2025-09-14 21:26:01,866 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-0171 in NVD Cache
+2025-09-14 21:26:01,866 - INFO - [95m[Enrichment][0m CVE-2018-0171 EPSS Score: 0.93213
+2025-09-14 21:26:01,866 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-0171 => EPSS=0.93213 | KEV=True | Exploit=True
+2025-09-14 21:26:01,866 - ERROR - Invalid CVSS vector format for 38855: None
+2025-09-14 21:26:01,866 - WARNING - [91m[RiskCalc][0m Risk Score for 38855 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-14 21:26:01,866 - INFO - [91m[RiskCalc][0m 38855 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:26:01,867 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-14 21:26:01,867 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-14 21:26:01,867 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.94323
+2025-09-14 21:26:01,867 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.94323 | KEV=True | Exploit=True
+2025-09-14 21:26:01,867 - ERROR - Invalid CVSS vector format for 11219: None
+2025-09-14 21:26:01,867 - WARNING - [91m[RiskCalc][0m Risk Score for 11219 capped at 10.0 (Raw Score: [91m13.35[0m)
+2025-09-14 21:26:01,868 - INFO - [91m[RiskCalc][0m 11219 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:26:01,868 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2020-9715.
+2025-09-14 21:26:01,868 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-9715 in NVD Cache
+2025-09-14 21:26:01,868 - INFO - [95m[Enrichment][0m CVE-2020-9715 EPSS Score: 0.56205
+2025-09-14 21:26:01,868 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-9715 => EPSS=0.56205 | KEV=False | Exploit=False
+2025-09-14 21:26:01,869 - ERROR - Invalid CVSS vector format for 10572: None
+2025-09-14 21:26:01,869 - INFO - [91m[RiskCalc][0m 10572 Raw Risk Score: [91m7.8[0m
+2025-09-14 21:26:01,869 - INFO - [91m[RiskCalc][0m 10572 Final Risk Score: [91m7.8[0m | Triage Priority: [91mMedium[0m | 
+2025-09-14 21:26:01,869 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2018-15473.
+2025-09-14 21:26:01,869 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-15473 in NVD Cache
+2025-09-14 21:26:01,869 - INFO - [95m[Enrichment][0m CVE-2018-15473 EPSS Score: 0.92167
+2025-09-14 21:26:01,870 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-15473 => EPSS=0.92167 | KEV=False | Exploit=True
+2025-09-14 21:26:01,870 - ERROR - Invalid CVSS vector format for 80503: None
+2025-09-14 21:26:01,870 - INFO - [91m[RiskCalc][0m 80503 Raw Risk Score: [91m9.3[0m
+2025-09-14 21:26:01,870 - INFO - [91m[RiskCalc][0m 80503 Final Risk Score: [91m9.3[0m | Triage Priority: [91mHigh[0m | 
+2025-09-14 21:26:01,870 - INFO -    Total CVEs Processed : 8
+2025-09-14 21:26:01,871 - INFO -    Total CISA KEV Hits : 5
+2025-09-14 21:26:01,871 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-14 21:26:01,871 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-14 21:26:01,871 - INFO -    Total EPSS Misses : 0
+2025-09-14 21:26:01,871 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-14 21:26:01,872 - INFO - Enrichments Applied
+2025-09-14 21:26:01,874 - INFO - Results exported to CSV: test.csv
+2025-09-14 21:26:01,874 - INFO - Displaying results to console...
+2025-09-14 21:26:01,882 - INFO - Assets Analyzed: 6,Findings Triaged: 9,Average Risk Score: 8.74,Highest Risk Asset: dbserver-01.example.com,Critical+: 5, High: 2, Medium: 1, Low: 0
+2025-09-14 21:27:42,786 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-14 21:27:42,786 - INFO - Starting up VulnParse-Pin...
+2025-09-14 21:27:42,786 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-14 21:27:42,786 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-14 21:27:42,787 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-09-14 21:27:42,787 - INFO - Detected parser for JSON structure: [95mNessusParser[0m
+2025-09-14 21:27:42,787 - INFO - Detected 'scan' top-level key with 'hosts'. Extracting hosts list.
+2025-09-14 21:27:42,788 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-14 21:27:42,788 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-14 21:27:42,797 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-14 21:27:42,817 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-14 21:27:42,817 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-14 21:27:42,817 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-14 21:27:43,054 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-14 21:27:43,054 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-14 21:27:43,054 - INFO - Parsed 6 assets, 9 findings
+2025-09-14 21:27:43,055 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-14 21:27:50,473 - INFO - NVD Cache ready.
+2025-09-14 21:27:50,473 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-14 21:27:50,480 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-14 21:27:50,481 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-14 21:27:50,481 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-14 21:27:50,481 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-14 21:27:51,985 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-14 21:27:51,985 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-14 21:27:51,985 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-14 21:27:51,985 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for Nessus Scan Information, skipping exploit check.
+2025-09-14 21:27:51,985 - WARNING - No exploits found for WordPress Directory Traversal (CVE-2017-1001000)
+2025-09-14 21:27:51,986 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Microsoft SQL Server RCE (CVE-2020-0618)
+2025-09-14 21:27:51,986 - WARNING - No exploits found for Apache Httpd mod_ssl Heartbleed (CVE-2014-0160)
+2025-09-14 21:27:51,986 - WARNING - No exploits found for PHP CGI Arg Injection (CVE-2012-1823)
+2025-09-14 21:27:51,986 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Cisco IOS Path Traversal (CVE-2018-0171)
+2025-09-14 21:27:51,986 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for MS Windows SMBv1 Remote Code Execution (CVE-2017-0144)
+2025-09-14 21:27:51,986 - WARNING - No exploits found for Adobe Flash Player Use-After-Free (CVE-2020-9715)
+2025-09-14 21:27:51,986 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for OpenSSH Username Enumeration (CVE-2018-15473)
+2025-09-14 21:27:51,987 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-14 21:27:51,987 - WARNING - [Enrichment] No authoritative CVE selected for 19506
+2025-09-14 21:27:51,987 - ERROR - Invalid CVSS vector format for 19506: None
+2025-09-14 21:27:51,987 - INFO - [91m[RiskCalc][0m 19506 Raw Risk Score: [91m0.0[0m
+2025-09-14 21:27:51,988 - INFO - [91m[RiskCalc][0m 19506 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-14 21:27:51,988 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2017-1001000.
+2025-09-14 21:27:51,988 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-1001000 in NVD Cache
+2025-09-14 21:27:51,988 - INFO - [95m[Enrichment][0m CVE-2017-1001000 EPSS Score: 0.79728
+2025-09-14 21:27:51,988 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-1001000 => EPSS=0.79728 | KEV=False | Exploit=False
+2025-09-14 21:27:51,989 - ERROR - Invalid CVSS vector format for 10018: None
+2025-09-14 21:27:51,989 - INFO - [91m[RiskCalc][0m 10018 Raw Risk Score: [91m8.5[0m
+2025-09-14 21:27:51,989 - INFO - [91m[RiskCalc][0m 10018 Final Risk Score: [91m8.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-14 21:27:51,989 - INFO - [95m[Enrichment][0m CVE-2020-0618 found in CISA KEV
+2025-09-14 21:27:51,989 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-0618 in NVD Cache
+2025-09-14 21:27:51,989 - INFO - [95m[Enrichment][0m CVE-2020-0618 EPSS Score: 0.94252
+2025-09-14 21:27:51,990 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-0618 => EPSS=0.94252 | KEV=True | Exploit=True
+2025-09-14 21:27:51,990 - ERROR - Invalid CVSS vector format for 46930: None
+2025-09-14 21:27:51,990 - WARNING - [91m[RiskCalc][0m Risk Score for 46930 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-14 21:27:51,990 - INFO - [91m[RiskCalc][0m 46930 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:27:51,990 - INFO - [95m[Enrichment][0m CVE-2014-0160 found in CISA KEV
+2025-09-14 21:27:51,991 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2014-0160 in NVD Cache
+2025-09-14 21:27:51,991 - INFO - [95m[Enrichment][0m CVE-2014-0160 EPSS Score: 0.94436
+2025-09-14 21:27:51,991 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2014-0160 => EPSS=0.94436 | KEV=True | Exploit=True
+2025-09-14 21:27:51,991 - ERROR - Invalid CVSS vector format for 10802: None
+2025-09-14 21:27:51,991 - WARNING - [91m[RiskCalc][0m Risk Score for 10802 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-14 21:27:51,991 - INFO - [91m[RiskCalc][0m 10802 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:27:51,992 - INFO - [95m[Enrichment][0m CVE-2012-1823 found in CISA KEV
+2025-09-14 21:27:51,992 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2012-1823 in NVD Cache
+2025-09-14 21:27:51,992 - INFO - [95m[Enrichment][0m CVE-2012-1823 EPSS Score: 0.94293
+2025-09-14 21:27:51,992 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2012-1823 => EPSS=0.94293 | KEV=True | Exploit=True
+2025-09-14 21:27:51,992 - ERROR - Invalid CVSS vector format for 16455: None
+2025-09-14 21:27:51,993 - WARNING - [91m[RiskCalc][0m Risk Score for 16455 capped at 10.0 (Raw Score: [91m11.35[0m)
+2025-09-14 21:27:51,993 - INFO - [91m[RiskCalc][0m 16455 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:27:51,993 - INFO - [95m[Enrichment][0m CVE-2018-0171 found in CISA KEV
+2025-09-14 21:27:51,993 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-0171 in NVD Cache
+2025-09-14 21:27:51,993 - INFO - [95m[Enrichment][0m CVE-2018-0171 EPSS Score: 0.93213
+2025-09-14 21:27:51,994 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-0171 => EPSS=0.93213 | KEV=True | Exploit=True
+2025-09-14 21:27:51,994 - ERROR - Invalid CVSS vector format for 38855: None
+2025-09-14 21:27:51,994 - WARNING - [91m[RiskCalc][0m Risk Score for 38855 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-14 21:27:51,994 - INFO - [91m[RiskCalc][0m 38855 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:27:51,994 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-14 21:27:51,995 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-14 21:27:51,995 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.94323
+2025-09-14 21:27:51,995 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.94323 | KEV=True | Exploit=True
+2025-09-14 21:27:51,995 - ERROR - Invalid CVSS vector format for 11219: None
+2025-09-14 21:27:51,995 - WARNING - [91m[RiskCalc][0m Risk Score for 11219 capped at 10.0 (Raw Score: [91m13.35[0m)
+2025-09-14 21:27:51,996 - INFO - [91m[RiskCalc][0m 11219 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:27:51,996 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2020-9715.
+2025-09-14 21:27:51,996 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-9715 in NVD Cache
+2025-09-14 21:27:51,996 - INFO - [95m[Enrichment][0m CVE-2020-9715 EPSS Score: 0.56205
+2025-09-14 21:27:51,996 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-9715 => EPSS=0.56205 | KEV=False | Exploit=False
+2025-09-14 21:27:51,997 - ERROR - Invalid CVSS vector format for 10572: None
+2025-09-14 21:27:51,997 - INFO - [91m[RiskCalc][0m 10572 Raw Risk Score: [91m7.8[0m
+2025-09-14 21:27:51,997 - INFO - [91m[RiskCalc][0m 10572 Final Risk Score: [91m7.8[0m | Triage Priority: [91mMedium[0m | 
+2025-09-14 21:27:51,997 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2018-15473.
+2025-09-14 21:27:51,997 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-15473 in NVD Cache
+2025-09-14 21:27:51,998 - INFO - [95m[Enrichment][0m CVE-2018-15473 EPSS Score: 0.92167
+2025-09-14 21:27:51,998 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-15473 => EPSS=0.92167 | KEV=False | Exploit=True
+2025-09-14 21:27:51,998 - ERROR - Invalid CVSS vector format for 80503: None
+2025-09-14 21:27:51,998 - INFO - [91m[RiskCalc][0m 80503 Raw Risk Score: [91m9.3[0m
+2025-09-14 21:27:51,998 - INFO - [91m[RiskCalc][0m 80503 Final Risk Score: [91m9.3[0m | Triage Priority: [91mHigh[0m | 
+2025-09-14 21:27:51,999 - INFO -    Total CVEs Processed : 8
+2025-09-14 21:27:51,999 - INFO -    Total CISA KEV Hits : 5
+2025-09-14 21:27:51,999 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-14 21:27:51,999 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-14 21:27:51,999 - INFO -    Total EPSS Misses : 0
+2025-09-14 21:27:52,000 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-14 21:27:52,000 - INFO - Enrichments Applied
+2025-09-14 21:27:52,002 - INFO - Results exported to CSV: test.csv
+2025-09-14 21:27:52,002 - INFO - Displaying results to console...
+2025-09-14 21:27:52,009 - INFO - Assets Analyzed: 6,Findings Triaged: 9,Average Risk Score: 8.74,Highest Risk Asset: dbserver-01.example.com,Critical+: 5, High: 2, Medium: 1, Low: 0
+2025-09-14 21:28:16,490 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-14 21:28:16,491 - INFO - Starting up VulnParse-Pin...
+2025-09-14 21:28:16,491 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-09-14 21:28:16,534 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-09-14 21:28:16,534 - INFO - Scanning JSON structure to determine the type of parser to use...
+2025-09-14 21:28:16,535 - INFO - Detected parser for JSON structure: [95mOpenVASParser[0m
+2025-09-14 21:28:16,535 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-14 21:28:16,536 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-14 21:28:16,544 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-14 21:28:16,545 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-14 21:28:16,545 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-14 21:28:16,545 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-14 21:28:16,780 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-14 21:28:16,780 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-14 21:28:16,781 - INFO - Parsed 2 assets, 2 findings
+2025-09-14 21:28:16,782 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-14 21:28:24,150 - INFO - NVD Cache ready.
+2025-09-14 21:28:24,151 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-14 21:28:24,158 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-14 21:28:24,158 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-14 21:28:24,159 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-14 21:28:24,159 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-14 21:28:25,670 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-14 21:28:25,671 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-14 21:28:25,671 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-14 21:28:25,671 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-5678 | CVE-2024-1234)
+2025-09-14 21:28:25,671 - WARNING - No exploits found for MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-09-14 21:28:25,672 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-14 21:28:25,672 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-09-14 21:28:25,672 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-09-14 21:28:25,672 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2024-5678 in NVD Cache
+2025-09-14 21:28:25,673 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00472
+2025-09-14 21:28:25,673 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-09-14 21:28:25,673 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2024-1234 in NVD Cache
+2025-09-14 21:28:25,673 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.06413
+2025-09-14 21:28:25,673 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2024-1234 => EPSS=0.06413 | KEV=False | Exploit=True
+2025-09-14 21:28:25,674 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-09-14 21:28:25,674 - INFO - CVE-2024-1234 Base score from vector: 9.8
+2025-09-14 21:28:25,674 - INFO - CVSS score for CVE-2024-1234 is consistent.
+2025-09-14 21:28:25,674 - WARNING - [91m[RiskCalc][0m Risk Score for CVE-2024-1234 capped at 10.0 (Raw Score: [91m11.8[0m)
+2025-09-14 21:28:25,674 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:28:25,675 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-09-14 21:28:25,675 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-2222 in NVD Cache
+2025-09-14 21:28:25,675 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-09-14 21:28:25,675 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-09-14 21:28:25,675 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-1111 in NVD Cache
+2025-09-14 21:28:25,676 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-09-14 21:28:25,676 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-1111 => EPSS=0.00087 | KEV=False | Exploit=False
+2025-09-14 21:28:25,676 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-09-14 21:28:25,676 - INFO - CVE-2023-1111 Base score from vector: 10.0
+2025-09-14 21:28:25,676 - INFO - CVSS score for CVE-2023-1111 is consistent.
+2025-09-14 21:28:25,677 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m10.0[0m
+2025-09-14 21:28:25,677 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-14 21:28:25,677 - INFO -    Total CVEs Processed : 4
+2025-09-14 21:28:25,677 - INFO -    Total CISA KEV Hits : 0
+2025-09-14 21:28:25,677 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-14 21:28:25,678 - INFO -    Total CVSS Vectors Validated : 2
+2025-09-14 21:28:25,678 - INFO -    Total EPSS Misses : 1
+2025-09-14 21:28:25,678 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-14 21:28:25,679 - INFO - Enrichments Applied
+2025-09-14 21:28:25,680 - INFO - Results exported to CSV: test.csv
+2025-09-14 21:28:25,680 - INFO - Displaying results to console...
+2025-09-14 21:28:25,684 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 10.0,Highest Risk Asset: webserver-01.example.com,Critical+: 2, High: 0, Medium: 0, Low: 0
+2025-09-16 19:50:59,228 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 19:50:59,275 - INFO - Starting up VulnParse-Pin...
+2025-09-16 19:50:59,276 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-09-16 19:50:59,288 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-09-16 19:50:59,288 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 19:50:59,289 - ERROR - Error occured while trying to determine parser to use. Msg: 'dict' object has no attribute 'lower'
+2025-09-16 19:50:59,289 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-16 19:50:59,289 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-16 19:50:59,384 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-16 19:50:59,384 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-16 19:50:59,384 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-16 19:50:59,391 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-16 19:50:59,628 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-16 19:50:59,629 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-16 19:54:59,633 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 19:54:59,633 - INFO - Starting up VulnParse-Pin...
+2025-09-16 19:54:59,634 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-09-16 19:54:59,634 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-09-16 19:54:59,634 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 19:54:59,634 - ERROR - Error occured while trying to determine parser to use. Msg: 'dict' object has no attribute 'lower'
+2025-09-16 19:55:32,547 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 19:55:32,547 - INFO - Starting up VulnParse-Pin...
+2025-09-16 19:55:32,548 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 19:55:32,557 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 19:55:32,557 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 19:55:32,557 - ERROR - Error occured while trying to determine parser to use. Msg: 'dict' object has no attribute 'lower'
+2025-09-16 19:58:08,840 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 19:58:08,840 - INFO - Starting up VulnParse-Pin...
+2025-09-16 19:58:08,840 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 19:58:08,841 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 19:58:08,841 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 19:58:08,841 - ERROR - Error occured while trying to determine parser to use. Msg: 'dict' object has no attribute 'lower'
+2025-09-16 19:58:57,281 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 19:58:57,282 - INFO - Starting up VulnParse-Pin...
+2025-09-16 19:58:57,282 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 19:58:57,282 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 19:58:57,282 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 19:58:57,283 - ERROR - Error occured while trying to determine parser to use. Msg: 'dict' object has no attribute 'lower'
+2025-09-16 20:03:42,314 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 20:03:42,314 - INFO - Starting up VulnParse-Pin...
+2025-09-16 20:03:42,314 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 20:03:42,315 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 20:03:42,315 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 20:03:42,315 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-16 20:03:42,316 - ERROR - Error occured while trying to determine parser to use. Msg: NessusParser.parse() missing 1 required positional argument: 'nessus_json'
+2025-09-16 20:07:47,796 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 20:07:47,796 - INFO - Starting up VulnParse-Pin...
+2025-09-16 20:07:47,796 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 20:07:47,797 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 20:07:47,797 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 20:07:47,797 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-16 20:07:47,797 - WARNING - Unrecognized JSON structure - returning as-is.
+2025-09-16 20:07:47,798 - ERROR - Error occured while trying to determine parser to use. Msg: 'str' object has no attribute 'keys'
+2025-09-16 20:22:02,238 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 20:22:02,238 - INFO - Starting up VulnParse-Pin...
+2025-09-16 20:22:02,239 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 20:22:02,239 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 20:22:02,239 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 20:22:02,240 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-16 20:22:02,240 - INFO - Detected 'scan' top-level key with 'hosts'. Extracting hosts list.
+2025-09-16 20:22:02,241 - INFO - Parsed 6 assets, 9 findings
+2025-09-16 20:22:02,241 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-16 20:22:02,241 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-16 20:22:02,250 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-16 20:22:02,251 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-16 20:22:02,251 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-16 20:22:02,251 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-16 20:22:02,486 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-16 20:22:02,486 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-16 20:22:02,494 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-16 20:22:10,195 - INFO - NVD Cache ready.
+2025-09-16 20:22:10,195 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-16 20:22:10,254 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-16 20:22:10,267 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-16 20:22:10,268 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-16 20:22:10,268 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-16 20:22:11,810 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-16 20:22:11,816 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-16 20:22:11,816 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-16 20:22:11,816 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for Nessus Scan Information, skipping exploit check.
+2025-09-16 20:22:11,816 - WARNING - No exploits found for WordPress Directory Traversal (CVE-2017-1001000)
+2025-09-16 20:22:11,816 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Microsoft SQL Server RCE (CVE-2020-0618)
+2025-09-16 20:22:11,816 - WARNING - No exploits found for Apache Httpd mod_ssl Heartbleed (CVE-2014-0160)
+2025-09-16 20:22:11,816 - WARNING - No exploits found for PHP CGI Arg Injection (CVE-2012-1823)
+2025-09-16 20:22:11,816 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Cisco IOS Path Traversal (CVE-2018-0171)
+2025-09-16 20:22:11,817 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for MS Windows SMBv1 Remote Code Execution (CVE-2017-0144)
+2025-09-16 20:22:11,817 - WARNING - No exploits found for Adobe Flash Player Use-After-Free (CVE-2020-9715)
+2025-09-16 20:22:11,817 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for OpenSSH Username Enumeration (CVE-2018-15473)
+2025-09-16 20:22:11,817 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-16 20:22:11,817 - WARNING - [Enrichment] No authoritative CVE selected for 19506
+2025-09-16 20:22:11,818 - ERROR - Invalid CVSS vector format for 19506: None
+2025-09-16 20:22:11,818 - INFO - [91m[RiskCalc][0m 19506 Raw Risk Score: [91m0.0[0m
+2025-09-16 20:22:11,818 - INFO - [91m[RiskCalc][0m 19506 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-16 20:22:11,818 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2017-1001000.
+2025-09-16 20:22:11,818 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-1001000 in NVD Cache
+2025-09-16 20:22:11,819 - INFO - [95m[Enrichment][0m CVE-2017-1001000 EPSS Score: 0.79728
+2025-09-16 20:22:11,819 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-1001000 => EPSS=0.79728 | KEV=False | Exploit=False
+2025-09-16 20:22:11,819 - ERROR - Invalid CVSS vector format for 10018: None
+2025-09-16 20:22:11,819 - INFO - [91m[RiskCalc][0m 10018 Raw Risk Score: [91m8.5[0m
+2025-09-16 20:22:11,819 - INFO - [91m[RiskCalc][0m 10018 Final Risk Score: [91m8.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-16 20:22:11,819 - INFO - [95m[Enrichment][0m CVE-2020-0618 found in CISA KEV
+2025-09-16 20:22:11,820 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-0618 in NVD Cache
+2025-09-16 20:22:11,820 - INFO - [95m[Enrichment][0m CVE-2020-0618 EPSS Score: 0.94252
+2025-09-16 20:22:11,820 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-0618 => EPSS=0.94252 | KEV=True | Exploit=True
+2025-09-16 20:22:11,820 - ERROR - Invalid CVSS vector format for 46930: None
+2025-09-16 20:22:11,820 - WARNING - [91m[RiskCalc][0m Risk Score for 46930 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-16 20:22:11,821 - INFO - [91m[RiskCalc][0m 46930 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:22:11,821 - INFO - [95m[Enrichment][0m CVE-2014-0160 found in CISA KEV
+2025-09-16 20:22:11,821 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2014-0160 in NVD Cache
+2025-09-16 20:22:11,821 - INFO - [95m[Enrichment][0m CVE-2014-0160 EPSS Score: 0.94436
+2025-09-16 20:22:11,821 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2014-0160 => EPSS=0.94436 | KEV=True | Exploit=True
+2025-09-16 20:22:11,822 - ERROR - Invalid CVSS vector format for 10802: None
+2025-09-16 20:22:11,822 - WARNING - [91m[RiskCalc][0m Risk Score for 10802 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-16 20:22:11,822 - INFO - [91m[RiskCalc][0m 10802 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:22:11,822 - INFO - [95m[Enrichment][0m CVE-2012-1823 found in CISA KEV
+2025-09-16 20:22:11,822 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2012-1823 in NVD Cache
+2025-09-16 20:22:11,823 - INFO - [95m[Enrichment][0m CVE-2012-1823 EPSS Score: 0.94293
+2025-09-16 20:22:11,823 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2012-1823 => EPSS=0.94293 | KEV=True | Exploit=True
+2025-09-16 20:22:11,823 - ERROR - Invalid CVSS vector format for 16455: None
+2025-09-16 20:22:11,823 - WARNING - [91m[RiskCalc][0m Risk Score for 16455 capped at 10.0 (Raw Score: [91m11.35[0m)
+2025-09-16 20:22:11,823 - INFO - [91m[RiskCalc][0m 16455 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:22:11,824 - INFO - [95m[Enrichment][0m CVE-2018-0171 found in CISA KEV
+2025-09-16 20:22:11,824 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-0171 in NVD Cache
+2025-09-16 20:22:11,824 - INFO - [95m[Enrichment][0m CVE-2018-0171 EPSS Score: 0.93213
+2025-09-16 20:22:11,824 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-0171 => EPSS=0.93213 | KEV=True | Exploit=True
+2025-09-16 20:22:11,824 - ERROR - Invalid CVSS vector format for 38855: None
+2025-09-16 20:22:11,825 - WARNING - [91m[RiskCalc][0m Risk Score for 38855 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-16 20:22:11,825 - INFO - [91m[RiskCalc][0m 38855 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:22:11,825 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-16 20:22:11,825 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-16 20:22:11,825 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.94323
+2025-09-16 20:22:11,825 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.94323 | KEV=True | Exploit=True
+2025-09-16 20:22:11,826 - ERROR - Invalid CVSS vector format for 11219: None
+2025-09-16 20:22:11,826 - WARNING - [91m[RiskCalc][0m Risk Score for 11219 capped at 10.0 (Raw Score: [91m13.35[0m)
+2025-09-16 20:22:11,826 - INFO - [91m[RiskCalc][0m 11219 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:22:11,826 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2020-9715.
+2025-09-16 20:22:11,826 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-9715 in NVD Cache
+2025-09-16 20:22:11,827 - INFO - [95m[Enrichment][0m CVE-2020-9715 EPSS Score: 0.56205
+2025-09-16 20:22:11,827 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-9715 => EPSS=0.56205 | KEV=False | Exploit=False
+2025-09-16 20:22:11,827 - ERROR - Invalid CVSS vector format for 10572: None
+2025-09-16 20:22:11,827 - INFO - [91m[RiskCalc][0m 10572 Raw Risk Score: [91m7.8[0m
+2025-09-16 20:22:11,827 - INFO - [91m[RiskCalc][0m 10572 Final Risk Score: [91m7.8[0m | Triage Priority: [91mMedium[0m | 
+2025-09-16 20:22:11,828 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2018-15473.
+2025-09-16 20:22:11,828 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-15473 in NVD Cache
+2025-09-16 20:22:11,828 - INFO - [95m[Enrichment][0m CVE-2018-15473 EPSS Score: 0.92167
+2025-09-16 20:22:11,828 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-15473 => EPSS=0.92167 | KEV=False | Exploit=True
+2025-09-16 20:22:11,828 - ERROR - Invalid CVSS vector format for 80503: None
+2025-09-16 20:22:11,828 - INFO - [91m[RiskCalc][0m 80503 Raw Risk Score: [91m9.3[0m
+2025-09-16 20:22:11,829 - INFO - [91m[RiskCalc][0m 80503 Final Risk Score: [91m9.3[0m | Triage Priority: [91mHigh[0m | 
+2025-09-16 20:22:11,829 - INFO -    Total CVEs Processed : 8
+2025-09-16 20:22:11,829 - INFO -    Total CISA KEV Hits : 5
+2025-09-16 20:22:11,829 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-16 20:22:11,829 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-16 20:22:11,830 - INFO -    Total EPSS Misses : 0
+2025-09-16 20:22:11,830 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-16 20:22:11,831 - INFO - Enrichments Applied
+2025-09-16 20:22:11,831 - INFO - Displaying results to console...
+2025-09-16 20:22:11,839 - INFO - Assets Analyzed: 6,Findings Triaged: 9,Average Risk Score: 8.74,Highest Risk Asset: dbserver-01.example.com,Critical+: 5, High: 2, Medium: 1, Low: 0
+2025-09-16 20:28:23,469 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 20:28:23,469 - INFO - Starting up VulnParse-Pin...
+2025-09-16 20:28:23,470 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 20:28:23,470 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 20:28:23,470 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 20:28:23,471 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-16 20:28:23,471 - ERROR - Error occured while trying to determine parser to use. Msg: name 'json' is not defined
+2025-09-16 20:28:56,477 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-16 20:28:56,477 - INFO - Starting up VulnParse-Pin...
+2025-09-16 20:28:56,477 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-16 20:28:56,478 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-16 20:28:56,478 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-16 20:28:56,478 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-16 20:28:56,478 - INFO - Detected 'scan' top-level key with 'hosts'. Extracting hosts list.
+2025-09-16 20:28:56,479 - INFO - Parsed 6 assets, 9 findings
+2025-09-16 20:28:56,479 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-16 20:28:56,479 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-16 20:28:56,488 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-16 20:28:56,488 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-16 20:28:56,489 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-16 20:28:56,489 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-16 20:28:56,723 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-16 20:28:56,723 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-16 20:28:56,724 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-16 20:29:04,060 - INFO - NVD Cache ready.
+2025-09-16 20:29:04,060 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-16 20:29:04,067 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-16 20:29:04,067 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-16 20:29:04,068 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-16 20:29:04,068 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-16 20:29:05,556 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-16 20:29:05,557 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-16 20:29:05,557 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-16 20:29:05,557 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for Nessus Scan Information, skipping exploit check.
+2025-09-16 20:29:05,557 - WARNING - No exploits found for WordPress Directory Traversal (CVE-2017-1001000)
+2025-09-16 20:29:05,557 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Microsoft SQL Server RCE (CVE-2020-0618)
+2025-09-16 20:29:05,557 - WARNING - No exploits found for Apache Httpd mod_ssl Heartbleed (CVE-2014-0160)
+2025-09-16 20:29:05,557 - WARNING - No exploits found for PHP CGI Arg Injection (CVE-2012-1823)
+2025-09-16 20:29:05,557 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Cisco IOS Path Traversal (CVE-2018-0171)
+2025-09-16 20:29:05,558 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for MS Windows SMBv1 Remote Code Execution (CVE-2017-0144)
+2025-09-16 20:29:05,558 - WARNING - No exploits found for Adobe Flash Player Use-After-Free (CVE-2020-9715)
+2025-09-16 20:29:05,558 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for OpenSSH Username Enumeration (CVE-2018-15473)
+2025-09-16 20:29:05,558 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-16 20:29:05,558 - WARNING - [Enrichment] No authoritative CVE selected for 19506
+2025-09-16 20:29:05,559 - ERROR - Invalid CVSS vector format for 19506: None
+2025-09-16 20:29:05,559 - INFO - [91m[RiskCalc][0m 19506 Raw Risk Score: [91m0.0[0m
+2025-09-16 20:29:05,559 - INFO - [91m[RiskCalc][0m 19506 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-16 20:29:05,559 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2017-1001000.
+2025-09-16 20:29:05,559 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-1001000 in NVD Cache
+2025-09-16 20:29:05,559 - INFO - [95m[Enrichment][0m CVE-2017-1001000 EPSS Score: 0.79728
+2025-09-16 20:29:05,559 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-1001000 => EPSS=0.79728 | KEV=False | Exploit=False
+2025-09-16 20:29:05,560 - ERROR - Invalid CVSS vector format for 10018: None
+2025-09-16 20:29:05,560 - INFO - [91m[RiskCalc][0m 10018 Raw Risk Score: [91m8.5[0m
+2025-09-16 20:29:05,560 - INFO - [91m[RiskCalc][0m 10018 Final Risk Score: [91m8.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-16 20:29:05,560 - INFO - [95m[Enrichment][0m CVE-2020-0618 found in CISA KEV
+2025-09-16 20:29:05,560 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-0618 in NVD Cache
+2025-09-16 20:29:05,560 - INFO - [95m[Enrichment][0m CVE-2020-0618 EPSS Score: 0.94252
+2025-09-16 20:29:05,561 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-0618 => EPSS=0.94252 | KEV=True | Exploit=True
+2025-09-16 20:29:05,561 - ERROR - Invalid CVSS vector format for 46930: None
+2025-09-16 20:29:05,561 - WARNING - [91m[RiskCalc][0m Risk Score for 46930 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-16 20:29:05,561 - INFO - [91m[RiskCalc][0m 46930 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:29:05,561 - INFO - [95m[Enrichment][0m CVE-2014-0160 found in CISA KEV
+2025-09-16 20:29:05,561 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2014-0160 in NVD Cache
+2025-09-16 20:29:05,561 - INFO - [95m[Enrichment][0m CVE-2014-0160 EPSS Score: 0.94436
+2025-09-16 20:29:05,562 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2014-0160 => EPSS=0.94436 | KEV=True | Exploit=True
+2025-09-16 20:29:05,562 - ERROR - Invalid CVSS vector format for 10802: None
+2025-09-16 20:29:05,562 - WARNING - [91m[RiskCalc][0m Risk Score for 10802 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-16 20:29:05,562 - INFO - [91m[RiskCalc][0m 10802 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:29:05,562 - INFO - [95m[Enrichment][0m CVE-2012-1823 found in CISA KEV
+2025-09-16 20:29:05,563 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2012-1823 in NVD Cache
+2025-09-16 20:29:05,563 - INFO - [95m[Enrichment][0m CVE-2012-1823 EPSS Score: 0.94293
+2025-09-16 20:29:05,563 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2012-1823 => EPSS=0.94293 | KEV=True | Exploit=True
+2025-09-16 20:29:05,563 - ERROR - Invalid CVSS vector format for 16455: None
+2025-09-16 20:29:05,563 - WARNING - [91m[RiskCalc][0m Risk Score for 16455 capped at 10.0 (Raw Score: [91m11.35[0m)
+2025-09-16 20:29:05,563 - INFO - [91m[RiskCalc][0m 16455 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:29:05,564 - INFO - [95m[Enrichment][0m CVE-2018-0171 found in CISA KEV
+2025-09-16 20:29:05,564 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-0171 in NVD Cache
+2025-09-16 20:29:05,564 - INFO - [95m[Enrichment][0m CVE-2018-0171 EPSS Score: 0.93213
+2025-09-16 20:29:05,564 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-0171 => EPSS=0.93213 | KEV=True | Exploit=True
+2025-09-16 20:29:05,564 - ERROR - Invalid CVSS vector format for 38855: None
+2025-09-16 20:29:05,564 - WARNING - [91m[RiskCalc][0m Risk Score for 38855 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-16 20:29:05,564 - INFO - [91m[RiskCalc][0m 38855 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:29:05,565 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-16 20:29:05,565 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-16 20:29:05,565 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.94323
+2025-09-16 20:29:05,565 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.94323 | KEV=True | Exploit=True
+2025-09-16 20:29:05,565 - ERROR - Invalid CVSS vector format for 11219: None
+2025-09-16 20:29:05,565 - WARNING - [91m[RiskCalc][0m Risk Score for 11219 capped at 10.0 (Raw Score: [91m13.35[0m)
+2025-09-16 20:29:05,566 - INFO - [91m[RiskCalc][0m 11219 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-16 20:29:05,566 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2020-9715.
+2025-09-16 20:29:05,566 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-9715 in NVD Cache
+2025-09-16 20:29:05,566 - INFO - [95m[Enrichment][0m CVE-2020-9715 EPSS Score: 0.56205
+2025-09-16 20:29:05,566 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-9715 => EPSS=0.56205 | KEV=False | Exploit=False
+2025-09-16 20:29:05,566 - ERROR - Invalid CVSS vector format for 10572: None
+2025-09-16 20:29:05,567 - INFO - [91m[RiskCalc][0m 10572 Raw Risk Score: [91m7.8[0m
+2025-09-16 20:29:05,567 - INFO - [91m[RiskCalc][0m 10572 Final Risk Score: [91m7.8[0m | Triage Priority: [91mMedium[0m | 
+2025-09-16 20:29:05,567 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2018-15473.
+2025-09-16 20:29:05,567 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-15473 in NVD Cache
+2025-09-16 20:29:05,567 - INFO - [95m[Enrichment][0m CVE-2018-15473 EPSS Score: 0.92167
+2025-09-16 20:29:05,568 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-15473 => EPSS=0.92167 | KEV=False | Exploit=True
+2025-09-16 20:29:05,568 - ERROR - Invalid CVSS vector format for 80503: None
+2025-09-16 20:29:05,568 - INFO - [91m[RiskCalc][0m 80503 Raw Risk Score: [91m9.3[0m
+2025-09-16 20:29:05,568 - INFO - [91m[RiskCalc][0m 80503 Final Risk Score: [91m9.3[0m | Triage Priority: [91mHigh[0m | 
+2025-09-16 20:29:05,568 - INFO -    Total CVEs Processed : 8
+2025-09-16 20:29:05,568 - INFO -    Total CISA KEV Hits : 5
+2025-09-16 20:29:05,569 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-16 20:29:05,569 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-16 20:29:05,569 - INFO -    Total EPSS Misses : 0
+2025-09-16 20:29:05,569 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-16 20:29:05,570 - INFO - Enrichments Applied
+2025-09-16 20:29:05,570 - INFO - Displaying results to console...
+2025-09-16 20:29:05,577 - INFO - Assets Analyzed: 6,Findings Triaged: 9,Average Risk Score: 8.74,Highest Risk Asset: dbserver-01.example.com,Critical+: 5, High: 2, Medium: 1, Low: 0
+2025-09-17 17:22:08,622 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:22:08,718 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:22:08,718 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-17 17:22:08,727 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-17 17:22:08,728 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:22:08,728 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-17 17:22:08,728 - INFO - Detected 'scan' top-level key with 'hosts'. Extracting hosts list.
+2025-09-17 17:22:08,729 - INFO - Parsed 6 assets, 9 findings
+2025-09-17 17:22:08,729 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 17:22:08,729 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 17:22:08,816 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 17:22:08,816 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 17:22:08,817 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 17:22:08,823 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 17:22:09,061 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 17:22:09,061 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 17:22:09,068 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 17:22:16,826 - INFO - NVD Cache ready.
+2025-09-17 17:22:16,827 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:22:16,871 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 17:22:16,878 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 17:22:16,879 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:22:16,879 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 17:22:18,423 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 17:22:18,429 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 17:22:18,430 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 17:22:18,430 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for Nessus Scan Information, skipping exploit check.
+2025-09-17 17:22:18,430 - WARNING - No exploits found for WordPress Directory Traversal (CVE-2017-1001000)
+2025-09-17 17:22:18,430 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Microsoft SQL Server RCE (CVE-2020-0618)
+2025-09-17 17:22:18,430 - WARNING - No exploits found for Apache Httpd mod_ssl Heartbleed (CVE-2014-0160)
+2025-09-17 17:22:18,430 - WARNING - No exploits found for PHP CGI Arg Injection (CVE-2012-1823)
+2025-09-17 17:22:18,430 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Cisco IOS Path Traversal (CVE-2018-0171)
+2025-09-17 17:22:18,430 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for MS Windows SMBv1 Remote Code Execution (CVE-2017-0144)
+2025-09-17 17:22:18,430 - WARNING - No exploits found for Adobe Flash Player Use-After-Free (CVE-2020-9715)
+2025-09-17 17:22:18,431 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for OpenSSH Username Enumeration (CVE-2018-15473)
+2025-09-17 17:22:18,431 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 17:22:18,431 - WARNING - [Enrichment] No authoritative CVE selected for 19506
+2025-09-17 17:22:18,432 - ERROR - Invalid CVSS vector format for 19506: None
+2025-09-17 17:22:18,432 - INFO - [91m[RiskCalc][0m 19506 Raw Risk Score: [91m0.0[0m
+2025-09-17 17:22:18,432 - INFO - [91m[RiskCalc][0m 19506 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-17 17:22:18,432 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2017-1001000.
+2025-09-17 17:22:18,433 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-1001000 in NVD Cache
+2025-09-17 17:22:18,433 - INFO - [95m[Enrichment][0m CVE-2017-1001000 EPSS Score: 0.79728
+2025-09-17 17:22:18,433 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-1001000 => EPSS=0.79728 | KEV=False | Exploit=False
+2025-09-17 17:22:18,433 - ERROR - Invalid CVSS vector format for 10018: None
+2025-09-17 17:22:18,433 - INFO - [91m[RiskCalc][0m 10018 Raw Risk Score: [91m8.5[0m
+2025-09-17 17:22:18,434 - INFO - [91m[RiskCalc][0m 10018 Final Risk Score: [91m8.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 17:22:18,434 - INFO - [95m[Enrichment][0m CVE-2020-0618 found in CISA KEV
+2025-09-17 17:22:18,434 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-0618 in NVD Cache
+2025-09-17 17:22:18,434 - INFO - [95m[Enrichment][0m CVE-2020-0618 EPSS Score: 0.94252
+2025-09-17 17:22:18,434 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-0618 => EPSS=0.94252 | KEV=True | Exploit=True
+2025-09-17 17:22:18,435 - ERROR - Invalid CVSS vector format for 46930: None
+2025-09-17 17:22:18,435 - WARNING - [91m[RiskCalc][0m Risk Score for 46930 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-17 17:22:18,435 - INFO - [91m[RiskCalc][0m 46930 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:22:18,435 - INFO - [95m[Enrichment][0m CVE-2014-0160 found in CISA KEV
+2025-09-17 17:22:18,435 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2014-0160 in NVD Cache
+2025-09-17 17:22:18,435 - INFO - [95m[Enrichment][0m CVE-2014-0160 EPSS Score: 0.94436
+2025-09-17 17:22:18,436 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2014-0160 => EPSS=0.94436 | KEV=True | Exploit=True
+2025-09-17 17:22:18,436 - ERROR - Invalid CVSS vector format for 10802: None
+2025-09-17 17:22:18,436 - WARNING - [91m[RiskCalc][0m Risk Score for 10802 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-17 17:22:18,436 - INFO - [91m[RiskCalc][0m 10802 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:22:18,436 - INFO - [95m[Enrichment][0m CVE-2012-1823 found in CISA KEV
+2025-09-17 17:22:18,437 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2012-1823 in NVD Cache
+2025-09-17 17:22:18,437 - INFO - [95m[Enrichment][0m CVE-2012-1823 EPSS Score: 0.94293
+2025-09-17 17:22:18,437 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2012-1823 => EPSS=0.94293 | KEV=True | Exploit=True
+2025-09-17 17:22:18,437 - ERROR - Invalid CVSS vector format for 16455: None
+2025-09-17 17:22:18,437 - WARNING - [91m[RiskCalc][0m Risk Score for 16455 capped at 10.0 (Raw Score: [91m11.35[0m)
+2025-09-17 17:22:18,438 - INFO - [91m[RiskCalc][0m 16455 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:22:18,438 - INFO - [95m[Enrichment][0m CVE-2018-0171 found in CISA KEV
+2025-09-17 17:22:18,438 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-0171 in NVD Cache
+2025-09-17 17:22:18,438 - INFO - [95m[Enrichment][0m CVE-2018-0171 EPSS Score: 0.93213
+2025-09-17 17:22:18,438 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-0171 => EPSS=0.93213 | KEV=True | Exploit=True
+2025-09-17 17:22:18,438 - ERROR - Invalid CVSS vector format for 38855: None
+2025-09-17 17:22:18,439 - WARNING - [91m[RiskCalc][0m Risk Score for 38855 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-17 17:22:18,439 - INFO - [91m[RiskCalc][0m 38855 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:22:18,439 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-17 17:22:18,439 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-17 17:22:18,439 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.94323
+2025-09-17 17:22:18,440 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.94323 | KEV=True | Exploit=True
+2025-09-17 17:22:18,440 - ERROR - Invalid CVSS vector format for 11219: None
+2025-09-17 17:22:18,440 - WARNING - [91m[RiskCalc][0m Risk Score for 11219 capped at 10.0 (Raw Score: [91m13.35[0m)
+2025-09-17 17:22:18,440 - INFO - [91m[RiskCalc][0m 11219 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:22:18,440 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2020-9715.
+2025-09-17 17:22:18,441 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-9715 in NVD Cache
+2025-09-17 17:22:18,441 - INFO - [95m[Enrichment][0m CVE-2020-9715 EPSS Score: 0.56205
+2025-09-17 17:22:18,441 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-9715 => EPSS=0.56205 | KEV=False | Exploit=False
+2025-09-17 17:22:18,441 - ERROR - Invalid CVSS vector format for 10572: None
+2025-09-17 17:22:18,441 - INFO - [91m[RiskCalc][0m 10572 Raw Risk Score: [91m7.8[0m
+2025-09-17 17:22:18,442 - INFO - [91m[RiskCalc][0m 10572 Final Risk Score: [91m7.8[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 17:22:18,442 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2018-15473.
+2025-09-17 17:22:18,442 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-15473 in NVD Cache
+2025-09-17 17:22:18,442 - INFO - [95m[Enrichment][0m CVE-2018-15473 EPSS Score: 0.92167
+2025-09-17 17:22:18,442 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-15473 => EPSS=0.92167 | KEV=False | Exploit=True
+2025-09-17 17:22:18,443 - ERROR - Invalid CVSS vector format for 80503: None
+2025-09-17 17:22:18,443 - INFO - [91m[RiskCalc][0m 80503 Raw Risk Score: [91m9.3[0m
+2025-09-17 17:22:18,443 - INFO - [91m[RiskCalc][0m 80503 Final Risk Score: [91m9.3[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 17:22:18,443 - INFO -    Total CVEs Processed : 8
+2025-09-17 17:22:18,443 - INFO -    Total CISA KEV Hits : 5
+2025-09-17 17:22:18,444 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 17:22:18,444 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 17:22:18,444 - INFO -    Total EPSS Misses : 0
+2025-09-17 17:22:18,444 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 17:22:18,445 - INFO - Enrichments Applied
+2025-09-17 17:22:18,446 - INFO - Displaying results to console...
+2025-09-17 17:22:18,454 - INFO - Assets Analyzed: 6,Findings Triaged: 9,Average Risk Score: 8.74,Highest Risk Asset: dbserver-01.example.com,Critical+: 5, High: 2, Medium: 1, Low: 0
+2025-09-17 17:22:29,190 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:22:29,190 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:22:29,190 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-09-17 17:22:29,228 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-09-17 17:22:29,229 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:22:29,229 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-17 17:22:29,229 - ERROR - Error occured while trying to determine parser to use. Msg: expected str, bytes or os.PathLike object, not NoneType
+2025-09-17 17:23:10,839 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:23:10,839 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:23:10,839 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-09-17 17:23:10,840 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-09-17 17:23:10,840 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:23:10,840 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-17 17:23:10,841 - ERROR - Error occured while trying to determine parser to use. Msg: name 'json' is not defined
+2025-09-17 17:24:57,840 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:24:57,840 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:24:57,841 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-09-17 17:24:57,841 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-09-17 17:24:57,841 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:24:57,842 - INFO - Detected parser for structure: [95mABCMeta[0m
+2025-09-17 17:24:57,842 - INFO - Parsed 2 assets, 2 findings
+2025-09-17 17:24:57,842 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 17:24:57,843 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 17:24:57,851 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 17:24:57,852 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 17:24:57,852 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 17:24:57,852 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 17:24:58,088 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 17:24:58,089 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 17:24:58,090 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 17:25:05,511 - INFO - NVD Cache ready.
+2025-09-17 17:25:05,511 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:25:05,519 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 17:25:05,519 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 17:25:05,520 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:25:05,520 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 17:25:07,050 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 17:25:07,050 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 17:25:07,050 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 17:25:07,051 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-5678 | CVE-2024-1234)
+2025-09-17 17:25:07,051 - WARNING - No exploits found for MySQL Remote Exploit Detection (CVE-2023-1111 | CVE-2023-2222)
+2025-09-17 17:25:07,051 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 17:25:07,051 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-09-17 17:25:07,051 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-09-17 17:25:07,052 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2024-5678 in NVD Cache
+2025-09-17 17:25:07,052 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00472
+2025-09-17 17:25:07,052 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-09-17 17:25:07,052 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2024-1234 in NVD Cache
+2025-09-17 17:25:07,052 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.06413
+2025-09-17 17:25:07,052 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2024-1234 => EPSS=0.06413 | KEV=False | Exploit=True
+2025-09-17 17:25:07,053 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-09-17 17:25:07,053 - INFO - CVE-2024-1234 Base score from vector: 9.8
+2025-09-17 17:25:07,053 - INFO - CVSS score for CVE-2024-1234 is consistent.
+2025-09-17 17:25:07,053 - WARNING - [91m[RiskCalc][0m Risk Score for CVE-2024-1234 capped at 10.0 (Raw Score: [91m11.8[0m)
+2025-09-17 17:25:07,053 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:25:07,053 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-09-17 17:25:07,054 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-1111 in NVD Cache
+2025-09-17 17:25:07,054 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-09-17 17:25:07,054 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-09-17 17:25:07,054 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-2222 in NVD Cache
+2025-09-17 17:25:07,054 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-09-17 17:25:07,054 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-1111 => EPSS=0.00087 | KEV=False | Exploit=False
+2025-09-17 17:25:07,055 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-09-17 17:25:07,055 - INFO - CVE-2023-1111 Base score from vector: 10.0
+2025-09-17 17:25:07,055 - INFO - CVSS score for CVE-2023-1111 is consistent.
+2025-09-17 17:25:07,055 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m10.0[0m
+2025-09-17 17:25:07,055 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:25:07,056 - INFO -    Total CVEs Processed : 4
+2025-09-17 17:25:07,056 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 17:25:07,056 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 17:25:07,056 - INFO -    Total CVSS Vectors Validated : 2
+2025-09-17 17:25:07,056 - INFO -    Total EPSS Misses : 1
+2025-09-17 17:25:07,056 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 17:25:07,057 - INFO - Enrichments Applied
+2025-09-17 17:25:07,057 - INFO - Displaying results to console...
+2025-09-17 17:25:07,061 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 10.0,Highest Risk Asset: webserver-01.example.com,Critical+: 2, High: 0, Medium: 0, Low: 0
+2025-09-17 17:26:01,934 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:26:01,934 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:26:01,934 - INFO - Loading file: .\tests_output\mock_openvas.json
+2025-09-17 17:26:01,935 - INFO - File loaded: .\tests_output\mock_openvas.json
+2025-09-17 17:26:01,935 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:26:01,935 - INFO - Detected parser for structure: [95mOpenVASParser[0m
+2025-09-17 17:26:01,936 - INFO - Parsed 2 assets, 2 findings
+2025-09-17 17:26:01,936 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 17:26:01,936 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 17:26:01,945 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 17:26:01,946 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 17:26:01,946 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 17:26:01,946 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 17:26:02,187 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 17:26:02,187 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 17:26:02,188 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 17:26:09,522 - INFO - NVD Cache ready.
+2025-09-17 17:26:09,523 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:26:09,530 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 17:26:09,531 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 17:26:09,532 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:26:09,532 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 17:26:11,039 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 17:26:11,039 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 17:26:11,040 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 17:26:11,040 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Apache HTTPD Version Detection (CVE-2024-1234 | CVE-2024-5678)
+2025-09-17 17:26:11,040 - WARNING - No exploits found for MySQL Remote Exploit Detection (CVE-2023-2222 | CVE-2023-1111)
+2025-09-17 17:26:11,040 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 17:26:11,040 - INFO - [Heuristic] Marking CVE-2023-1111 as exploit_available: True due to keyward match in plugin field.
+2025-09-17 17:26:11,041 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-1234.
+2025-09-17 17:26:11,041 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2024-1234 in NVD Cache
+2025-09-17 17:26:11,041 - INFO - [95m[Enrichment][0m CVE-2024-1234 EPSS Score: 0.06413
+2025-09-17 17:26:11,041 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2024-5678.
+2025-09-17 17:26:11,041 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2024-5678 in NVD Cache
+2025-09-17 17:26:11,042 - INFO - [95m[Enrichment][0m CVE-2024-5678 EPSS Score: 0.00472
+2025-09-17 17:26:11,042 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2024-1234 => EPSS=0.06413 | KEV=False | Exploit=True
+2025-09-17 17:26:11,042 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2024-1234...
+2025-09-17 17:26:11,042 - INFO - CVE-2024-1234 Base score from vector: 9.8
+2025-09-17 17:26:11,042 - INFO - CVSS score for CVE-2024-1234 is consistent.
+2025-09-17 17:26:11,043 - WARNING - [91m[RiskCalc][0m Risk Score for CVE-2024-1234 capped at 10.0 (Raw Score: [91m11.8[0m)
+2025-09-17 17:26:11,043 - INFO - [91m[RiskCalc][0m CVE-2024-1234 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:26:11,043 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-2222.
+2025-09-17 17:26:11,043 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-2222 in NVD Cache
+2025-09-17 17:26:11,043 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-2222
+2025-09-17 17:26:11,044 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-1111.
+2025-09-17 17:26:11,044 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-1111 in NVD Cache
+2025-09-17 17:26:11,044 - INFO - [95m[Enrichment][0m CVE-2023-1111 EPSS Score: 0.00087
+2025-09-17 17:26:11,044 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-1111 => EPSS=0.00087 | KEV=False | Exploit=False
+2025-09-17 17:26:11,044 - INFO - [95m[CVSSVector][0m Validating and reconciling CVSS Vector for CVE-2023-1111...
+2025-09-17 17:26:11,045 - INFO - CVE-2023-1111 Base score from vector: 10.0
+2025-09-17 17:26:11,045 - INFO - CVSS score for CVE-2023-1111 is consistent.
+2025-09-17 17:26:11,045 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Raw Risk Score: [91m10.0[0m
+2025-09-17 17:26:11,045 - INFO - [91m[RiskCalc][0m CVE-2023-1111 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:26:11,045 - INFO -    Total CVEs Processed : 4
+2025-09-17 17:26:11,046 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 17:26:11,046 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 17:26:11,046 - INFO -    Total CVSS Vectors Validated : 2
+2025-09-17 17:26:11,046 - INFO -    Total EPSS Misses : 1
+2025-09-17 17:26:11,046 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 17:26:11,047 - INFO - Enrichments Applied
+2025-09-17 17:26:11,047 - INFO - Displaying results to console...
+2025-09-17 17:26:11,052 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 10.0,Highest Risk Asset: webserver-01.example.com,Critical+: 2, High: 0, Medium: 0, Low: 0
+2025-09-17 17:26:23,007 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:26:23,007 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:26:23,007 - INFO - Loading file: .\tests_output\mock_nessus_report.json
+2025-09-17 17:26:23,008 - INFO - File loaded: .\tests_output\mock_nessus_report.json
+2025-09-17 17:26:23,008 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:26:23,008 - INFO - Detected parser for structure: [95mNessusParser[0m
+2025-09-17 17:26:23,009 - INFO - Detected 'scan' top-level key with 'hosts'. Extracting hosts list.
+2025-09-17 17:26:23,009 - INFO - Parsed 6 assets, 9 findings
+2025-09-17 17:26:23,010 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 17:26:23,010 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 17:26:23,018 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 17:26:23,019 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 17:26:23,019 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 17:26:23,019 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 17:26:23,256 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 17:26:23,257 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 17:26:23,258 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 17:26:30,628 - INFO - NVD Cache ready.
+2025-09-17 17:26:30,629 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:26:30,636 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 17:26:30,636 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 17:26:30,637 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:26:30,637 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 17:26:32,157 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 17:26:32,157 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 17:26:32,157 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 17:26:32,157 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for Nessus Scan Information, skipping exploit check.
+2025-09-17 17:26:32,157 - WARNING - No exploits found for WordPress Directory Traversal (CVE-2017-1001000)
+2025-09-17 17:26:32,157 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Microsoft SQL Server RCE (CVE-2020-0618)
+2025-09-17 17:26:32,158 - WARNING - No exploits found for Apache Httpd mod_ssl Heartbleed (CVE-2014-0160)
+2025-09-17 17:26:32,158 - WARNING - No exploits found for PHP CGI Arg Injection (CVE-2012-1823)
+2025-09-17 17:26:32,158 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for Cisco IOS Path Traversal (CVE-2018-0171)
+2025-09-17 17:26:32,158 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for MS Windows SMBv1 Remote Code Execution (CVE-2017-0144)
+2025-09-17 17:26:32,158 - WARNING - No exploits found for Adobe Flash Player Use-After-Free (CVE-2020-9715)
+2025-09-17 17:26:32,158 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for OpenSSH Username Enumeration (CVE-2018-15473)
+2025-09-17 17:26:32,158 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 17:26:32,159 - WARNING - [Enrichment] No authoritative CVE selected for 19506
+2025-09-17 17:26:32,159 - ERROR - Invalid CVSS vector format for 19506: None
+2025-09-17 17:26:32,159 - INFO - [91m[RiskCalc][0m 19506 Raw Risk Score: [91m0.0[0m
+2025-09-17 17:26:32,159 - INFO - [91m[RiskCalc][0m 19506 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-17 17:26:32,159 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2017-1001000.
+2025-09-17 17:26:32,160 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-1001000 in NVD Cache
+2025-09-17 17:26:32,160 - INFO - [95m[Enrichment][0m CVE-2017-1001000 EPSS Score: 0.79728
+2025-09-17 17:26:32,160 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-1001000 => EPSS=0.79728 | KEV=False | Exploit=False
+2025-09-17 17:26:32,160 - ERROR - Invalid CVSS vector format for 10018: None
+2025-09-17 17:26:32,160 - INFO - [91m[RiskCalc][0m 10018 Raw Risk Score: [91m8.5[0m
+2025-09-17 17:26:32,161 - INFO - [91m[RiskCalc][0m 10018 Final Risk Score: [91m8.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 17:26:32,161 - INFO - [95m[Enrichment][0m CVE-2020-0618 found in CISA KEV
+2025-09-17 17:26:32,161 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-0618 in NVD Cache
+2025-09-17 17:26:32,161 - INFO - [95m[Enrichment][0m CVE-2020-0618 EPSS Score: 0.94252
+2025-09-17 17:26:32,161 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-0618 => EPSS=0.94252 | KEV=True | Exploit=True
+2025-09-17 17:26:32,162 - ERROR - Invalid CVSS vector format for 46930: None
+2025-09-17 17:26:32,162 - WARNING - [91m[RiskCalc][0m Risk Score for 46930 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-17 17:26:32,162 - INFO - [91m[RiskCalc][0m 46930 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:26:32,162 - INFO - [95m[Enrichment][0m CVE-2014-0160 found in CISA KEV
+2025-09-17 17:26:32,162 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2014-0160 in NVD Cache
+2025-09-17 17:26:32,162 - INFO - [95m[Enrichment][0m CVE-2014-0160 EPSS Score: 0.94436
+2025-09-17 17:26:32,163 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2014-0160 => EPSS=0.94436 | KEV=True | Exploit=True
+2025-09-17 17:26:32,163 - ERROR - Invalid CVSS vector format for 10802: None
+2025-09-17 17:26:32,163 - WARNING - [91m[RiskCalc][0m Risk Score for 10802 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-17 17:26:32,163 - INFO - [91m[RiskCalc][0m 10802 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:26:32,163 - INFO - [95m[Enrichment][0m CVE-2012-1823 found in CISA KEV
+2025-09-17 17:26:32,164 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2012-1823 in NVD Cache
+2025-09-17 17:26:32,164 - INFO - [95m[Enrichment][0m CVE-2012-1823 EPSS Score: 0.94293
+2025-09-17 17:26:32,164 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2012-1823 => EPSS=0.94293 | KEV=True | Exploit=True
+2025-09-17 17:26:32,164 - ERROR - Invalid CVSS vector format for 16455: None
+2025-09-17 17:26:32,164 - WARNING - [91m[RiskCalc][0m Risk Score for 16455 capped at 10.0 (Raw Score: [91m11.35[0m)
+2025-09-17 17:26:32,165 - INFO - [91m[RiskCalc][0m 16455 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:26:32,165 - INFO - [95m[Enrichment][0m CVE-2018-0171 found in CISA KEV
+2025-09-17 17:26:32,165 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-0171 in NVD Cache
+2025-09-17 17:26:32,165 - INFO - [95m[Enrichment][0m CVE-2018-0171 EPSS Score: 0.93213
+2025-09-17 17:26:32,165 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-0171 => EPSS=0.93213 | KEV=True | Exploit=True
+2025-09-17 17:26:32,165 - ERROR - Invalid CVSS vector format for 38855: None
+2025-09-17 17:26:32,166 - WARNING - [91m[RiskCalc][0m Risk Score for 38855 capped at 10.0 (Raw Score: [91m12.75[0m)
+2025-09-17 17:26:32,166 - INFO - [91m[RiskCalc][0m 38855 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:26:32,166 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-17 17:26:32,166 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-17 17:26:32,166 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.94323
+2025-09-17 17:26:32,167 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.94323 | KEV=True | Exploit=True
+2025-09-17 17:26:32,167 - ERROR - Invalid CVSS vector format for 11219: None
+2025-09-17 17:26:32,167 - WARNING - [91m[RiskCalc][0m Risk Score for 11219 capped at 10.0 (Raw Score: [91m13.35[0m)
+2025-09-17 17:26:32,167 - INFO - [91m[RiskCalc][0m 11219 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 17:26:32,167 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2020-9715.
+2025-09-17 17:26:32,168 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2020-9715 in NVD Cache
+2025-09-17 17:26:32,168 - INFO - [95m[Enrichment][0m CVE-2020-9715 EPSS Score: 0.56205
+2025-09-17 17:26:32,168 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2020-9715 => EPSS=0.56205 | KEV=False | Exploit=False
+2025-09-17 17:26:32,168 - ERROR - Invalid CVSS vector format for 10572: None
+2025-09-17 17:26:32,168 - INFO - [91m[RiskCalc][0m 10572 Raw Risk Score: [91m7.8[0m
+2025-09-17 17:26:32,169 - INFO - [91m[RiskCalc][0m 10572 Final Risk Score: [91m7.8[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 17:26:32,169 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2018-15473.
+2025-09-17 17:26:32,169 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2018-15473 in NVD Cache
+2025-09-17 17:26:32,169 - INFO - [95m[Enrichment][0m CVE-2018-15473 EPSS Score: 0.92167
+2025-09-17 17:26:32,169 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2018-15473 => EPSS=0.92167 | KEV=False | Exploit=True
+2025-09-17 17:26:32,169 - ERROR - Invalid CVSS vector format for 80503: None
+2025-09-17 17:26:32,170 - INFO - [91m[RiskCalc][0m 80503 Raw Risk Score: [91m9.3[0m
+2025-09-17 17:26:32,170 - INFO - [91m[RiskCalc][0m 80503 Final Risk Score: [91m9.3[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 17:26:32,170 - INFO -    Total CVEs Processed : 8
+2025-09-17 17:26:32,170 - INFO -    Total CISA KEV Hits : 5
+2025-09-17 17:26:32,170 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 17:26:32,171 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 17:26:32,171 - INFO -    Total EPSS Misses : 0
+2025-09-17 17:26:32,171 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 17:26:32,172 - INFO - Enrichments Applied
+2025-09-17 17:26:32,172 - INFO - Displaying results to console...
+2025-09-17 17:26:32,180 - INFO - Assets Analyzed: 6,Findings Triaged: 9,Average Risk Score: 8.74,Highest Risk Asset: dbserver-01.example.com,Critical+: 5, High: 2, Medium: 1, Low: 0
+2025-09-17 17:56:58,991 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:56:58,991 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:56:58,991 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 17:56:58,991 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:56:59,000 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 17:56:59,000 - ERROR - Error occured while trying to determine parser to use. Msg: not well-formed (invalid token): line 11, column 21
+2025-09-17 17:58:39,057 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 17:58:39,058 - INFO - Starting up VulnParse-Pin...
+2025-09-17 17:58:39,058 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 17:58:39,058 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 17:58:39,068 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 17:58:39,068 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 17:58:39,068 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 17:58:39,069 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 17:58:39,099 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 17:58:39,099 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 17:58:39,099 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 17:58:39,106 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 17:58:39,346 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 17:58:39,346 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 17:58:39,353 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 17:58:46,750 - INFO - NVD Cache ready.
+2025-09-17 17:58:46,750 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:58:46,776 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 17:58:46,783 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 17:58:46,783 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 17:58:46,783 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 17:58:48,313 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 17:58:48,319 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 17:58:48,319 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 17:58:48,319 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for OpenSSH 9.3 Multiple Vulnerabilities, skipping exploit check.
+2025-09-17 17:58:48,319 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for SSL/TLS Certificate Expiry, skipping exploit check.
+2025-09-17 17:58:48,320 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 17:58:48,320 - WARNING - [Enrichment] No authoritative CVE selected for 1.3.6.1.4.1.25623.1.0.103674
+2025-09-17 17:58:48,320 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.103674: None
+2025-09-17 17:58:48,320 - WARNING - [91m[RiskCalc][0m Missing CVSS for 1.3.6.1.4.1.25623.1.0.103674, setting baseline risk [91m7[0m due to exploit/high-critical severity
+2025-09-17 17:58:48,321 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m7[0m
+2025-09-17 17:58:48,321 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m7[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 17:58:48,321 - WARNING - [Enrichment] No authoritative CVE selected for 1.3.6.1.4.1.25623.1.0.117733
+2025-09-17 17:58:48,321 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.117733: None
+2025-09-17 17:58:48,321 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m0.0[0m
+2025-09-17 17:58:48,322 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-17 17:58:48,322 - INFO -    Total CVEs Processed : 0
+2025-09-17 17:58:48,322 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 17:58:48,322 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 17:58:48,322 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 17:58:48,323 - INFO -    Total EPSS Misses : 0
+2025-09-17 17:58:48,323 - INFO -    Total Findings Rx Baseline Risk Adjustment: 1
+2025-09-17 17:58:48,323 - INFO - Enrichments Applied
+2025-09-17 17:58:48,324 - INFO - Displaying results to console...
+2025-09-17 17:58:48,328 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 3.5,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 0, Medium: 1, Low: 0
+2025-09-17 18:06:27,179 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 18:06:27,179 - INFO - Starting up VulnParse-Pin...
+2025-09-17 18:06:27,179 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 18:06:27,179 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 18:06:27,180 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 18:06:27,180 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 18:06:27,181 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 18:06:27,181 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 18:06:27,189 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 18:06:27,190 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 18:06:27,190 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 18:06:27,191 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 18:06:27,430 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 18:06:27,430 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 18:06:27,431 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 18:06:34,866 - INFO - NVD Cache ready.
+2025-09-17 18:06:34,866 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 18:06:34,873 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 18:06:34,873 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 18:06:34,874 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 18:06:34,874 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 18:06:36,394 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 18:06:36,394 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 18:06:36,395 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 18:06:36,395 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for OpenSSH 9.3 Multiple Vulnerabilities, skipping exploit check.
+2025-09-17 18:06:36,395 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for SSL/TLS Certificate Expiry, skipping exploit check.
+2025-09-17 18:06:36,395 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 18:06:36,395 - WARNING - [Enrichment] No authoritative CVE selected for 1.3.6.1.4.1.25623.1.0.103674
+2025-09-17 18:06:36,396 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.103674: None
+2025-09-17 18:06:36,396 - WARNING - [91m[RiskCalc][0m Missing CVSS for 1.3.6.1.4.1.25623.1.0.103674, setting baseline risk [91m7[0m due to exploit/high-critical severity
+2025-09-17 18:06:36,396 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m7[0m
+2025-09-17 18:06:36,396 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m7[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 18:06:36,396 - WARNING - [Enrichment] No authoritative CVE selected for 1.3.6.1.4.1.25623.1.0.117733
+2025-09-17 18:06:36,397 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.117733: None
+2025-09-17 18:06:36,397 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m0.0[0m
+2025-09-17 18:06:36,397 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-17 18:06:36,397 - INFO -    Total CVEs Processed : 0
+2025-09-17 18:06:36,397 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 18:06:36,398 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 18:06:36,398 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 18:06:36,398 - INFO -    Total EPSS Misses : 0
+2025-09-17 18:06:36,398 - INFO -    Total Findings Rx Baseline Risk Adjustment: 1
+2025-09-17 18:06:36,399 - INFO - Enrichments Applied
+2025-09-17 18:06:36,399 - INFO - Displaying results to console...
+2025-09-17 18:06:36,403 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 3.5,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 0, Medium: 1, Low: 0
+2025-09-17 18:09:04,813 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 18:09:04,813 - INFO - Starting up VulnParse-Pin...
+2025-09-17 18:09:04,814 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 18:09:04,814 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 18:09:04,814 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 18:09:04,815 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 18:09:04,815 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 18:09:04,815 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 18:09:04,824 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 18:09:04,824 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 18:09:04,825 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 18:09:04,825 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 18:09:05,063 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 18:09:05,063 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 18:09:05,064 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 18:09:12,464 - INFO - NVD Cache ready.
+2025-09-17 18:09:12,464 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 18:09:12,471 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 18:09:12,471 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 18:09:12,472 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 18:09:12,472 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 18:09:13,964 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 18:09:13,964 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 18:09:13,965 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 18:09:13,965 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for OpenSSH 9.3 Multiple Vulnerabilities, skipping exploit check.
+2025-09-17 18:09:13,965 - WARNING - [92m[Enrich-Exploit][0mNo CVEs present for SSL/TLS Certificate Expiry, skipping exploit check.
+2025-09-17 18:09:13,965 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 18:09:13,965 - WARNING - [Enrichment] No authoritative CVE selected for 1.3.6.1.4.1.25623.1.0.103674
+2025-09-17 18:09:13,966 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.103674: None
+2025-09-17 18:09:13,966 - WARNING - [91m[RiskCalc][0m Missing CVSS for 1.3.6.1.4.1.25623.1.0.103674, setting baseline risk [91m7[0m due to exploit/high-critical severity
+2025-09-17 18:09:13,966 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m7[0m
+2025-09-17 18:09:13,966 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m7[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 18:09:13,966 - WARNING - [Enrichment] No authoritative CVE selected for 1.3.6.1.4.1.25623.1.0.117733
+2025-09-17 18:09:13,967 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.117733: None
+2025-09-17 18:09:13,967 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m0.0[0m
+2025-09-17 18:09:13,967 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m0.0[0m | Triage Priority: [91mInformational[0m | 
+2025-09-17 18:09:13,967 - INFO -    Total CVEs Processed : 0
+2025-09-17 18:09:13,967 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 18:09:13,968 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 18:09:13,968 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 18:09:13,968 - INFO -    Total EPSS Misses : 0
+2025-09-17 18:09:13,968 - INFO -    Total Findings Rx Baseline Risk Adjustment: 1
+2025-09-17 18:09:13,969 - INFO - Enrichments Applied
+2025-09-17 18:09:13,969 - INFO - Displaying results to console...
+2025-09-17 18:09:13,973 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 3.5,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 0, Medium: 1, Low: 0
+2025-09-17 18:42:57,244 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 18:42:57,245 - INFO - Starting up VulnParse-Pin...
+2025-09-17 18:42:57,245 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 18:42:57,245 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 18:42:57,246 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 18:42:57,246 - ERROR - Error occured while trying to determine parser to use. Msg: OpenVASXMLParser._extract_cves() missing 1 required positional argument: 'result_elem'
+2025-09-17 18:56:24,331 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 18:56:24,331 - INFO - Starting up VulnParse-Pin...
+2025-09-17 18:56:24,332 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 18:56:24,332 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 18:56:24,333 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 18:56:24,333 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 18:56:24,334 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 18:56:24,334 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 18:56:24,356 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 18:56:24,356 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 18:56:24,357 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 18:56:24,365 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 18:56:24,602 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 18:56:24,602 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 18:56:24,604 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 18:56:32,012 - INFO - NVD Cache ready.
+2025-09-17 18:56:32,012 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 18:56:32,038 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 18:56:32,039 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 18:56:32,040 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 18:56:32,040 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 18:56:33,570 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 18:56:33,571 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 18:56:33,571 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 18:56:33,571 - WARNING - No exploits found for OpenSSH 9.3 Multiple Vulnerabilities (CVE-2023-4567 | CVE-2023-4568)
+2025-09-17 18:56:33,571 - WARNING - No exploits found for SSL/TLS Certificate Expiry (CVE-2022-0778)
+2025-09-17 18:56:33,571 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 18:56:33,572 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4567.
+2025-09-17 18:56:33,572 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4567 in NVD Cache
+2025-09-17 18:56:33,572 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-4567
+2025-09-17 18:56:33,572 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4568.
+2025-09-17 18:56:33,572 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4568 in NVD Cache
+2025-09-17 18:56:33,573 - INFO - [95m[Enrichment][0m CVE-2023-4568 EPSS Score: 0.83198
+2025-09-17 18:56:33,573 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-4568 => EPSS=0.83198 | KEV=False | Exploit=False
+2025-09-17 18:56:33,573 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.103674: None
+2025-09-17 18:56:33,573 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m9.5[0m
+2025-09-17 18:56:33,573 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m9.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 18:56:33,574 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2022-0778.
+2025-09-17 18:56:33,574 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2022-0778 in NVD Cache
+2025-09-17 18:56:33,574 - INFO - [95m[Enrichment][0m CVE-2022-0778 EPSS Score: 0.0805
+2025-09-17 18:56:33,574 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2022-0778 => EPSS=0.0805 | KEV=False | Exploit=False
+2025-09-17 18:56:33,574 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.117733: None
+2025-09-17 18:56:33,575 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m5.0[0m
+2025-09-17 18:56:33,575 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m5.0[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 18:56:33,575 - INFO -    Total CVEs Processed : 3
+2025-09-17 18:56:33,575 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 18:56:33,575 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 18:56:33,576 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 18:56:33,576 - INFO -    Total EPSS Misses : 1
+2025-09-17 18:56:33,576 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 18:56:33,577 - INFO - Enrichments Applied
+2025-09-17 18:56:33,577 - INFO - Displaying results to console...
+2025-09-17 18:56:33,581 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 7.25,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 1, Medium: 1, Low: 0
+2025-09-17 19:23:15,773 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 19:23:15,773 - INFO - Starting up VulnParse-Pin...
+2025-09-17 19:23:15,774 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 19:23:15,774 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 19:23:15,774 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 19:23:15,775 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 19:23:15,775 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 19:23:15,775 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 19:23:15,784 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 19:23:15,784 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 19:23:15,784 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 19:23:15,785 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 19:23:16,022 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 19:23:16,023 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 19:23:16,023 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 19:23:23,460 - INFO - NVD Cache ready.
+2025-09-17 19:23:23,461 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 19:23:23,467 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 19:23:23,468 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 19:23:23,468 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 19:23:23,468 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 19:23:24,994 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 19:23:24,994 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 19:23:24,995 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 19:23:24,995 - WARNING - No exploits found for OpenSSH 9.3 Multiple Vulnerabilities (CVE-2023-4567 | CVE-2023-4568)
+2025-09-17 19:23:24,995 - WARNING - No exploits found for SSL/TLS Certificate Expiry (CVE-2022-0778)
+2025-09-17 19:23:24,995 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 19:23:24,995 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4567.
+2025-09-17 19:23:24,995 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4567 in NVD Cache
+2025-09-17 19:23:24,996 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-4567
+2025-09-17 19:23:24,996 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4568.
+2025-09-17 19:23:24,996 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4568 in NVD Cache
+2025-09-17 19:23:24,996 - INFO - [95m[Enrichment][0m CVE-2023-4568 EPSS Score: 0.83198
+2025-09-17 19:23:24,996 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-4568 => EPSS=0.83198 | KEV=False | Exploit=False
+2025-09-17 19:23:24,996 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.103674: None
+2025-09-17 19:23:24,997 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m9.5[0m
+2025-09-17 19:23:24,997 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m9.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 19:23:24,997 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2022-0778.
+2025-09-17 19:23:24,997 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2022-0778 in NVD Cache
+2025-09-17 19:23:24,997 - INFO - [95m[Enrichment][0m CVE-2022-0778 EPSS Score: 0.0805
+2025-09-17 19:23:24,997 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2022-0778 => EPSS=0.0805 | KEV=False | Exploit=False
+2025-09-17 19:23:24,997 - ERROR - Invalid CVSS vector format for 1.3.6.1.4.1.25623.1.0.117733: None
+2025-09-17 19:23:24,998 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m5.0[0m
+2025-09-17 19:23:24,998 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m5.0[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 19:23:24,998 - INFO -    Total CVEs Processed : 3
+2025-09-17 19:23:24,998 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 19:23:24,998 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 19:23:24,998 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 19:23:24,999 - INFO -    Total EPSS Misses : 1
+2025-09-17 19:23:24,999 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 19:23:25,000 - INFO - Enrichments Applied
+2025-09-17 19:23:25,000 - INFO - Displaying results to console...
+2025-09-17 19:23:25,003 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 7.25,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 1, Medium: 1, Low: 0
+2025-09-17 20:07:36,413 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 20:07:36,413 - INFO - Starting up VulnParse-Pin...
+2025-09-17 20:07:36,414 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 20:07:36,414 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 20:07:36,415 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 20:07:36,415 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 20:07:36,416 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 20:07:36,416 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 20:07:36,437 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 20:07:36,438 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 20:07:36,438 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 20:07:36,439 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 20:07:36,677 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 20:07:36,677 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 20:07:36,679 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 20:07:44,088 - INFO - NVD Cache ready.
+2025-09-17 20:07:44,088 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 20:07:44,114 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 20:07:44,115 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 20:07:44,116 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 20:07:44,116 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 20:07:45,644 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 20:07:45,645 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 20:07:45,646 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 20:07:45,646 - WARNING - No exploits found for OpenSSH 9.3 Multiple Vulnerabilities (CVE-2023-4567 | CVE-2023-4568)
+2025-09-17 20:07:45,646 - WARNING - No exploits found for SSL/TLS Certificate Expiry (CVE-2022-0778)
+2025-09-17 20:07:45,646 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 20:07:45,646 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4567.
+2025-09-17 20:07:45,647 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4567 in NVD Cache
+2025-09-17 20:07:45,647 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-4567
+2025-09-17 20:07:45,647 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4568.
+2025-09-17 20:07:45,647 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4568 in NVD Cache
+2025-09-17 20:07:45,647 - INFO - [95m[Enrichment][0m CVE-2023-4568 EPSS Score: 0.83198
+2025-09-17 20:07:45,648 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-4568 => EPSS=0.83198 | KEV=False | Exploit=False
+2025-09-17 20:07:45,648 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.103674. Setting to 'Attempted_NotFound
+2025-09-17 20:07:45,648 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m9.5[0m
+2025-09-17 20:07:45,648 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m9.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 20:07:45,649 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2022-0778.
+2025-09-17 20:07:45,649 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2022-0778 in NVD Cache
+2025-09-17 20:07:45,649 - INFO - [95m[Enrichment][0m CVE-2022-0778 EPSS Score: 0.0805
+2025-09-17 20:07:45,649 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2022-0778 => EPSS=0.0805 | KEV=False | Exploit=False
+2025-09-17 20:07:45,649 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.117733. Setting to 'Attempted_NotFound
+2025-09-17 20:07:45,650 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m5.0[0m
+2025-09-17 20:07:45,650 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m5.0[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 20:07:45,650 - INFO -    Total CVEs Processed : 3
+2025-09-17 20:07:45,650 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 20:07:45,650 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 20:07:45,651 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 20:07:45,651 - INFO -    Total EPSS Misses : 1
+2025-09-17 20:07:45,651 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 20:07:45,652 - INFO - Enrichments Applied
+2025-09-17 20:07:45,652 - INFO - Displaying results to console...
+2025-09-17 20:07:45,656 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 7.25,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 1, Medium: 1, Low: 0
+2025-09-17 20:34:07,336 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 20:34:07,336 - INFO - Starting up VulnParse-Pin...
+2025-09-17 20:34:07,336 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 20:34:07,336 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 20:34:07,337 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 20:34:07,337 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 20:34:07,337 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 20:34:07,338 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 20:34:07,346 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 20:34:07,347 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 20:34:07,347 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 20:34:07,347 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 20:34:07,582 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 20:34:07,582 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 20:34:07,583 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 20:34:14,973 - INFO - NVD Cache ready.
+2025-09-17 20:34:14,973 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 20:34:14,980 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 20:34:14,980 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 20:34:14,981 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 20:34:14,981 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 20:34:16,484 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 20:34:16,485 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 20:34:16,485 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 20:34:16,485 - WARNING - No exploits found for OpenSSH 9.3 Multiple Vulnerabilities (CVE-2023-4567 | CVE-2023-4568)
+2025-09-17 20:34:16,485 - WARNING - No exploits found for SSL/TLS Certificate Expiry (CVE-2022-0778)
+2025-09-17 20:34:16,485 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 20:34:16,485 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4567.
+2025-09-17 20:34:16,486 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4567 in NVD Cache
+2025-09-17 20:34:16,486 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-4567
+2025-09-17 20:34:16,486 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4568.
+2025-09-17 20:34:16,486 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4568 in NVD Cache
+2025-09-17 20:34:16,486 - INFO - [95m[Enrichment][0m CVE-2023-4568 EPSS Score: 0.83198
+2025-09-17 20:34:16,487 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-4568 => EPSS=0.83198 | KEV=False | Exploit=False
+2025-09-17 20:34:16,487 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.103674. Marking as 'Attempted_NotFound'
+2025-09-17 20:34:16,487 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m9.5[0m
+2025-09-17 20:34:16,487 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m9.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 20:34:16,488 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2022-0778.
+2025-09-17 20:34:16,488 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2022-0778 in NVD Cache
+2025-09-17 20:34:16,488 - INFO - [95m[Enrichment][0m CVE-2022-0778 EPSS Score: 0.0805
+2025-09-17 20:34:16,488 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2022-0778 => EPSS=0.0805 | KEV=False | Exploit=False
+2025-09-17 20:34:16,489 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.117733. Marking as 'Attempted_NotFound'
+2025-09-17 20:34:16,489 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m5.0[0m
+2025-09-17 20:34:16,489 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m5.0[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 20:34:16,489 - INFO -    Total CVEs Processed : 3
+2025-09-17 20:34:16,490 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 20:34:16,490 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 20:34:16,490 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 20:34:16,490 - INFO -    Total EPSS Misses : 1
+2025-09-17 20:34:16,490 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 20:34:16,491 - INFO - Enrichments Applied
+2025-09-17 20:34:16,491 - INFO - Displaying results to console...
+2025-09-17 20:34:16,495 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 7.25,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 1, Medium: 1, Low: 0
+2025-09-17 20:41:05,897 - INFO - [*] Offline mode enabled. Enrichment will use local cache only.
+
+2025-09-17 20:41:05,897 - INFO - Starting up VulnParse-Pin...
+2025-09-17 20:41:05,897 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 20:41:05,897 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 20:41:05,898 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 20:41:05,898 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 20:41:05,899 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mOFFLINE[0m source...
+2025-09-17 20:41:05,899 - INFO - 
+[92m[Enrich-Exploit][0m Validating checksum for Exploit-DB feed...
+2025-09-17 20:41:05,908 - INFO - Checksum valid for ./data/files_exploits.csv!
+2025-09-17 20:41:05,908 - INFO - [92m[Enrich-Exploit][0m Validated checksum for Exploit-DB feed.
+2025-09-17 20:41:05,908 - INFO - [92m[Enrich-Exploit][0mLoading local exploit database from ./data/files_exploits.csv.
+2025-09-17 20:41:05,909 - INFO - files_exploits.csv last updated: 2025-09-12T02:36:51.532177+Z
+2025-09-17 20:41:06,148 - INFO - [92m[Enrich-Exploit][0mLoaded 15437 CVE entries from exploit database.
+2025-09-17 20:41:06,148 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15437 CVEs with exploits)
+
+2025-09-17 20:41:06,149 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 20:41:13,598 - INFO - NVD Cache ready.
+2025-09-17 20:41:13,598 - INFO - Loading CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 20:41:13,605 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 20:41:13,606 - INFO - kev_cache.json last updated: 2025-09-12T02:37:16.627894+Z
+2025-09-17 20:41:13,606 - INFO - Loaded CISA KEV data from [93m./data/kev_cache.json[0m
+2025-09-17 20:41:13,606 - INFO - Loading EPSS data from [93m./data/epss_cache.csv.gz[0m
+2025-09-17 20:41:15,106 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 20:41:15,106 - INFO - epss_cache.csv.gz last updated: 2025-09-12T02:37:17.308488+Z
+2025-09-17 20:41:15,107 - INFO - Loaded EPSS data from [93m./data/epss_cache.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 20:41:15,107 - WARNING - No exploits found for OpenSSH 9.3 Multiple Vulnerabilities (CVE-2023-4567 | CVE-2023-4568)
+2025-09-17 20:41:15,107 - WARNING - No exploits found for SSL/TLS Certificate Expiry (CVE-2022-0778)
+2025-09-17 20:41:15,107 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 20:41:15,107 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4567.
+2025-09-17 20:41:15,108 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4567 in NVD Cache
+2025-09-17 20:41:15,108 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-4567
+2025-09-17 20:41:15,108 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4568.
+2025-09-17 20:41:15,108 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4568 in NVD Cache
+2025-09-17 20:41:15,108 - INFO - [95m[Enrichment][0m CVE-2023-4568 EPSS Score: 0.83198
+2025-09-17 20:41:15,109 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-4568 => EPSS=0.83198 | KEV=False | Exploit=False
+2025-09-17 20:41:15,109 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.103674. Marking as 'Attempted_NotFound'
+2025-09-17 20:41:15,109 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 20:41:15,109 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m9.5[0m
+2025-09-17 20:41:15,109 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m9.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 20:41:15,110 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2022-0778.
+2025-09-17 20:41:15,110 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2022-0778 in NVD Cache
+2025-09-17 20:41:15,110 - INFO - [95m[Enrichment][0m CVE-2022-0778 EPSS Score: 0.0805
+2025-09-17 20:41:15,110 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2022-0778 => EPSS=0.0805 | KEV=False | Exploit=False
+2025-09-17 20:41:15,110 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.117733. Marking as 'Attempted_NotFound'
+2025-09-17 20:41:15,111 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 20:41:15,111 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m5.0[0m
+2025-09-17 20:41:15,111 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m5.0[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 20:41:15,111 - INFO -    Total CVEs Processed : 3
+2025-09-17 20:41:15,112 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 20:41:15,112 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 20:41:15,112 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 20:41:15,112 - INFO -    Total EPSS Misses : 1
+2025-09-17 20:41:15,112 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 20:41:15,113 - INFO - Enrichments Applied
+2025-09-17 20:41:15,113 - INFO - Displaying results to console...
+2025-09-17 20:41:15,117 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 7.25,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 1, Medium: 1, Low: 0
+2025-09-17 20:56:29,356 - INFO - Starting up VulnParse-Pin...
+2025-09-17 20:56:29,356 - INFO - Loading file: .\tests_output\openvasxml.xml
+2025-09-17 20:56:29,356 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 20:56:29,357 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 20:56:29,357 - INFO - Parsed 1 assets, 2 findings
+2025-09-17 20:56:29,358 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-09-17 20:56:29,358 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-09-17 20:56:29,949 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-09-17 20:56:29,950 - INFO - Metadata written to ./data/files_exploits.csv.meta
+2025-09-17 20:56:29,958 - INFO - files_exploits.csv last updated: 2025-09-18T03:56:29.949728+Z
+2025-09-17 20:56:30,204 - INFO - [92m[Enrich-Exploit][0mLoaded 15447 CVE entries from exploit database.
+2025-09-17 20:56:30,205 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15447 CVEs with exploits)
+
+2025-09-17 20:56:30,206 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 20:56:30,206 - INFO - Downloading NVD feed: modified.json.gz
+2025-09-17 20:56:31,228 - INFO - Downloading NVD feed: 2023.json.gz
+2025-09-17 20:56:35,286 - INFO - Downloading NVD feed: 2024.json.gz
+2025-09-17 20:56:39,416 - INFO - Downloading NVD feed: 2025.json.gz
+2025-09-17 20:56:42,142 - INFO - NVD Cache ready.
+2025-09-17 20:56:42,143 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 20:56:42,349 - INFO - KEV JSON feed cached locally at ./data/kev_cache.json.gz
+2025-09-17 20:56:42,349 - INFO - Metadata written to ./data/kev_cache.json.meta
+2025-09-17 20:56:42,367 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 20:56:42,375 - INFO - kev_cache.json last updated: 2025-09-18T03:56:42.349304+Z
+2025-09-17 20:56:42,376 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 20:56:42,377 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-09-17 20:56:42,660 - INFO - EPSS feed cached locally at ./data/epss_cache.csv.gz
+2025-09-17 20:56:42,661 - INFO - Metadata written to ./data/epss_cache.csv.gz.meta
+2025-09-17 20:56:44,202 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 20:56:44,209 - INFO - epss_cache.csv.gz last updated: 2025-09-18T03:56:42.660834+Z
+2025-09-17 20:56:44,209 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 20:56:44,209 - WARNING - No exploits found for OpenSSH 9.3 Multiple Vulnerabilities (CVE-2023-4567 | CVE-2023-4568)
+2025-09-17 20:56:44,209 - WARNING - No exploits found for SSL/TLS Certificate Expiry (CVE-2022-0778)
+2025-09-17 20:56:44,209 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 20:56:44,210 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4567.
+2025-09-17 20:56:44,210 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4567 in NVD Cache
+2025-09-17 20:56:44,210 - WARNING - [95m[Enrichment][0m No EPSS Score for CVE-2023-4567
+2025-09-17 20:56:44,210 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2023-4568.
+2025-09-17 20:56:44,211 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2023-4568 in NVD Cache
+2025-09-17 20:56:44,211 - INFO - [95m[Enrichment][0m CVE-2023-4568 EPSS Score: 0.83198
+2025-09-17 20:56:44,211 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2023-4568 => EPSS=0.83198 | KEV=False | Exploit=False
+2025-09-17 20:56:44,211 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.103674. Marking as 'Attempted_NotFound'
+2025-09-17 20:56:44,211 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 20:56:44,212 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Raw Risk Score: [91m9.5[0m
+2025-09-17 20:56:44,212 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.103674 Final Risk Score: [91m9.5[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 20:56:44,212 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2022-0778.
+2025-09-17 20:56:44,212 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2022-0778 in NVD Cache
+2025-09-17 20:56:44,212 - INFO - [95m[Enrichment][0m CVE-2022-0778 EPSS Score: 0.08415
+2025-09-17 20:56:44,213 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2022-0778 => EPSS=0.08415 | KEV=False | Exploit=False
+2025-09-17 20:56:44,213 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.117733. Marking as 'Attempted_NotFound'
+2025-09-17 20:56:44,213 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 20:56:44,213 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Raw Risk Score: [91m5.0[0m
+2025-09-17 20:56:44,213 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.117733 Final Risk Score: [91m5.0[0m | Triage Priority: [91mMedium[0m | 
+2025-09-17 20:56:44,214 - INFO -    Total CVEs Processed : 3
+2025-09-17 20:56:44,214 - INFO -    Total CISA KEV Hits : 0
+2025-09-17 20:56:44,214 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 20:56:44,214 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 20:56:44,214 - INFO -    Total EPSS Misses : 1
+2025-09-17 20:56:44,215 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 20:56:44,215 - INFO - Enrichments Applied
+2025-09-17 20:56:44,250 - INFO - Results exported to CSV: nessus_json.csv
+2025-09-17 20:56:44,251 - INFO - Displaying results to console...
+2025-09-17 20:56:44,255 - INFO - Assets Analyzed: 1,Findings Triaged: 2,Average Risk Score: 7.25,Highest Risk Asset: 10.0.0.1,Critical+: 0, High: 1, Medium: 1, Low: 0
+2025-09-17 20:57:21,958 - INFO - Starting up VulnParse-Pin...
+2025-09-17 20:57:21,958 - INFO - Loading file: .\tests_output\nessus_json.json
+2025-09-17 20:57:21,969 - INFO - File loaded: .\tests_output\nessus_json.json
+2025-09-17 20:57:21,969 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 20:57:21,969 - INFO - Detected parser for structure: [95mOpenVASParser[0m
+2025-09-17 20:57:21,969 - ERROR - Error occured while trying to determine parser to use. Msg: Unknown or unsupported OpenVAS data structure for normalization.
+2025-09-17 21:10:10,779 - INFO - Starting up VulnParse-Pin...
+2025-09-17 21:10:10,779 - INFO - Loading file: .\tests_output\nessus_json.json
+2025-09-17 21:10:10,788 - INFO - File loaded: .\tests_output\nessus_json.json
+2025-09-17 21:10:10,788 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 21:10:10,788 - INFO - Detected parser for structure: [95mNessusParser[0m
+2025-09-17 21:10:10,789 - WARNING - Unknown dict formation - returning as-is.
+2025-09-17 21:10:10,789 - WARNING - Unknown JSON structure: top-level keys: ['scan']
+2025-09-17 21:10:10,789 - ERROR - Error occured while trying to determine parser to use. Msg: cannot access local variable 'scan_date' where it is not associated with a value
+2025-09-17 21:14:13,584 - INFO - Starting up VulnParse-Pin...
+2025-09-17 21:14:13,584 - INFO - Loading file: .\tests_output\nessusxml_sample.xml
+2025-09-17 21:14:13,584 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 21:14:13,592 - INFO - Detected parser for structure: [95mNessusXMLParser[0m
+2025-09-17 21:14:13,592 - ERROR - Error occured while trying to determine parser to use. Msg: not well-formed (invalid token): line 20, column 55
+2025-09-17 21:16:57,719 - INFO - Starting up VulnParse-Pin...
+2025-09-17 21:16:57,719 - INFO - Loading file: .\tests_output\nessusxml_sample.xml
+2025-09-17 21:16:57,720 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 21:16:57,728 - INFO - Detected parser for structure: [95mNessusXMLParser[0m
+2025-09-17 21:16:57,729 - INFO - Parsed 2 assets, 2 findings
+2025-09-17 21:16:57,729 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-09-17 21:16:57,729 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-09-17 21:16:58,156 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-09-17 21:16:58,157 - INFO - Metadata written to ./data/files_exploits.csv.meta
+2025-09-17 21:16:58,166 - INFO - files_exploits.csv last updated: 2025-09-18T04:16:58.156709+Z
+2025-09-17 21:16:58,414 - INFO - [92m[Enrich-Exploit][0mLoaded 15447 CVE entries from exploit database.
+2025-09-17 21:16:58,414 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15447 CVEs with exploits)
+
+2025-09-17 21:16:58,415 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 21:17:07,576 - INFO - NVD Cache ready.
+2025-09-17 21:17:07,576 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 21:17:07,774 - INFO - KEV JSON feed cached locally at ./data/kev_cache.json.gz
+2025-09-17 21:17:07,774 - INFO - Metadata written to ./data/kev_cache.json.meta
+2025-09-17 21:17:07,791 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 21:17:07,799 - INFO - kev_cache.json last updated: 2025-09-18T04:17:07.774436+Z
+2025-09-17 21:17:07,800 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 21:17:07,800 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-09-17 21:17:08,112 - INFO - EPSS feed cached locally at ./data/epss_cache.csv.gz
+2025-09-17 21:17:08,113 - INFO - Metadata written to ./data/epss_cache.csv.gz.meta
+2025-09-17 21:17:09,627 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 21:17:09,635 - INFO - epss_cache.csv.gz last updated: 2025-09-18T04:17:08.112684+Z
+2025-09-17 21:17:09,635 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 21:17:09,636 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for None (CVE-2017-0144 | CVE-2017-0145)
+2025-09-17 21:17:09,636 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for None (CVE-2016-10009 | CVE-2016-10010)
+2025-09-17 21:17:09,636 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 21:17:09,636 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-17 21:17:09,637 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-17 21:17:09,637 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.9442
+2025-09-17 21:17:09,637 - INFO - [95m[Enrichment][0m CVE-2017-0145 found in CISA KEV
+2025-09-17 21:17:09,637 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0145 in NVD Cache
+2025-09-17 21:17:09,637 - INFO - [95m[Enrichment][0m CVE-2017-0145 EPSS Score: 0.93539
+2025-09-17 21:17:09,638 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.9442 | KEV=True | Exploit=True
+2025-09-17 21:17:09,638 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 100000. Marking as 'Attempted_NotFound'
+2025-09-17 21:17:09,638 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:17:09,638 - WARNING - [91m[RiskCalc][0m Missing CVSS for 100000, setting baseline risk [91m7[0m due to exploit/high-critical severity
+2025-09-17 21:17:09,638 - WARNING - [91m[RiskCalc][0m Risk Score for 100000 capped at 10.0 (Raw Score: [91m12.25[0m)
+2025-09-17 21:17:09,639 - INFO - [91m[RiskCalc][0m 100000 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 21:17:09,639 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10009.
+2025-09-17 21:17:09,639 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10009 in NVD Cache
+2025-09-17 21:17:09,639 - INFO - [95m[Enrichment][0m CVE-2016-10009 EPSS Score: 0.03254
+2025-09-17 21:17:09,639 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10010.
+2025-09-17 21:17:09,640 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10010 in NVD Cache
+2025-09-17 21:17:09,640 - INFO - [95m[Enrichment][0m CVE-2016-10010 EPSS Score: 0.00119
+2025-09-17 21:17:09,640 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2016-10009 => EPSS=0.03254 | KEV=False | Exploit=True
+2025-09-17 21:17:09,640 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 51192. Marking as 'Attempted_NotFound'
+2025-09-17 21:17:09,641 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:17:09,641 - WARNING - [91m[RiskCalc][0m Missing CVSS for 51192, setting baseline risk [91m7[0m due to exploit/high-critical severity
+2025-09-17 21:17:09,641 - INFO - [91m[RiskCalc][0m 51192 Raw Risk Score: [91m9[0m
+2025-09-17 21:17:09,641 - INFO - [91m[RiskCalc][0m 51192 Final Risk Score: [91m9[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 21:17:09,641 - INFO -    Total CVEs Processed : 4
+2025-09-17 21:17:09,642 - INFO -    Total CISA KEV Hits : 2
+2025-09-17 21:17:09,642 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 21:17:09,642 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 21:17:09,642 - INFO -    Total EPSS Misses : 0
+2025-09-17 21:17:09,642 - INFO -    Total Findings Rx Baseline Risk Adjustment: 2
+2025-09-17 21:17:09,643 - INFO - Enrichments Applied
+2025-09-17 21:17:09,644 - INFO - Results exported to CSV: nessus_xml.csv
+2025-09-17 21:17:09,645 - INFO - Displaying results to console...
+2025-09-17 21:17:09,649 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 9.5,Highest Risk Asset: 10.0.2.15,Critical+: 1, High: 1, Medium: 0, Low: 0
+2025-09-17 21:20:10,248 - INFO - Starting up VulnParse-Pin...
+2025-09-17 21:20:10,248 - INFO - Loading file: .\tests_output\openvasjson_sample.json
+2025-09-17 21:20:10,255 - INFO - File loaded: .\tests_output\openvasjson_sample.json
+2025-09-17 21:20:10,255 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 21:20:10,256 - INFO - Detected parser for structure: [95mOpenVASParser[0m
+2025-09-17 21:20:10,256 - INFO - Parsed 2 assets, 2 findings
+2025-09-17 21:20:10,257 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-09-17 21:20:10,257 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-09-17 21:20:10,683 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-09-17 21:20:10,683 - INFO - Metadata written to ./data/files_exploits.csv.meta
+2025-09-17 21:20:10,691 - INFO - files_exploits.csv last updated: 2025-09-18T04:20:10.683080+Z
+2025-09-17 21:20:10,937 - INFO - [92m[Enrich-Exploit][0mLoaded 15447 CVE entries from exploit database.
+2025-09-17 21:20:10,938 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15447 CVEs with exploits)
+
+2025-09-17 21:20:10,939 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 21:20:19,851 - INFO - NVD Cache ready.
+2025-09-17 21:20:19,852 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 21:20:20,051 - INFO - KEV JSON feed cached locally at ./data/kev_cache.json.gz
+2025-09-17 21:20:20,052 - INFO - Metadata written to ./data/kev_cache.json.meta
+2025-09-17 21:20:20,069 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 21:20:20,076 - INFO - kev_cache.json last updated: 2025-09-18T04:20:20.051843+Z
+2025-09-17 21:20:20,077 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 21:20:20,078 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-09-17 21:20:20,540 - INFO - EPSS feed cached locally at ./data/epss_cache.csv.gz
+2025-09-17 21:20:20,540 - INFO - Metadata written to ./data/epss_cache.csv.gz.meta
+2025-09-17 21:20:22,043 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 21:20:22,050 - INFO - epss_cache.csv.gz last updated: 2025-09-18T04:20:20.540285+Z
+2025-09-17 21:20:22,050 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 21:20:22,050 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for MS17-010 SMBv1 RCE (CVE-2017-0144)
+2025-09-17 21:20:22,051 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for OpenSSH < 7.4 Vulnerabilities (CVE-2016-10010 | CVE-2016-10009)
+2025-09-17 21:20:22,051 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 21:20:22,051 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-17 21:20:22,052 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-17 21:20:22,052 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.9442
+2025-09-17 21:20:22,052 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.9442 | KEV=True | Exploit=True
+2025-09-17 21:20:22,052 - WARNING - [95m[CVSSVector][0m No CVSS vector available for CVE-2017-0144. Marking as 'Attempted_NotFound'
+2025-09-17 21:20:22,052 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:20:22,052 - WARNING - [91m[RiskCalc][0m Missing CVSS for CVE-2017-0144, setting baseline risk [91m7[0m due to exploit/high-critical severity
+2025-09-17 21:20:22,053 - WARNING - [91m[RiskCalc][0m Risk Score for CVE-2017-0144 capped at 10.0 (Raw Score: [91m12.25[0m)
+2025-09-17 21:20:22,053 - INFO - [91m[RiskCalc][0m CVE-2017-0144 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 21:20:22,053 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10010.
+2025-09-17 21:20:22,053 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10010 in NVD Cache
+2025-09-17 21:20:22,053 - INFO - [95m[Enrichment][0m CVE-2016-10010 EPSS Score: 0.00119
+2025-09-17 21:20:22,054 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10009.
+2025-09-17 21:20:22,054 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10009 in NVD Cache
+2025-09-17 21:20:22,054 - INFO - [95m[Enrichment][0m CVE-2016-10009 EPSS Score: 0.03254
+2025-09-17 21:20:22,054 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2016-10009 => EPSS=0.03254 | KEV=False | Exploit=True
+2025-09-17 21:20:22,054 - WARNING - [95m[CVSSVector][0m No CVSS vector available for CVE-2016-10009. Marking as 'Attempted_NotFound'
+2025-09-17 21:20:22,055 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:20:22,055 - WARNING - [91m[RiskCalc][0m Missing CVSS for CVE-2016-10009, setting baseline risk [91m7[0m due to exploit/high-critical severity
+2025-09-17 21:20:22,055 - INFO - [91m[RiskCalc][0m CVE-2016-10009 Raw Risk Score: [91m9[0m
+2025-09-17 21:20:22,055 - INFO - [91m[RiskCalc][0m CVE-2016-10009 Final Risk Score: [91m9[0m | Triage Priority: [91mHigh[0m | 
+2025-09-17 21:20:22,055 - INFO -    Total CVEs Processed : 3
+2025-09-17 21:20:22,056 - INFO -    Total CISA KEV Hits : 1
+2025-09-17 21:20:22,056 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 21:20:22,056 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 21:20:22,056 - INFO -    Total EPSS Misses : 0
+2025-09-17 21:20:22,056 - INFO -    Total Findings Rx Baseline Risk Adjustment: 2
+2025-09-17 21:20:22,057 - INFO - Enrichments Applied
+2025-09-17 21:20:22,058 - INFO - Results exported to CSV: openvas_json.csv
+2025-09-17 21:20:22,058 - INFO - Displaying results to console...
+2025-09-17 21:20:22,063 - INFO - Assets Analyzed: 2,Findings Triaged: 2,Average Risk Score: 9.5,Highest Risk Asset: 10.0.2.15,Critical+: 1, High: 1, Medium: 0, Low: 0
+2025-09-17 21:25:06,798 - INFO - Starting up VulnParse-Pin...
+2025-09-17 21:25:06,798 - INFO - Loading file: .\tests_output\openvasxml_sample.xml
+2025-09-17 21:25:06,798 - INFO - Scanning structure to determine the type of parser to use...
+2025-09-17 21:25:06,806 - INFO - Detected parser for structure: [95mOpenVASXMLParser[0m
+2025-09-17 21:25:06,807 - INFO - Parsed 2 assets, 4 findings
+2025-09-17 21:25:06,807 - INFO - [92m[Enrich-Exploit][0mLoading Exploit-DB data from [93mONLINE[0m source...
+2025-09-17 21:25:06,808 - INFO - [92m[Enrich-Exploit][0mDownloading latest ExploitDB mirror from https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv...
+2025-09-17 21:25:07,207 - INFO - [92m[Enrich-Exploit][0mExploit mirror saved to ./data/files_exploits.csv.
+2025-09-17 21:25:07,207 - INFO - Metadata written to ./data/files_exploits.csv.meta
+2025-09-17 21:25:07,215 - INFO - files_exploits.csv last updated: 2025-09-18T04:25:07.207407+Z
+2025-09-17 21:25:07,462 - INFO - [92m[Enrich-Exploit][0mLoaded 15447 CVE entries from exploit database.
+2025-09-17 21:25:07,463 - INFO - [92m[Enrich-Exploit][0mLoaded Exploit-DB data (15447 CVEs with exploits)
+
+2025-09-17 21:25:07,464 - INFO - [93m[NVD Cache][0m Initializing NVD Cache for 2023-2025...
+2025-09-17 21:25:16,713 - INFO - NVD Cache ready.
+2025-09-17 21:25:16,713 - INFO - Loading CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 21:25:17,003 - INFO - KEV JSON feed cached locally at ./data/kev_cache.json.gz
+2025-09-17 21:25:17,004 - INFO - Metadata written to ./data/kev_cache.json.meta
+2025-09-17 21:25:17,022 - INFO - Checksum valid for ./data/kev_cache.json!
+2025-09-17 21:25:17,029 - INFO - kev_cache.json last updated: 2025-09-18T04:25:17.003595+Z
+2025-09-17 21:25:17,031 - INFO - Loaded CISA KEV data from [93mhttps://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json[0m
+2025-09-17 21:25:17,031 - INFO - Loading EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+2025-09-17 21:25:17,382 - INFO - EPSS feed cached locally at ./data/epss_cache.csv.gz
+2025-09-17 21:25:17,383 - INFO - Metadata written to ./data/epss_cache.csv.gz.meta
+2025-09-17 21:25:18,912 - INFO - Checksum valid for ./data/epss_cache.csv.gz!
+2025-09-17 21:25:18,919 - INFO - epss_cache.csv.gz last updated: 2025-09-18T04:25:17.382589+Z
+2025-09-17 21:25:18,919 - INFO - Loaded EPSS data from [93mhttps://epss.empiricalsecurity.com/epss_scores-current.csv.gz[0m
+=========================Exploit Enrichment Results=========================
+2025-09-17 21:25:18,920 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for None (CVE-2017-0144)
+2025-09-17 21:25:18,920 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for None (CVE-2016-10009 | CVE-2016-10010)
+2025-09-17 21:25:18,920 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for None (CVE-2017-0144)
+2025-09-17 21:25:18,920 - INFO - [92m[Enrich-Exploit][0mExploit(s) found for None (CVE-2016-10009 | CVE-2016-10010)
+2025-09-17 21:25:18,920 - INFO - [92m[Enrich-Exploit][0mExploit enrichment applied to findings.
+=========================Enrichment Processing=========================
+2025-09-17 21:25:18,921 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-17 21:25:18,921 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-17 21:25:18,921 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.9442
+2025-09-17 21:25:18,921 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.9442 | KEV=True | Exploit=True
+2025-09-17 21:25:18,922 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.902620. Marking as 'Attempted_NotFound'
+2025-09-17 21:25:18,922 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:25:18,922 - WARNING - [91m[RiskCalc][0m Risk Score for 1.3.6.1.4.1.25623.1.0.902620 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-17 21:25:18,922 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.902620 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 21:25:18,922 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10009.
+2025-09-17 21:25:18,923 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10009 in NVD Cache
+2025-09-17 21:25:18,923 - INFO - [95m[Enrichment][0m CVE-2016-10009 EPSS Score: 0.03254
+2025-09-17 21:25:18,923 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10010.
+2025-09-17 21:25:18,923 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10010 in NVD Cache
+2025-09-17 21:25:18,923 - INFO - [95m[Enrichment][0m CVE-2016-10010 EPSS Score: 0.00119
+2025-09-17 21:25:18,924 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2016-10009 => EPSS=0.03254 | KEV=False | Exploit=True
+2025-09-17 21:25:18,924 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.802092. Marking as 'Attempted_NotFound'
+2025-09-17 21:25:18,924 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:25:18,924 - WARNING - [91m[RiskCalc][0m Risk Score for 1.3.6.1.4.1.25623.1.0.802092 capped at 10.0 (Raw Score: [91m11.3[0m)
+2025-09-17 21:25:18,925 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.802092 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 21:25:18,925 - INFO - [95m[Enrichment][0m CVE-2017-0144 found in CISA KEV
+2025-09-17 21:25:18,925 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2017-0144 in NVD Cache
+2025-09-17 21:25:18,925 - INFO - [95m[Enrichment][0m CVE-2017-0144 EPSS Score: 0.9442
+2025-09-17 21:25:18,925 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2017-0144 => EPSS=0.9442 | KEV=True | Exploit=True
+2025-09-17 21:25:18,925 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.902620. Marking as 'Attempted_NotFound'
+2025-09-17 21:25:18,926 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:25:18,926 - WARNING - [91m[RiskCalc][0m Risk Score for 1.3.6.1.4.1.25623.1.0.902620 capped at 10.0 (Raw Score: [91m15.0[0m)
+2025-09-17 21:25:18,926 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.902620 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 21:25:18,926 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10009.
+2025-09-17 21:25:18,926 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10009 in NVD Cache
+2025-09-17 21:25:18,927 - INFO - [95m[Enrichment][0m CVE-2016-10009 EPSS Score: 0.03254
+2025-09-17 21:25:18,927 - WARNING - [95m[Enrichment][0m No CISA KEV record for CVE-2016-10010.
+2025-09-17 21:25:18,927 - WARNING - [CVSSVector] No usable CVSS vector found for CVE-2016-10010 in NVD Cache
+2025-09-17 21:25:18,927 - INFO - [95m[Enrichment][0m CVE-2016-10010 EPSS Score: 0.00119
+2025-09-17 21:25:18,927 - INFO - [95m[Enrichment][0m Authoritative CVE: CVE-2016-10009 => EPSS=0.03254 | KEV=False | Exploit=True
+2025-09-17 21:25:18,928 - WARNING - [95m[CVSSVector][0m No CVSS vector available for 1.3.6.1.4.1.25623.1.0.802092. Marking as 'Attempted_NotFound'
+2025-09-17 21:25:18,928 - INFO - [95m[CVSSVector][0m Skipping validation for sentinel state: SENTINEL:Attempted_NotFound
+2025-09-17 21:25:18,928 - WARNING - [91m[RiskCalc][0m Risk Score for 1.3.6.1.4.1.25623.1.0.802092 capped at 10.0 (Raw Score: [91m11.3[0m)
+2025-09-17 21:25:18,928 - INFO - [91m[RiskCalc][0m 1.3.6.1.4.1.25623.1.0.802092 Final Risk Score: [91m10.0[0m | Triage Priority: [91mCritical+[0m | 
+2025-09-17 21:25:18,929 - INFO -    Total CVEs Processed : 6
+2025-09-17 21:25:18,929 - INFO -    Total CISA KEV Hits : 2
+2025-09-17 21:25:18,929 - INFO -    Total CVSS Vectors Assigned : 0
+2025-09-17 21:25:18,929 - INFO -    Total CVSS Vectors Validated : 0
+2025-09-17 21:25:18,930 - INFO -    Total EPSS Misses : 0
+2025-09-17 21:25:18,930 - INFO -    Total Findings Rx Baseline Risk Adjustment: 0
+2025-09-17 21:25:18,931 - INFO - Enrichments Applied
+2025-09-17 21:25:18,932 - INFO - Results exported to CSV: openvas_xml.csv
+2025-09-17 21:25:18,932 - INFO - Displaying results to console...
+2025-09-17 21:25:18,938 - INFO - Assets Analyzed: 2,Findings Triaged: 4,Average Risk Score: 10.0,Highest Risk Asset: 10.0.2.15,Critical+: 4, High: 0, Medium: 0, Low: 0

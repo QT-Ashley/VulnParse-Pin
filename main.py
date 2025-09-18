@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
 import time
-from parsers.nessus_parser import NessusParser
+from classes.dataclass import ScanResult
 from dataclasses import asdict
 from utils.enricher import enrich_scan_results, load_epss_from_csv, load_kev_from_json, update_enrichment_status
 import argparse
@@ -174,6 +174,28 @@ def valid_log_level(level):
     if lvl not in levels:
         raise argparse.ArgumentTypeError(f"Invalid log level '{level}. Choce from {levels}.")
     return lvl
+
+def detect_parser(filepath: str):
+    """
+    Detects and instanties the correct parser for the given file.
+    Uses detect_file() for lightweight header sniffing.
+    """
+    for parser_cls in parsers:
+        if parser_cls.detect_file(filepath):
+            log.log.print_success(f"Detected parser for structure: {Fore.LIGHTMAGENTA_EX}{parser_cls.__name__}{Style.RESET_ALL}")
+            return parser_cls(filepath)
+    
+    raise ValueError(f"No parser found for {filepath}")
+
+def load_and_parse(filepath: str):
+    """
+    Detect parser, parse the file, and return ScanResult object.
+    """
+    parser = detect_parser(filepath)
+    if parser:
+        return parser.parse()
+    else:
+        log.log.print_error(f"Failure attemping to parse {filepath}")
     
 def get_args():
     parser = argparse.ArgumentParser(
@@ -261,31 +283,30 @@ def main():
     log.log.print_info("Starting up VulnParse-Pin...")
     log.log.print_info(f"Loading file: {args.file}")
     
-    # Check and validate json structure.
-    validator = FileInputValidator(args.file, allow_large=args.allow_large)
-    try:
-        report_json = validator.validate()
-    except Exception:
-        sys.exit(1)
+    input_file = args.file
+    
+    # If JSON - Check and validate json structure.
+    if input_file.endswith(".json"):
+        validator = FileInputValidator(input_file, allow_large=args.allow_large)
+        try:
+            input_file = validator.validate()
+        except Exception:
+            sys.exit(1)
     
         
     # Available parsers
-    parsers = [NessusParser(), OpenVASParser()] #TODO: Extend Parser classes
+    #NessusParser(), OpenVASParser(), NessusXMLParser(), OpenVASMXLParser()] #TODO: Extend Parser classes
+    # Detect parser class, initialize, and parse.
+    log.log.print_info("Scanning structure to determine the type of parser to use...")
+    scan_result = None
+    try:
+        scan_result = load_and_parse(input_file)
+    except Exception as e:
+        log.log.print_error(f"Error occured while trying to determine parser to use. Msg: {e}")
     
-    log.log.print_info("Scanning JSON structure to determine the type of parser to use...")
-    parser_used = None
-    for parser in parsers:
-        if parser.detect(report_json):
-            parser_used = parser
-            break
+    log.log.print_success(f"Parsed {len(scan_result.assets)} assets, {sum(len(a.findings) for a in scan_result.assets)} findings")
     
-    if not parser_used:
-        log.log.print_error("No compatible parsed found for this file.")
-        sys.exit(1)
-        
-    log.log.print_success(f"Detected parser for JSON structure: {Fore.LIGHTMAGENTA_EX}{parser_used.__class__.__name__}{Style.RESET_ALL}")
-    scan_result = parser_used.parse(report_json)
-    
+    # Start enrichment pipeline
     
     kev_data = None
     epss_data = None
@@ -298,7 +319,6 @@ def main():
         exploit_data = load_exploit_data(args.exploit_source, args.exploit_db)
         log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Loaded Exploit-DB data ({len(exploit_data)} CVEs with exploits)\n")
         
-    log.log.print_success(f"Parsed {len(scan_result.assets)} assets, {sum(len(a.findings) for a in scan_result.assets)} findings")
     
     # Load nvd config file
     nvd_config = load_config("nvd_config.yaml")

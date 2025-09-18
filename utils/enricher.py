@@ -434,6 +434,15 @@ def update_enrichment_status(finding):
         finding.enriched = True
     else:
         finding.enriched = False
+        
+def prefer_vector(vectors):
+    order = {"CVSS:3.1": 1, "CVSS:3.0": 2, "CVSS:2.0": 3}
+    def rank(v):
+        for prefix, score in order.items():
+            if v.startswith(prefix):
+                return score
+        return 99
+    return sorted(vectors, key=rank)[0]
 
 def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, epss_data: Dict[str, float] = None, offline_mode: bool = False, nvd_cache: Optional[Any] = None) -> None:
     '''
@@ -557,17 +566,22 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
             if sec_cvss_vectors:
                 valid_vectors = [v for v in sec_cvss_vectors if is_valid_cvss_vector(v)]
                 if valid_vectors:
-                    finding.cvss_vector = valid_vectors[0]
+                    finding.cvss_vector = prefer_vector(valid_vectors)
                     log.log.print_success(f"{Fore.LIGHTMAGENTA_EX}[CVSSVector]{Style.RESET_ALL} Assigned CVSS Vector: {finding.cvss_vector}")
                     stats.cvss_vectors_assigned += 1
                 else:
                     log.log.print_warning(f"{Fore.LIGHTMAGENTA_EX}[CVSSVector]{Style.RESET_ALL} No valid CVSS vectors found for {finding.cvss_vector}")
                     
             elif finding.cvss_vector in ["N/A", "Unknown", None]:
-                finding.cvss_vector = random.choice(sec_cvss_vectors) if sec_cvss_vectors else None
+                log.log.print_warning(f"{Fore.LIGHTMAGENTA_EX}[CVSSVector]{Style.RESET_ALL} No CVSS vector available for {finding.vuln_id}. Marking as 'Attempted_NotFound'")
+                finding.cvss_vector = "SENTINEL:Attempted_NotFound"
             
             # Now Validate and Reconcile CVSS Vector
-            if finding.cvss_vector and is_valid_cvss_vector(str(finding.cvss_vector)):
+            if finding.cvss_vector:
+                if finding.cvss_vector.startswith("SENTINEL:"):
+                    log.log.print_info(f"{Fore.LIGHTMAGENTA_EX}[CVSSVector]{Style.RESET_ALL} Skipping validation for sentinel state: "
+            f"{finding.cvss_vector}")
+            elif is_valid_cvss_vector(str(finding.cvss_vector)):
                 cvss_data = parse_cvss_vector(str(finding.cvss_vector))
                 log.log.print_info(f"{Fore.LIGHTMAGENTA_EX}[CVSSVector]{Style.RESET_ALL} Validating and reconciling CVSS Vector for {finding.vuln_id}...")
                 stats.cvss_vectors_validated += 1
@@ -588,6 +602,9 @@ def enrich_scan_results(results: ScanResult, kev_data: Dict[str, bool] = None, e
                         
                 else:
                     log.logger.debug(f"Invalid CVSS vector for {finding.vuln_id}")
+            
+            elif finding.cvss_score and not finding.cvss_vector:
+                log.log.print_warning(f"{Fore.LIGHTMAGENTA_EX}[CVSSVector]{Style.RESET_ALL} No CVSS vector but score present for {finding.vuln_id}."f"Keeping score {finding.cvss_score} as-is.")
             else:
                 log.log.print_error(f"Invalid CVSS vector format for {finding.vuln_id}: {finding.cvss_vector}")
                     

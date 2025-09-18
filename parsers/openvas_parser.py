@@ -1,5 +1,5 @@
-from importlib.metadata import entry_points
 import re
+import json
 from datetime import datetime, timezone
 import hashlib
 from json_parser import detect_and_transform_flat_json
@@ -12,6 +12,39 @@ from utils.normalizer import coerce_float, coerce_int, coerce_list, coerce_sever
 
 
 class OpenVASParser(BaseParser):
+    
+    @classmethod
+    def detect_file(cls, filepath):
+        """Lightweight file-level detection for OpenVAS JSON."""
+        if filepath.lower().endswith(".json"):
+            try:
+                with open(filepath, "r", encoding='utf-8') as f:
+                    head = f.read(5000)
+                
+                # Candidate fields
+                possible_fields = [
+                    '"results"',
+                    '"scan_start"',
+                    '"scan_end"',
+                    '"host"',
+                    '"port"',
+                    '"severity"',
+                    '"name"',
+                    '"nvt"',
+                    '"oid"',
+                ]
+                
+                # Count Matches
+                matches = sum(1 for field in possible_fields if field in head)
+                
+                # Require at least 3 hit to be confident
+                return matches >=3
+            
+            except Exception:
+                return False
+        else:
+            return False
+    
     def detect(self, data):
         detection_patterns = [
             # Pattern 1: Check for top-level 'report' key with 'results' list with nested dictionaries
@@ -52,7 +85,14 @@ class OpenVASParser(BaseParser):
             
         return False
     
-    def parse(self, openvasdata: Dict[str, Any]) -> ScanResult:
+    def parse(self, openvasdata: Dict = None) -> ScanResult:
+        if openvasdata is None:
+            with open(self.filepath, 'r', encoding='utf-8') as f:
+                openvasdata = json.load(f)
+            return self._parse_json(openvasdata)
+        
+    
+    def _parse_json(self, openvasdata: Dict[str, Any]) -> ScanResult:
         '''
         Parse a OpenVAS JSON vulnerability scan report into structured Python objects.
         
