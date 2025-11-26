@@ -11,11 +11,10 @@ class Finding:
     cves: List[str]
     cvss_score: Optional[float] = field(default_factory=float)
     epss_score: Optional[float] = None
-    cisa_kev: Optional[bool] = None
+    cisa_kev: Optional[bool] = False
     cvss_vector: Optional[str] = None
-    exploit_available: Optional[bool] = None
+    exploit_available: Optional[bool] = False
     exploit_references: Optional[List[Dict]] = None
-    risk: Optional[str] = None
     raw_risk_score: Optional[float] = None
     risk_score: Optional[float] = None
     risk_band: Optional[str] = None
@@ -25,10 +24,9 @@ class Finding:
     plugin_output: Optional[str] = None
     plugin_evidence: Optional[List[str]] = None
     solution: Optional[str] = None
-    remediation: Optional[str] = None
     references: Optional[List[str]] = field(default_factory=list)
     triage_priority: Optional[str] = None
-    enriched: Optional[bool] = None
+    enriched: Optional[bool] = False
     enrichment_source_cve: Optional[str] = None
     assetid: Optional[str] = None
     

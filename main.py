@@ -1,7 +1,8 @@
 from datetime import datetime
+from http.client import FAILED_DEPENDENCY
 import json
+from pathlib import Path
 import time
-from classes.dataclass import ScanResult
 from dataclasses import asdict
 from utils.enricher import enrich_scan_results, load_epss_from_csv, load_kev_from_json, update_enrichment_status
 import argparse
@@ -129,6 +130,13 @@ def format_runtime(seconds: float) -> str:
         return f"{minutes}m {secs:.2f}s"
     else:
         return f"{secs:2f}s"
+    
+def build_run_log(input_path: str) -> Path:
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stem = Path(input_path).stem
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / f"vulnparse-{stem}-{ts}.log"
 
 def write_output(data, file_path, pretty_print=False):
     '''
@@ -208,15 +216,17 @@ def get_args():
     parser.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Default is JSON")
     parser.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
     parser.add_argument("--log-file", default="vulnparse_pin.log", help="Log File destination.")
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
-    parser.add_argument("--version", "-v", action="version", version="VulnParse-Pin v1.0", help="Show program version and exit.")
+    parser.add_argument("--log-level", default="DEBUG", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
+    parser.add_argument("--version", "-v", action="version", version="VulnParse-Pin v1.0RC", help="Show program version and exit.")
     parser.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
     parser.add_argument("--exploit-db", "-edb", type=str, default=DEFAULT_LOCAL_PATH, help="Path to offline exploit database (CSV)")
     parser.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.")
     parser.add_argument("--mode", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
+    parser.add_argument("--refresh-cache", action="store_true", help="Forces cache refesh for feeds.")
     parser.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
     parser.add_argument("--output-csv", type=str, metavar="PATH TO SAVE CSV FILE", help="Path to save enriched results in CSV format (optional)")
     parser.add_argument("--allow-large", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests.")
+    parser.add_argument("--no-csv-sanitize", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools)")
     
     args = parser.parse_args()
     
@@ -224,7 +234,7 @@ def get_args():
     if args.output:
         output_dir = os.path.dirname(os.path.abspath(args.output)) or '.'
         if not os.access(output_dir, os.W_OK):
-            parser.error(f"Output director '{output_dir}' is not writable.")
+            parser.error(f"Output directory '{output_dir}' is not writable.")
         
     return args
        
@@ -233,8 +243,36 @@ def main():
     print_banner()
     
     args = get_args()
-    log.log = LoggerWrapper(args.log_file, args.log_level)
     
+    # Init Logs
+    log_path = build_run_log(args.file)
+    
+    log.log = LoggerWrapper(str(log_path), args.log_level)
+    
+    # Load config 
+    config = load_config("config.yaml")
+    
+    # CSV Sanitization INIT
+    csv_sanitization_enabled = not args.no_csv_sanitize
+    if not csv_sanitization_enabled:
+        while True:
+            log.log.print_warning(f"{Fore.LIGHTRED_EX}[DANGEROUS_ACTION]{Style.RESET_ALL}"
+                                  f"CSV Cell Sanitization has been disabled. This presents a {Fore.LIGHTRED_EX}MAJOR injection vulnerability in spreadsheet tools when opening this CSV.{Style.RESET_ALL}")
+            warn = input("Are you sure you want to proceed? Yes/No: ").strip().lower()
+            
+            if warn in ("yes", "y"):
+                log.log.print_success(f"{Fore.LIGHTRED_EX}[DANGEROUS_ACTION]{Style.RESET_ALL} "
+                                      "Running with CSV cell sanitization OFF. This action will be logged.")
+                break
+            elif warn in ("no", "n"):
+                log.log.print_info(f"{Fore.LIGHTRED_EX}[DANGEROUS_ACTION]{Style.RESET_ALL} "
+                                   "Aborting at user request.")
+                sys.exit(0)
+            else:
+                log.log.print_info("Please answer 'yes' or 'no'.")
+    else:
+        log.log.print_info(f"Sanitization is enabled: dangerous prefixes (=, +, -, @) will be escaped to prevent CSV formula injection.", label="[CSV-Sanitization]")
+                    
     
     # Resolve feed sources.
     def resolve_feed_path(arg_val, offline_mode: bool, default_online: str, default_offline: str):
@@ -310,19 +348,19 @@ def main():
     
     kev_data = None
     epss_data = None
+    feed_cfg = config.get("feed_cache", {})
     
     # Load Exploit-DB if flagged.
     exploit_data = None
     if args.enrich_exploit:
         print()
-        log.log.print_info(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}{args.exploit_source.upper()}{Style.RESET_ALL} source...")
-        exploit_data = load_exploit_data(args.exploit_source, args.exploit_db)
-        log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Loaded Exploit-DB data ({len(exploit_data)} CVEs with exploits)\n")
+        log.log.print_info(f"{Fore.LIGHTBLUE_EX}[Enrich-Exploit]{Style.RESET_ALL} Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}{args.exploit_source.upper()}{Style.RESET_ALL} source...")
+        exploit_data = load_exploit_data(args.exploit_source, args.exploit_db, feed_cache=feed_cfg, force_refresh=args.refresh_cache)
+        log.log.print_success(f"{Fore.LIGHTBLUE_EX}[Enrich-Exploit]{Style.RESET_ALL} Loaded Exploit-DB data ({len(exploit_data)} CVEs with exploits)\n")
         
     
     # Load nvd config file
-    nvd_config = load_config("nvd_config.yaml")
-    nvd_cfg = nvd_config.get("nvd", {})
+    nvd_cfg = config.get("nvd", {})
     
     if not args.no_nvd and nvd_cfg.get("enabled", True):
         start_year = nvd_cfg.get("start_year", 2017)
@@ -348,14 +386,11 @@ def main():
     
     # 1 Load enrichment data sources
     if kev_source:
-        log.log.print_info(f"Loading CISA KEV data from {Fore.LIGHTYELLOW_EX}{kev_source}{Style.RESET_ALL}")
-        kev_data = load_kev_from_json(kev_source)
-        log.log.print_success(f"Loaded CISA KEV data from {Fore.LIGHTYELLOW_EX}{kev_source}{Style.RESET_ALL}")
+        kev_data = load_kev_from_json(kev_source, feed_cache=feed_cfg, force_refresh=args.refresh_cache)
         
     if epss_source:
-        log.log.print_info(f"Loading EPSS data from {Fore.LIGHTYELLOW_EX}{epss_source}{Style.RESET_ALL}")
-        epss_data = load_epss_from_csv(epss_source)
-        log.log.print_success(f"Loaded EPSS data from {Fore.LIGHTYELLOW_EX}{epss_source}{Style.RESET_ALL}\n" + "="*25 + "Exploit Enrichment Results" + "="*25)
+        epss_data = load_epss_from_csv(epss_source, feed_cache=feed_cfg, force_refresh=args.refresh_cache)
+        print(f"="*25 + "Exploit Enrichment Results" + "="*25)
         
         
     # 2 Apply exploit enrichments
@@ -363,7 +398,7 @@ def main():
         for asset in scan_result.assets:
             enriched_findings = enrich_exploit_availability(asset.findings, exploit_data)
             asset.findings = enriched_findings
-        log.log.print_success(f"{Fore.LIGHTGREEN_EX}[Enrich-Exploit]{Style.RESET_ALL}Exploit enrichment applied to findings.\n" + "="*25 + "Enrichment Processing" + "="*25)
+        log.log.print_success(f"{Fore.LIGHTBLUE_EX}[Enrich-Exploit]{Style.RESET_ALL}Exploit enrichment applied to findings.\n" + "="*25 + "Enrichment Processing" + "="*25)
     
     # 3 Apply heuristic tagging *before* enrichment and risk scoring
     for asset in scan_result.assets:
@@ -404,7 +439,7 @@ def main():
         
     if args.output_csv:
         from utils.csv_exporter import export_to_csv
-        export_to_csv(scan_result, args.output_csv)
+        export_to_csv(scan_result, args.output_csv, csv_sanitization=csv_sanitization_enabled)
         
     if args.pretty_print and not args.output:
         log.log.print_info("Displaying results to console...")

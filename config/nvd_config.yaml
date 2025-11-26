@@ -1,5 +1,0 @@
-nvd:
-  enabled: true
-  start_year: 2020
-  end_year: 2025
-  refresh_interval_days: 1

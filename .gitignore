@@ -3,3 +3,7 @@
 *.csv
 *.log
 vulnparse_pin.log
+data/
+nvd_cache/
+tests_output/
+logs/

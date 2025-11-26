@@ -2,12 +2,12 @@ import os
 import yaml
 import utils.logger_instance as log
 
-def load_config(path: str = "nvd_config.yaml") -> dict:
+def load_config(path: str = "config.yaml") -> dict:
     """
-    Load YAML NVD config file for VulnParse-Pin.
+    Load YAML config file for VulnParse-Pin.
     
     Args:
-        path (str): Path to the config file (default: nvd_config.yaml)
+        path (str): Path to the config file (default: config.yaml)
         
     Returns:
         dict: Config Dict, empty if file not found or invalid
@@ -32,3 +32,8 @@ def load_config(path: str = "nvd_config.yaml") -> dict:
         log.log.logger.exception(f"[Config] Unexpected error loading {real_path}: {e}")
         return {}
     
+def get_ttl_feed(config: dict, feed_name: str, default_hours: int) -> int:
+    try:
+        return int(config.get("feed_cache", {}).get(feed_name, default_hours))
+    except Exception:
+        return default_hours

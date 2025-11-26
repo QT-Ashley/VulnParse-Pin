@@ -12,6 +12,9 @@ from utils.normalizer import coerce_float, coerce_int, coerce_list, coerce_sever
 
 
 class OpenVASParser(BaseParser):
+    def __init__(self, data: dict | None = None, filepath: str | None = None):
+        super().__init__(filepath=filepath)
+        self.data = data or {}
     
     @classmethod
     def detect_file(cls, filepath):
@@ -183,7 +186,6 @@ class OpenVASParser(BaseParser):
                 epss_score=0.0,
                 cisa_kev=False,
                 exploit_available=exploit_available,
-                risk=None,
                 triage_priority=None,
                 enriched=False,
                 affected_port=affected_port,

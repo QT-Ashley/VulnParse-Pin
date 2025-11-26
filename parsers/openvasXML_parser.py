@@ -1,11 +1,8 @@
-from ctypes.wintypes import tagSIZE
-from multiprocessing import Value
 from pathlib import Path
-from unittest import result
-from lxml import etree
-from defusedxml.lxml import fromstring
+from defusedxml.ElementTree import fromstring
 from datetime import datetime, timezone
 import os
+from iniconfig import ParseError
 import utils.logger_instance as log
 from typing import Dict, Optional
 from .base_parser import BaseParser
@@ -14,6 +11,9 @@ from classes.dataclass import ScanMetaData, ScanResult, Asset, Finding
 class OpenVASXMLParser(BaseParser):
     NAME = "openvas-xml"
     
+    def __init__(self, filepath: str | None = None):
+        super().__init__(filepath=filepath)
+        
     @classmethod
     def detect_file(cls, filepath) -> bool:
         """Detect if the file is an OpenVAS XML file by structure"""
@@ -30,11 +30,12 @@ class OpenVASXMLParser(BaseParser):
         except OSError as e:
             log.log.logger.error(f"Failed to stat file for detection: {e}")
             return False
+
         
         try:
             raw = Path(filepath).read_bytes()
             root = fromstring(raw)
-        except Exception as e:
+        except (OSError, ParseError) as e:
             log.log.logger.error(f"Error detecting file: {e}")
             return False
         
@@ -44,7 +45,7 @@ class OpenVASXMLParser(BaseParser):
         ):
             return False
         
-        result_nodes = root.xpath(".//report//results//result | .//results//result")
+        result_nodes = root.find(".//report//results//result") or root.find(".//results//result")
         has_nvt = root.find(".//nvt") is not None
         
         # Confirm GVM structure
@@ -67,7 +68,7 @@ class OpenVASXMLParser(BaseParser):
         raw = Path(self.filepath).read_bytes()
         try:
             root = fromstring(raw)
-        except Exception as e:
+        except (OSError, ParseError) as e:
             raise ValueError(f"Failed to parse XML: {e}") from e
         
         
@@ -152,7 +153,6 @@ class OpenVASXMLParser(BaseParser):
                 cvss_score=cvss_score,
                 cvss_vector=cvss_vector,
                 epss_score=None,
-                risk=None,
                 affected_port=port,
                 protocol=protocol,
                 plugin_output=plugin_output or "SENTINEL:No_Plugin_Output",
@@ -286,7 +286,7 @@ class OpenVASXMLParser(BaseParser):
     def _parse_protocol(port_field: Optional[str]) -> Optional[str]:
         """Extract protocol from port field"""
         if not port_field or "/" not in port_field:
-            return None
+            return "SENTINEL:Protocol_Unknown"
         return port_field.split("/")[1]
     
     @staticmethod

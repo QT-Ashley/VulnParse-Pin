@@ -1,11 +1,8 @@
-from gc import get_objects
 import json
-from datetime import date, timezone
-from traceback import print_tb
+from datetime import timezone
 from typing import Any, Dict, List, Optional
 import ipaddress
 
-from rich import print_json
 from classes.dataclass import ScanMetaData, ScanResult, Asset, Finding
 from parsers.base_parser import BaseParser
 from utils.normalizer import *
@@ -14,7 +11,9 @@ import utils.logger_instance as log
 
 
 class NessusParser(BaseParser):
-    
+    def __init__(self, filepath: str | None = None):
+        super().__init__(filepath=filepath)
+        
     @classmethod
     def detect_file(cls, filepath):
         """Lightweight file-level detection for Nessus JSON."""
@@ -163,7 +162,6 @@ class NessusParser(BaseParser):
                     affected_port=affected_port,
                     protocol=protocol,
                     references=references,
-                    remediation=solution, #TODO: Find alternative remediation outside of solution
                     detection_plugin=title,
                     assetid=asset_id
                 )

@@ -1,4 +1,3 @@
-from hmac import new
 import ipaddress
 from typing import get_type_hints, List, Union, Any, Optional
 from dataclasses import fields, is_dataclass

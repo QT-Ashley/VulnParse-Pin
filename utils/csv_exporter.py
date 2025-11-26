@@ -25,8 +25,41 @@ def _flatten_exploits(exploit_refs: dict[str, list[dict]]) -> tuple[str, str, st
                 urls.append(f"{cve}:{ref.get("url", "")}")
             
         return ";".join(ids), ";".join(titles), ";".join(urls)
+    
+def _sanitize_csv_cell(value: str) -> str:
+    """
+    Sanitize a single CSV cell to mitigate CSV/formula injection.
+    
+    If the cell begins with a dangerous character, prefix with single quote to avoid Excel doesn't treat it as a formula.
+    
+    Args:
+        value (str): Cell value to sanitize.
+    """
+    if value is None or not isinstance(value, str) or not value:
+        return value
+    
+    stripped = value.lstrip()
+    if stripped and stripped[0] in ("=", "-", "+", "@"):
+        leading_len = len(value) - len(stripped)
+        leading = value[:leading_len]
+        return leading + "'" + stripped
+    
+    return value
 
-def export_to_csv(scan_result: ScanResult, csv_path: str) -> None:
+def _sanitize_csv_row(row: dict) -> dict:
+    """
+    Return a copy of the row with CSV-injection-safe values.
+    Only string fields are sanitized.
+    """
+    safe = {}
+    for key, value in row.items():
+        if isinstance(value, str):
+            safe[key] = _sanitize_csv_cell(value)
+        else:
+            safe[key] = value
+    return safe
+
+def export_to_csv(scan_result: ScanResult, csv_path: str, csv_sanitization: bool = True) -> None:
     """
     Export scan findings to a CSV file.
     
@@ -75,6 +108,11 @@ def export_to_csv(scan_result: ScanResult, csv_path: str) -> None:
     with open(csv_path, 'w', newline="", encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            if csv_sanitization:
+                safe_row = _sanitize_csv_row(row)
+                writer.writerow(safe_row)
+            else:
+                writer.writerow(row)
         
     log.log.print_success(f"Results exported to CSV: {csv_path}")
