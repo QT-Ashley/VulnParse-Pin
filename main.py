@@ -1,15 +1,15 @@
 from datetime import datetime
-from http.client import FAILED_DEPENDENCY
 import json
 from pathlib import Path
 import time
 from dataclasses import asdict
+from typing import Any
 from utils.enricher import enrich_scan_results, load_epss_from_csv, load_kev_from_json, update_enrichment_status
 import argparse
 import sys
 from utils.banner import print_banner
 from utils.exploit_enrichment_service import DEFAULT_LOCAL_PATH, load_exploit_data
-from utils.logger import *
+from utils.logger import LoggerWrapper
 import utils.logger_instance as log
 import os
 from parsers.__init__ import *
@@ -18,6 +18,7 @@ from utils.validations import *
 from utils.nvdcacher import NVDCache
 from utils.enrichment_stats import stats
 from utils.config_loader import load_config
+from utils.pfhandler import PermFileHandler
 
 def print_summary_banner(scan_result, output_file=None, sources=None):
     '''
@@ -96,15 +97,15 @@ def print_summary_banner(scan_result, output_file=None, sources=None):
         src_line += f"NVD {nvd_status}"
         print(src_line)
         
-        stats = sources.get("stats", {})
-        if stats:
-            kev_hits = stats.get("kev_hits", 0)
-            kev_total = stats.get("kev_total", 0)
-            epss_hits = stats.get("epss_hits", 0)
-            epss_total = stats.get("epss_total", 0)
-            nvd_vectors = stats.get("nvd_vectors", 0)
-            nvd_validated = stats.get("nvd_validated", 0)
-            exploit_hits = stats.get("exploit_hits", 0)
+        statsc = sources.get("stats", {})
+        if statsc:
+            kev_hits = statsc.get("kev_hits", 0)
+            kev_total = statsc.get("kev_total", 0)
+            epss_hits = statsc.get("epss_hits", 0)
+            epss_total = statsc.get("epss_total", 0)
+            nvd_vectors = statsc.get("nvd_vectors", 0)
+            nvd_validated = statsc.get("nvd_validated", 0)
+            exploit_hits = statsc.get("exploit_hits", 0)
             
             kev_pct = (kev_hits / kev_total * 100) if kev_total else 0.0
             epss_pct = (epss_hits / epss_total * 100 if epss_total else 0.0)
@@ -116,11 +117,11 @@ def print_summary_banner(scan_result, output_file=None, sources=None):
         
     print("="*60 + "\n")
         
-    log.log.logger.info(f"Assets Analyzed: {total_assets}," 
-                f"Findings Triaged: {total_findings}," 
-                f"Average Risk Score: {avg_risk_score},"
+    log.log.logger.info(f"Assets Analyzed: {total_assets:,}," 
+                f"Findings Triaged: {total_findings:,}," 
+                f"Average Risk Score: {avg_risk_score:.2f},"
                 f"Highest Risk Asset: {highest_risk_asset.hostname if highest_risk_asset else 'N/A'},"
-                f"Critical+: {critical_findings}, High: {high_findings}, Medium: {medium_findings}, Low: {low_findings}"
+                f"Critical+: {critical_findings:,}, High: {high_findings:,}, Medium: {medium_findings:,}, Low: {low_findings:,}"
                 )
 
 def format_runtime(seconds: float) -> str:
@@ -134,9 +135,7 @@ def format_runtime(seconds: float) -> str:
 def build_run_log(input_path: str) -> Path:
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     stem = Path(input_path).stem
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    return log_dir / f"vulnparse-{stem}-{ts}.log"
+    return f"vulnparse-{stem}-{ts}.log"
 
 def write_output(data, file_path, pretty_print=False):
     '''
@@ -152,7 +151,7 @@ def write_output(data, file_path, pretty_print=False):
     '''
     with open(file_path, 'w', encoding='utf-8') as f:
         if pretty_print:
-            log.log.print_info(f"Pretty-printing JSON - Standby...")
+            log.log.print_info("Pretty-printing JSON - Standby...")
             try:
                 json.dump(asdict(data), f, indent=4)
                 log.log.print_success(f"Parsed results are stored in: {file_path}")
@@ -161,12 +160,12 @@ def write_output(data, file_path, pretty_print=False):
                 sys.exit(1)
         else:
             try:
-                log.log.print_info(f"[*] Dumping JSON results...")
+                log.log.print_info("[*] Dumping JSON results...")
                 json.dump(asdict(data), f)
                 log.log.print_success(f"JSON results available in: {file_path}")
             except Exception as e:
                 log.log.print_error(f"Error attempt to dump to JSON: {e}")
-                log.logger.exception(f"Exception: {e}")
+                log.log.logger.exception("Exception: %s", e)
                 sys.exit(1)
                 
 def valid_input_file(path):
@@ -227,6 +226,11 @@ def get_args():
     parser.add_argument("--output-csv", type=str, metavar="PATH TO SAVE CSV FILE", help="Path to save enriched results in CSV format (optional)")
     parser.add_argument("--allow-large", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests.")
     parser.add_argument("--no-csv-sanitize", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools)")
+    parser.add_argument("--forbid-symlinks", "-fbs", default=False, help="Disables following symlinks when resolving paths.")
+    parser.add_argument("--enforce-root-read", "-err", default=False, help="Enforces read operations only on files located within the list of acceptable roots.")
+    parser.add_argument("--enforce_root_write", "-erw", default=True, help="Enforces write operations only on files located within the list of acceptable roots.")
+    parser.add_argument("--file_mode", "-fm", nargs=1, metavar="0o700", help="Enables file-level chmod permissions on file write operations.")
+    parser.add_argument("--dir_mode", "-dm", default=int(0o722), nargs=1, metavar="0o722", help="Enables file-level chmod permissions on file write operations.")
     
     args = parser.parse_args()
     
@@ -244,13 +248,40 @@ def main():
     
     args = get_args()
     
-    # Init Logs
-    log_path = build_run_log(args.file)
+    project_root = Path(__file__).resolve().parent.parent
     
-    log.log = LoggerWrapper(str(log_path), args.log_level)
+    fh = PermFileHandler(
+        logger = log.log,
+        root_dir = project_root,
+        allowed_roots = [project_root],
+        max_log_path_chars = 90,
+        forbid_symlinks = args.forbid_symlinks,
+        enforce_roots_on_read = args.enforce_root_read,
+        enforce_roots_on_write = args.enforce_root_write,
+        file_mode = args.file_mode,
+        dir_mode = args.dir_mode
+    )
     
     # Load config 
     config = load_config("config.yaml")
+    
+    # Init Logs
+    log_dir = config.get("path_policy", {}).get("logs_dir", "logs")
+    fh.add_allowed_root(log_dir)
+    log_file = Path(log_dir) / build_run_log(args.file)
+    log_file = fh.ensure_writable_file(
+        log_file,
+        label="Run Log File",
+        create_parents = True,
+        overwrite = True,
+    )
+    
+    log.log = LoggerWrapper(str(log_file), args.log_level)
+    
+    # Init Path_Policy
+    fh.add_allowed_root(config.get("path_policy", {}).get("cache_dir", "data"))
+    fh.add_allowed_root(config.get("path_policy", {}).get("output_dir", "output"))
+
     
     # CSV Sanitization INIT
     csv_sanitization_enabled = not args.no_csv_sanitize
@@ -271,11 +302,11 @@ def main():
             else:
                 log.log.print_info("Please answer 'yes' or 'no'.")
     else:
-        log.log.print_info(f"Sanitization is enabled: dangerous prefixes (=, +, -, @) will be escaped to prevent CSV formula injection.", label="[CSV-Sanitization]")
+        log.log.print_info("Sanitization is enabled: dangerous prefixes (=, +, -, @) will be escaped to prevent CSV formula injection.", label="[CSV-Sanitization]")
                     
     
     # Resolve feed sources.
-    def resolve_feed_path(arg_val, offline_mode: bool, default_online: str, default_offline: str):
+    def resolve_feed_path(arg_val, offline_mode: bool, default_online: str, default_offline: str) -> Any | str:
         if arg_val:
             return arg_val
         elif offline_mode:
@@ -301,10 +332,10 @@ def main():
         log.log.print_info("[*] Offline mode enabled. Enrichment will use local cache only.\n")
         if not os.path.exists(kev_source):
             log.log.print_error(f"[OFFLINE] KEV cache not found: {kev_source}")
-            raise FileNotFoundError(f"Missing KEV cache.")
+            raise FileNotFoundError("Missing KEV cache.")
         if not os.path.exists(epss_source):
             log.log.print_error(f"[OFFLINE] EPSS cache not found: {epss_source}")
-            raise FileNotFoundError(f"Missing EPSS cache.")
+            raise FileNotFoundError("Missing EPSS cache.")
         
         
     
@@ -390,7 +421,7 @@ def main():
         
     if epss_source:
         epss_data = load_epss_from_csv(epss_source, feed_cache=feed_cfg, force_refresh=args.refresh_cache)
-        print(f"="*25 + "Exploit Enrichment Results" + "="*25)
+        print("="*25 + "Exploit Enrichment Results" + "="*25)
         
         
     # 2 Apply exploit enrichments
@@ -408,7 +439,7 @@ def main():
     # 4 Apply enrichments
     if kev_data or epss_data:
         enrich_scan_results(scan_result, kev_data, epss_data, offline_mode=args.mode == "offline", nvd_cache=nvd_cache)
-        log.log.print_success(f"Enrichments Applied")
+        log.log.print_success("Enrichments Applied")
     
     # 5 Do Post-Processing enrichment status update.
     for asset in scan_result.assets:
@@ -455,4 +486,3 @@ if __name__ == "__main__":
     main()
     total_runtime = (time.time() - start)
     print(f"Total runtime: {format_runtime(total_runtime)}")
- 

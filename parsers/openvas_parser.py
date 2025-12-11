@@ -2,7 +2,6 @@ import re
 import json
 from datetime import datetime, timezone
 import hashlib
-from json_parser import detect_and_transform_flat_json
 from utils.cvss_utils import is_valid_cvss_vector
 import utils.logger_instance as log
 from typing import Any, Counter, Dict, List, Optional, Union

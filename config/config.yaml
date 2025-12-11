@@ -8,3 +8,8 @@ feed_cache:
   exploit_db: 24
   kev: 24
   epss: 6
+
+path_policy:
+  logs_dir: logs
+  cache_dir: data
+  output_dir: output

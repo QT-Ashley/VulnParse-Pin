@@ -1,5 +1,6 @@
 import os
-import yaml
+from ruamel.yaml import YAML
+from yaml import YAMLError
 import utils.logger_instance as log
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -12,6 +13,7 @@ def load_config(path: str = "config.yaml") -> dict:
     Returns:
         dict: Config Dict, empty if file not found or invalid
     """
+    yaml=YAML(typ = "safe", pure = True)
     
     real_path = os.path.join(os.path.dirname(__file__), "..", "config", path)
     real_path = os.path.abspath(real_path)
@@ -22,10 +24,10 @@ def load_config(path: str = "config.yaml") -> dict:
     
     try:
         with open(real_path, "r", encoding='utf-8') as f:
-            config = yaml.safe_load(f) or {}
+            config = yaml.load(f) or {}
             log.log.logger.debug(f"[Config] Loaded config from {real_path}")
             return config
-    except yaml.YAMLError as e:
+    except YAMLError as e:
         log.log.logger.exception(f"[Config]Error parsing YAML file {real_path}: {e}")
         return {}
     except Exception as e:
