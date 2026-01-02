@@ -1,12 +1,25 @@
+# VulnParse-Pin – Vulnerability Parsing and Triage Engine
+# Copyright (C) 2025 Shade216
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# any later version.
+# See the LICENSE file for full terms.
+from __future__ import annotations
 from importlib import resources
 import os
 import json
+from typing import TYPE_CHECKING, Tuple
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 from vulnparse_pin import __version__
+
+if TYPE_CHECKING:
+    from vulnparse_pin.core.classes.dataclass import RunContext
+
 
 try:
     from platformdirs import user_config_dir, user_data_dir, user_cache_dir, user_log_dir
@@ -16,7 +29,7 @@ except ImportError as e:
     ) from e
 
 APP_NAME = "VulnParse-Pin"
-APP_AUTHOR = "Shade216"
+APP_AUTHOR = False
 
 def _truthy_env(name: str) -> bool:
     v = os.getenv(name, "").strip().lower()
@@ -45,27 +58,47 @@ class AppPaths:
     cache_dir: Path
     log_dir: Path
     output_dir: Path
+    nvd_dir: Path
+    nvd_feeds_dir: Path
+    kev_dir: Path
+    epss_dir: Path
+    exploitdb_dir: Path
 
     @classmethod
-    def resolve(cls, *, portable: bool | None = None) -> "AppPaths":
+    def resolve(cls, *, portable: bool | None = None, version: str | None = None) -> "AppPaths":
+        if version is None:
+            version = __version__
+
         if portable is None:
             portable = _truthy_env("VULNPARSE_PIN_PORTABLE")
-        
+
         if portable:
             base = _portable_base()
             data_root = base / "data"
-            config_dir = base / "config"
+            version_root = data_root / "versions" / version
+            config_dir = version_root / "config"
             data_dir = data_root
-            cache_dir = data_root / "caches"
+            cache_dir = data_root / "cache"
             log_dir = data_root / "logs"
-            output_dir = data_root / "output"
+            output_dir = version_root / "outputs"
+            nvd_dir = cache_dir / "nvd"
+            nvd_feeds_dir = nvd_dir / "feeds"
+            kev_dir = cache_dir / "kev"
+            epss_dir = cache_dir / "epss"
+            exploitdb_dir = cache_dir / "exploit_db"
         else:
-            config_dir = Path(user_config_dir(APP_NAME, APP_AUTHOR, __version__))
-            data_dir = Path(user_data_dir(APP_NAME, APP_AUTHOR, __version__))
-            cache_dir = Path(user_cache_dir(APP_NAME, APP_AUTHOR, __version__))
-            log_dir = Path(user_log_dir(APP_NAME, APP_AUTHOR, __version__))
-            output_dir = data_dir / "output"
+            data_dir = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+            version_root = data_dir / "versions" / version
+            config_dir = version_root / "config"
+            cache_dir = data_dir / "cache"
+            log_dir = data_dir / "logs"
+            output_dir = version_root / "outputs"
             base = data_dir
+            nvd_dir = cache_dir / "nvd"
+            nvd_feeds_dir = nvd_dir / "feeds"
+            kev_dir = cache_dir / "kev"
+            epss_dir = cache_dir / "epss"
+            exploitdb_dir = cache_dir / "exploit_db"
 
         return cls(
             portable = portable,
@@ -75,6 +108,11 @@ class AppPaths:
             cache_dir = cache_dir,
             log_dir = log_dir,
             output_dir = output_dir,
+            nvd_dir = nvd_dir,
+            nvd_feeds_dir = nvd_feeds_dir,
+            kev_dir = kev_dir,
+            epss_dir = epss_dir,
+            exploitdb_dir = exploitdb_dir,
         )
 
     def ensure_dirs(self) -> None:
@@ -86,6 +124,11 @@ class AppPaths:
             self.cache_dir: 0o700,      # Sensitive - No one really needs to dig in here other than the owner(power user).
             self.log_dir: 0o700,        # Senstive, but Users of same group can read(e.g., Sysadmins).
             self.output_dir: 0o750,     # Self explainable
+            self.nvd_dir: 0o700,
+            self.nvd_feeds_dir: 0o700,
+            self.kev_dir: 0o700,
+            self.epss_dir: 0o700,
+            self.exploitdb_dir: 0o700,
         }
 
         for path, mode in dirs.items():
@@ -111,16 +154,16 @@ def ensure_user_configs(paths: AppPaths) -> Tuple[Path, Path]:
     if not dst_yaml.exists():
         default_bytes_yaml = resources.files("vulnparse_pin.resources").joinpath("config.yaml").read_bytes()
         dst_yaml.write_bytes(default_bytes_yaml)
-        return dst_yaml
+
     #   Create missing Scoring config JSON
     if not dst_json.exists():
         default_bytes_json = resources.files("vulnparse_pin.resources").joinpath("scoring.json").read_bytes()
         dst_json.write_bytes(default_bytes_json)
-        return dst_json
+
     
     return dst_yaml, dst_json
 
-def load_config(paths: AppPaths) -> Tuple[dict, dict]:
+def load_config(ctx: "RunContext") -> Tuple[dict, dict]:
     """
     Loads config files for VulnParse-Pin.
     - Global Config: config.yaml
@@ -131,17 +174,26 @@ def load_config(paths: AppPaths) -> Tuple[dict, dict]:
     :return: Returns dict objects with config data.
     :rtype: Tuple[dict, dict]
     """
-    cfg_path_yaml, cfg_path_json = ensure_user_configs(paths)
+    cfg_path_yaml, cfg_path_json = ensure_user_configs(ctx.paths)
+
+    # Enforce PFH policy
+    cfg_path_yaml = ctx.pfh.ensure_readable_file(cfg_path_yaml, label = "Global Config (YAML)")
+    cfg_path_json = ctx.pfh.ensure_readable_file(cfg_path_json, label = "Scoring Config (JSON)")
 
     # YAML INIT
     yaml=YAML(typ = "safe", pure = True)
     try:
-        cfg_yaml = yaml.load(cfg_path_yaml.read_text(encoding="utf-8"))
+        with ctx.pfh.open_for_read(cfg_path_yaml, mode = "r", label = "Global Config (YAML)") as r:
+            cfg_yaml = yaml.load(r)
     except (TypeError, ValueError, YAMLError) as e:
         raise RuntimeError("Could not parse yaml file.") from e
-    
+
+    if not isinstance(cfg_yaml, dict):
+        raise RuntimeError("Global config must be an object/mapping at top-level.")
+
     try:
-        cfg_json = json.loads(cfg_path_json.read_text(encoding="utf-8"))
+        with ctx.pfh.open_for_read(cfg_path_json, mode = "r", label = "Scoring Config (JSON)") as r:
+            cfg_json = json.load(r)
     except (json.JSONDecodeError, TypeError, ValueError) as e:
         raise RuntimeError("Could not load json config file.") from e
 

@@ -4,7 +4,7 @@
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
 
 from dataclasses import dataclass, field
@@ -13,7 +13,8 @@ from datetime import datetime
 
 from vulnparse_pin.core.apppaths import AppPaths
 from vulnparse_pin.io.pfhandler import PermFileHandler
-from vulnparse_pin.utils.logger import LoggerWrapper
+from vulnparse_pin.utils.feed_cache import FeedCacheManager
+from vulnparse_pin.utils.nvdcacher import NVDFeedCache
 
 @dataclass
 class Finding:
@@ -93,7 +94,16 @@ class TriageConfig:
     exploit_floor_score: float = 7.5 # Min raw score if exploit w/o CVSS
     balanced: bool = True # Prof togg
 
-@dataclass(frozen=True)
+
+@dataclass(frozen = True)
+class Services:
+    """
+    Services container for RunContext
+    """
+    feed_cache: Optional["FeedCacheManager"] = None
+    nvd_cache: Optional["NVDFeedCache"] = None
+
+@dataclass(frozen = True)
 class RunContext:
     """
     Centralized runtime context object.
@@ -101,3 +111,26 @@ class RunContext:
     paths: AppPaths
     pfh: PermFileHandler
     logger: Any
+    services: Optional[Services] = None
+
+@dataclass(frozen = True)
+class FeedSpec:
+    """
+    Manages feed specifications.
+    """
+    key: str
+    filename: str
+    label: str
+    sha256_suffix: str = ".sha256"
+    meta_suffix: str = ".meta.json"
+
+@dataclass(frozen = True)
+class FeedCachePolicy:
+    """
+    Holds policy config info for Feeds.
+    """
+    default_ttl_hours: int
+    ttl_hours: Dict[str, int]
+
+    def ttl_for(self, key: str) -> int:
+        return int(self.ttl_hours.get(key, self.default_ttl_hours))

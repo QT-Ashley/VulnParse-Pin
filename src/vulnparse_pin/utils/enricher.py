@@ -7,6 +7,9 @@
 # any later version.
 # See the LICENSE file for full terms.
 
+from functools import cache
+import hashlib
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import gzip
@@ -19,10 +22,9 @@ from vulnparse_pin.utils.logger import SEVERITY_COLOR, EnrichmentMissLogger, col
 import vulnparse_pin.utils.logger_instance as log
 from vulnparse_pin.utils.enrichment_stats import stats
 from vulnparse_pin.utils.cve_selector import select_authoritative_cve
-from vulnparse_pin.utils.feed_cache import FeedCache
 from vulnparse_pin.utils.triage_priority_helper import determine_triage_priority
 from vulnparse_pin.utils.cvss_utils import detect_cvss_version, is_valid_cvss_vector, parse_cvss_vector
-from vulnparse_pin.core.classes.dataclass import ScanResult, TriageConfig
+from vulnparse_pin.core.classes.dataclass import RunContext, ScanResult, TriageConfig
 from vulnparse_pin import UA
 
 # ------------- Globals -----------------
@@ -52,179 +54,185 @@ def is_cisa_kev(cves: List[str], kev_data: Dict[str, bool]) -> bool:
 #    '''
 
 
-def load_epss_from_csv(path_url: str, cache_path: str = "./data/epss_cache.csv.gz", *, feed_cache: dict, force_refresh: bool) -> Dict[str, float]:
+def load_epss(ctx: RunContext, *, path_url: str, force_refresh: bool, allow_regen: bool, timeout: int = 7, user_agent: Optional[str] = UA) -> Dict[str, float]:
     '''
-    Load EPSS data from a CSV file or URL into a dict {cve: epss_score}.
-    CSV assumed to have columns: 'cve', 'epss_score'
+    Load EPSS data from a CSV file or URL into a dict {cve: epss}.
+    CSV assumed to have columns: 'cve', 'epss'
+    
+    Source:
+        - URL (default): streamed download of .csv.gz
+        - Local file: .csv.gz OR .csv
+
+    Cache:
+        - Always stores decompressed CSV as epss_cache.csv
+        - Gives sidecars .sha256 .meta.json
+        - TTL enforced only for URL sources
+
+    :returns Dict[str, float]: epss_data
     '''
-    epss_data: Dict[str, float] = {}
+    key = "epss"
+    fc = ctx.services.feed_cache
+    cache_path, _, _ = fc.resolve(key)
 
-    def parse_csv(reader):
-        for row in reader:
-            cve = row.get('cve') or row.get('CVE')
+    # -----------------------------------
+    #   CSV Parser
+    # -----------------------------------
 
-            if not cve:
-                for header in row:
-                    if re.search(r"model_version", header, re.IGNORECASE):
-                        cve = row.get(header)
-                        break
-            score_str = row.get('epss_score') or row.get('EPSScore') or row.get('score') or row.get('epss')
+    def parse_csv(feed_path: Path) -> Dict[str, float]:
+        out: Dict[str, float] = {}
+        feed_path = ctx.pfh.ensure_readable_file(feed_path, label = "EPSS Cache (.csv)")
 
-            if not score_str:
-                for header in row:
-                    if re.search(r"score_date", header, re.IGNORECASE):
-                        score_str = row.get(header)
-                        break
-            if cve and score_str:
+        with ctx.pfh.open_for_read(feed_path, "r", label = "EPSS Cache (.csv)") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                cve = (row.get("cve") or row.get("CVE") or "").strip()
+                if not cve:
+                    for header in row:
+                        if re.search(r"model_version", header, re.IGNORECASE):
+                            cve = row.get(header)
+                            break
+
+                score_raw = (row.get("epss") or row.get("epss_score") or row.get("score") or "").strip()
+                if not score_raw:
+                    for header in row:
+                        if re.search(r"score_date", header, re.IGNORECASE):
+                            score_raw = row.get(header)
+                            break
+
+                if not cve or not score_raw:
+                    continue
                 try:
-                    epss_data[cve.upper()] = float(score_str)
+                    out[cve.upper()] = float(score_raw)
                 except ValueError:
                     continue
+        return out
 
     # Download or open local .gz file
     # ----------------------------
     # Online Mode
     # ----------------------------
     if path_url.startswith("http"):
-        feed_path = Path(cache_path)
-        ttl_hours = int(feed_cache.get("epss", 6))
+        if (not force_refresh) and cache_path.exists() and fc.is_fresh(key):
+            ctx.logger.print_info("Using cached EPSS (TTL valid).", label = "[Enrich-EPSS]")
+            fc.ensure_feed_checksum(key, allow_regen = allow_regen)
+            fc.print_cache_metadata(key)
+            return parse_csv(cache)
 
-        cache = FeedCache(
-            name="EPSS",
-            data_path=feed_path,
-            ttl_hours=ttl_hours,
-            logger=log.log,
-        )
+        ctx.logger.print_info(f"Fetching EPSS from {path_url} (streamed).", label = "[Enrich-EPSS]")
+        headers = {"User-Agent": user_agent}
 
-        # Cached Path (TTL + no force_refresh)
-        if cache.should_use_cached(force_refresh=force_refresh):
-            log.log.print_info("[Enrich-EPSS] Using cached EPSS feed (TTL still valid).")
-            try:
-                cache.ensure_feed_checksum(allow_regen=False)
-            except RuntimeError as e:
-                if force_refresh:
-                    log.log.print_warning("[Enrich-KEV] "
-                                          "Checksum error on cached feed; Re-downloading due to --refresh-cache.")
-                else:
-                    raise e
-            else:
-                cache.print_cache_metadata()
-                # Open gzip or .csv from cache
-                if str(feed_path).endswith(".gz"):
-                    with gzip.open(feed_path, mode="rt", encoding="utf-8") as f:
-                        reader = csv.DictReader(f)
-                        parse_csv(reader)
-                else:
-                    with feed_path.open("r", encoding="utf-8") as f:
-                        reader = csv.DictReader(f)
-                        parse_csv(reader)
-
-                if not epss_data:
-                    log.log.print_warning("[Enrich-EPSS] EPSS cache parsed but no data found.")
-                log.log.print_success(f"[Enrich-EPSS] Loaded EPSS data from {feed_path}")
-                return epss_data
-
-        # Refresh Path
-        log.log.print_info(f"[Enrich-EPSS] Downloading EPSS feed from {path_url}...")
         try:
-            response = requests.get(path_url, timeout=5, allow_redirects=True, headers={
-                "User-Agent": UA
-            })
-            response.raise_for_status()
-        except requests.RequestException as e:
-            log.log.logger.exception(f"[Enrich-EPSS] Failed to retrieve EPSS feed: {e}")
+            fc.write_atomic_stream_gunzip(
+                key,
+                source_url=path_url,
+                mode = "Online",
+                validated = False,
+                checksum_src = "Local",
+                timeout = timeout,
+                headers = headers,
+                extra_meta = {
+                    "content_encoding": "gzip",
+                    "stored_as": "csv",
+                    "source_type": "url",
+                },
+            )
+
+            fc.ensure_feed_checksum(key, allow_regen = True)
+            fc.print_cache_metadata(key)
+            return parse_csv(cache_path)
+        except Exception as e:
+            ctx.logger.exception("EPSS update failed %s", e)
+
+            # Fallback to existing cache if available
+            if cache_path.exists():
+                ctx.logger.print_warning("Falling back to existing cached EPSS.", label = "[Enrich-EPSS]")
+                fc.ensure_feed_checksum(key, allow_regen = allow_regen)
+                return parse_csv(cache_path)
             return {}
-
-        feed_path.parent.mkdir(parents=True, exist_ok=True)
-        feed_path.write_bytes(response.content)
-        log.log.print_success(f"[Enrich-EPSS] EPSS feed cached locally at {feed_path}")
-
-        # Save metadata
-        cache.save_metadata_file(
-            source_url=path_url,
-            mode="Online",
-            validated=True,
-            checksum_src="Remote",
-        )
-        # Create Checksum — for online mirror fetches/first time.
-        cache.create_cs()
-        # Ensure checksum
-        cache.ensure_feed_checksum(allow_regen=True)
-        cache.update_cache_meta()
-        cache.print_cache_metadata()
-
-        # Parse from on-disk cache (handle .gz or .csv)
-        if str(feed_path).endswith(".gz"):
-            with gzip.open(feed_path, "rt", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                parse_csv(reader)
-        else:
-            with feed_path.open("r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                parse_csv(reader)
-
-        if not epss_data:
-            log.log.print_warning("[Enrich-EPSS] EPSS feed fetched but no data parsed.")
-        log.log.print_success(f"[Enrich-EPSS] Loaded EPSS data from {feed_path}")
-        return epss_data
 
     # ----------------------------
     # Local/Offline Mode
     # ----------------------------
-    elif os.path.exists(path_url):
+    src_path = Path(path_url)
+    if src_path.exists():
 
-        feed_path = Path(path_url)
+        src_path = ctx.pfh.ensure_readable_file(src_path, label = "Local EPSS Source")
 
-        # Local-only EPSS feed; TTL doesn't matter
-        cache = FeedCache(
-            name="EPSS-LOCAL",
-            data_path=feed_path,
-            ttl_hours=0,
-            logger=log.log,
-        )
+        ctx.logger.print_info(f"Importing local EPPS source {ctx.pfh.format_for_log(src_path)}")
 
-        try:
-            cache.ensure_feed_checksum(allow_regen=True)
-        except Exception as e:
-            log.log.print_warning(f"[Enrich-EPSS] Local EPSS checksum issue: {e}")
+        # Read the raw bytes
+        with ctx.pfh.open_for_read(src_path, mode = "rb", label = "Local EPSS Source") as r:
+            raw = r.read()
 
-        cache.print_cache_metadata()
-
-        if str(feed_path).endswith(".gz"):
-            with gzip.open(feed_path, "rt", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                parse_csv(reader)
+        # Decompress if necessary
+        if src_path.suffix.lower().endswith(".gz"):
+            try:
+                with gzip.GzipFile(fileobj=BytesIO(raw), mode = "rb") as gz:
+                    raw_csv = gz.read()
+                content_encoding = "gzip"
+            except Exception as e:
+                raise RuntimeError(f"Failed to decompressed local EPSS .gz file: {e}") from e
         else:
-            with feed_path.open("r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                parse_csv(reader)
+            raw_csv = raw
+            content_encoding = "none"
+
+        # Skip re-import if unchanged
+        try:
+            local_digest = hashlib.sha256(raw_csv).hexdigest()
+            if cache_path.exists():
+                cache_digest = fc.compute_checksum(key)
+                if cache_digest == local_digest and fc.load_meta(key):
+                    ctx.logger.print_info("Local EPSS matches cache; skipping import.")
+                    return parse_csv(cache_path)
+        except Exception:
+            pass
  
-        if not epss_data:
-            log.log.print_warning("[Enrich-EPSS] Local EPSS file parsed but no data found.")
-        log.log.print_success(f"[Enrich-EPSS] Loaded EPSS data from {feed_path}")
-        return epss_data
+        # Import decompressed CSV into managed cache
+        fc.write_atomic(
+            key,
+            raw_csv,
+            source_url = f"file://{src_path.as_posix()}",
+            mode = "Offline-Import",
+            validated = False,
+            checksum_src = "Local",
+            extra_meta = {
+                "content-encoding": content_encoding,
+                "stored_as": "csv",
+                "source_type": "local",
+            }
+        )
+        fc.ensure_feed_checksum(key, allow_regen=True)
+        fc.print_cache_metadata(key)
+        return parse_csv(cache_path)
 
     # -----------------------------
     # INVALID PATH
     # -----------------------------         
-    else:
-        raise FileNotFoundError(f"File or URL not found: {path_url}")
+    raise FileNotFoundError(f"EPSS Source not found or invalid: {ctx.pfh.format_for_log(path_url)}")
 
 
-def load_kev_from_json(path_url: str, cache_path: str = "./data/kev_cache.json", *, feed_cache: dict, force_refresh: bool) -> Dict[str, bool]:
+def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen: bool, timeout: int = 7, user_agent: Optional[str] = UA) -> Dict[str, bool]:
     '''
     Load CISA KEV data from a JSON file or URL into a dict {cve: True}.
     JSON assumed to have CVE's under a 'cveID' or 'CVE' key in each entry
+    Caches URL fetches under ctx.services.feed_cache ("kev")
+    
+    :returns: dict {"cveID": True}
     '''
     kev_data: Dict[str, bool] = {}
+    key = "kev"
+    fc = ctx.services.feed_cache
 
     def parse_json(feed_path: Path):
         # Handle .gz and .json
         if str(feed_path).endswith(".gz"):
-            with gzip.open(feed_path, "rt", encoding="utf-8") as f:
-                data = json.load(f)
+            feed_path = ctx.pfh.ensure_readable_file(feed_path, label = "KEV Feed (.gz)")
+            with ctx.pfh.open_for_read(feed_path, mode = "rb", label = "KEV Feed (.gz)") as rb:
+                with gzip.open(rb, "rt", encoding = "utf-8") as f:
+                    data = json.load(f)
         else:
-            with feed_path.open("r", encoding="utf-8") as f:
+            feed_path = ctx.pfh.ensure_readable_file(feed_path, label = "KEV Feed (.json)")
+            with ctx.pfh.open_for_read(feed_path, mode = "r", label = "KEV Feed (.json)") as f:
                 data = json.load(f)
      
         vulns = data.get('vulnerabilities', [])
@@ -237,89 +245,129 @@ def load_kev_from_json(path_url: str, cache_path: str = "./data/kev_cache.json",
     # Online Mode    (URL)
     # ----------------------------        
     if path_url.startswith('http'):
-        feed_path = Path(cache_path)
-        ttl_hours = int(feed_cache.get("kev", 24))
+        data_path, _, _ = fc.resolve(key)
 
-        cache = FeedCache(
-            name="CISA_KEV",
-            data_path=feed_path,
-            ttl_hours=ttl_hours,
-            logger=log.log,
-        )
 
         # ------------------------- Cached Path -------------------------
-        if cache.should_use_cached(force_refresh=force_refresh):
-            log.log.print_info("[Enrich-KEV] Using cached CISA KEV feed (TTL still valid).")
-            try:
-                cache.ensure_feed_checksum(allow_regen=False)
-            except RuntimeError as e:
-                if force_refresh:
-                    log.log.print_warning("[Enrich-KEV] "
-                                          "Checksum error on cached feed; Re-downloading due to --refresh-cache.")
-                else:
-                    raise e
-            else:
-                cache.print_cache_metadata()
-                parse_json(feed_path)
-                log.log.print_success(f"[Enrich-KEV] Loaded KEV data from {feed_path}")
-                return kev_data
+        if (not force_refresh) and data_path.exists() and fc.is_fresh(key):
+            ctx.logger.print_info("Using cached CISA KEV feed (TTL Valid).", label = "[Enrich-KEV]")
+
+            # Integrity enforcement
+            fc.ensure_feed_checksum(key, allow_regen = allow_regen)
+
+            fc.print_cache_metadata(key)
+            parse_json(data_path)
+            ctx.logger.print_success(f"Loaded KEV data from {ctx.pfh.format_for_log(data_path)}")
+            return kev_data
 
         # ------------------------- Refresh Path -------------------------
-        log.log.print_info(f"[Enrich-KEV] Downloading CISA KEV feed from {path_url}...")
+        ctx.logger.print_info(f"Downloading CISA KEV feed from {path_url}...", label = "[Enrich-KEV]")
+        headers = {"User-Agent": user_agent}
+
         try:
-            response = requests.get(path_url, allow_redirects=True, timeout=5, headers={
-                "User-Agent": UA
-            })
-            response.raise_for_status()
+            resp = requests.get(path_url, allow_redirects = True, timeout = timeout, headers = headers)
+            resp.raise_for_status()
+            raw = resp.content()
         except requests.RequestException as e:
-            log.log.logger.exception(f"[Enrich-KEV] Failed to retrieve KEV feed: {e}")
+            ctx.logger.exception(f"[Enrich-KEV] Failed to retrieve KEV feed: {e}")
+
+            # Fallback to existing cache if it exists
+            if data_path.exists():
+                ctx.logger.print_warning("Upstream fetch failed; attempting fallback to local cache.", label = "[Enrich-KEV]")
+                try:
+                    fc.ensure_feed_checksum(key, allow_regen = allow_regen)
+                    parse_json(data_path)
+                    ctx.logger.print_warning("Using fallback cached KEV.")
+                    return kev_data
+                except Exception as e2:
+                    raise RuntimeError(f"KEV upstream fetch failed and cache fallback failed: {e2}") from e
             return {}
 
-        feed_path.parent.mkdir(parents=True, exist_ok=True)
-        feed_path.write_bytes(response.content)
-        log.log.print_success(f"[Enrich-KEV] KEV feed cached locally at {feed_path}")
-
-        # Save metadata
-        cache.save_metadata_file(
-            source_url=path_url,
-            mode="Online",
-            validated=True,
-            checksum_src="Remote",
+        # Cache it
+        fc.write_atomic(
+            key,
+            raw,
+            source_url = path_url,
+            mode = "Online",
+            validated = False,
+            checksum_src = "Local",
         )
-        # Create Checksum — for online mirror fetches/first time.
-        cache.create_cs()
-        # Ensure checksum + update meta timestamps
-        cache.ensure_feed_checksum(allow_regen=True)
-        cache.update_cache_meta()
-        cache.print_cache_metadata()
 
-        # Always parse from cache path (.gz or .json)
-        parse_json(feed_path)
-        log.log.print_success(f"[Enrich-KEV] Loaded KEV data from {feed_path}")
+        # Verify
+        fc.ensure_feed_checksum(key, allow_regen = True)
+        fc.update_cache_meta(key)
+        fc.print_cache_metadata(key)
+
+        # Parse
+        data_path, _, _ = fc.resolve(key)
+        parse_json(data_path)
+        ctx.logger.print_success(f"Loaded KEV data from {ctx.pfh.format_for_log(data_path)}", label = "[Enrich-KEV]")
         return kev_data
 
     # -----------------------------
     # Offline / LOCAL
     # -----------------------------
     if os.path.exists(path_url):
-        feed_path = Path(path_url)
-
         # For local-only file, TTL doesn't matter; validate or regen checksum
-        cache = FeedCache(
-            name="CISA_KEV_LOCAL",
-            data_path=feed_path,
-            ttl_hours=0,
-            logger=log.log,
-        )
+        try:
+            feed_path = ctx.pfh.ensure_readable_file(path_url, label = "Local KEV Cache")
+        except Exception as e:
+            raise FileNotFoundError(f"Local KEV file not readable: {ctx.pfh.format_for_log(path_url)}") from e
+
+        if feed_path.suffix.lower() == ".gz":
+            raise RuntimeError(
+                "Local KEV file is .gz, but cache target is kev_cache.json. "
+                "Unzip the JSON KEV file or change cache filename to .json.gz."
+            )
+
+        with ctx.pfh.open_for_read(feed_path, "rb", label = "Local KEV Cache") as r:
+            raw = r.read()
 
         try:
-            cache.ensure_feed_checksum(allow_regen=True)
+            parsed = json.loads(raw.decode("utf-8"))
         except Exception as e:
-            log.log.print_warning(f"[Enrich-KEV] Local KEV checksum issue: {e}")
+            raise RuntimeError(f"Local KEV file is not valid JSON: {ctx.pfh.format_for_log(feed_path)} Trace = {e}") from e
 
-        cache.print_cache_metadata()
-        parse_json(feed_path)
-        log.log.print_success(f"[Enrich-KEV] Loaded KEV data from {feed_path}")
+        if not isinstance(parsed, dict):
+            raise RuntimeError("Local KEV JSON must be an object at top-level.")
+
+        # Skip re-import if unchanged
+        fc = ctx.services.feed_cache
+        cache_path, _, _ = fc.resolve("kev")
+
+        try:
+            local_digest = hashlib.sha256(raw).hexdigest()
+
+            if cache_path.exists():
+                cache_digest = fc.compute_checksum("kev")
+                if cache_digest == local_digest and fc.load_meta("kev"):
+                    ctx.logger.print_info(
+                        "Local KEV matches existing cache; skipping re-import."
+                    )
+                    parse_json(cache_path)
+                    return kev_data
+        except Exception:
+            pass
+
+        # Import into managed cache directory
+        fc.write_atomic(
+            "kev",
+            raw,
+            source_url = f"file://{feed_path.as_posix()}",
+            mode = "Offline-Import",
+            validated = False,
+            checksum_src = "Local"
+        )
+
+        # Enforce checksum/meta on cached copy.
+        fc.ensure_feed_checksum("kev", allow_regen = allow_regen)
+        fc.print_cache_metadata("kev")
+
+        # Parse
+        data_path, _, _ = fc.resolve("kev")
+        parse_json(data_path)
+
+        ctx.logger.print_success(f"Loaded KEV data from local file {ctx.pfh.format_for_log(data_path)}")
         return kev_data
 
     # -----------------------------

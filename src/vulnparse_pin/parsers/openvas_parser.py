@@ -27,7 +27,7 @@ class OpenVASParser(BaseParser):
     @classmethod
     def detect_file(cls, filepath):
         """Lightweight file-level detection for OpenVAS JSON."""
-        if filepath.lower().endswith(".json"):
+        if filepath.suffix == ".json":
             try:
                 with open(filepath, "r", encoding='utf-8') as f:
                     head = f.read(5000)

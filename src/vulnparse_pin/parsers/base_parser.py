@@ -6,15 +6,22 @@
 # by the Free Software Foundation, either version 3 of the License, or
 #  any later version.
 # See the LICENSE file for full terms.
-
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
+from pathlib import Path
 import re
 from typing import List, Optional, Tuple
 from vulnparse_pin.core.classes.dataclass import ScanResult
 
+if TYPE_CHECKING:
+    from vulnparse_pin.core.classes.dataclass import RunContext
+
 class BaseParser(ABC):
-    
-    def __init__(self, filepath: str):
+    ctx: "RunContext"
+
+    def __init__(self, ctx: "RunContext", filepath: str | Path):
+        self.ctx = ctx
         self.filepath = filepath
     
     @classmethod
@@ -23,7 +30,7 @@ class BaseParser(ABC):
         pass
     
     @classmethod
-    def detect_file(cls, filepath: str) -> bool:
+    def detect_file(cls, filepath: str | Path) -> bool:
         """Detect based on file-level sniffing (XML, CSV, JSON header)."""
 
     @abstractmethod

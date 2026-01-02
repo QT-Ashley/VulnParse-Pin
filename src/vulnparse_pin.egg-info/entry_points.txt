@@ -1,2 +1,0 @@
-[console_scripts]
-vulnparse-pin = vulnparse_pin.main:main

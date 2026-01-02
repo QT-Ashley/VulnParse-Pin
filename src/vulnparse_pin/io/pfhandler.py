@@ -192,7 +192,7 @@ class PermFileHandler:
             raise FilePermissionError(f"{label.capitalize()} is not readable: {self.format_for_log(p)}")
 
         if log:
-            self.logger.print_info(
+            self.logger.info(
                 "Validated readable %s: %s",
                 label,
                 self.format_for_log(p),
@@ -282,7 +282,7 @@ class PermFileHandler:
             raise FilePathError(f"{label.capitalize()} is a forbidden symlink: {self.format_for_log(p)}")
 
         if log:
-            self.logger.print_info("Validated writable %s: %s",
+            self.logger.debug("Validated writable %s: %s",
                                    label,
                                    self.format_for_log(p))
 

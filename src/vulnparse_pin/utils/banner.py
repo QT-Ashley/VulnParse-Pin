@@ -19,7 +19,7 @@ def print_banner():
         "Pinnacle of Real-World Risk Insight",
         "Pinnacle of Defensive Strategy",
         "Pinnacle of Tactical Risk Management",
-        "Pinnacle of Security Analytics Wizardry"
+        "Pinnacle of Security Analytics Wizardry",
     ]
     
     selected_subtitle = random.choice(subtitles)
@@ -32,9 +32,9 @@ def print_banner():
     ██║     ██║██║ ╚████║██║ ╚████║██║  ██║╚██████╗███████╗███████╗
     ╚═╝     ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚══════╝
 
-                    VulnParse-Pinnacle {__version__}
+                VulnParse-Pinnacle {__version__}
                 Enrich ✦ Prioritize ✦ Defend
-            {selected_subtitle}
+              {selected_subtitle}
                     Developer: Shade216
                 Copyright (C) 2025 Shade216
     """

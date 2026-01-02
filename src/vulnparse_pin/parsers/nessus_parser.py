@@ -6,7 +6,8 @@
 # by the Free Software Foundation, either version 3 of the License, or
 #  any later version.
 # See the LICENSE file for full terms.
-
+from __future__ import annotations
+from typing import TYPE_CHECKING
 import json
 from datetime import timezone
 from typing import Any, Dict, List, Optional
@@ -17,16 +18,18 @@ from vulnparse_pin.parsers.base_parser import BaseParser
 from vulnparse_pin.utils.normalizer import *
 from collections import Counter, defaultdict
 import vulnparse_pin.utils.logger_instance as log
+if TYPE_CHECKING:
+    from vulnparse_pin.core.classes.dataclass import RunContext
 
 
 class NessusParser(BaseParser):
-    def __init__(self, filepath: str | None = None):
-        super().__init__(filepath=filepath)
+    def __init__(self, ctx: "RunContext", filepath: str | None = None):
+        super().__init__(ctx = ctx, filepath=filepath)
         
     @classmethod
     def detect_file(cls, filepath):
         """Lightweight file-level detection for Nessus JSON."""
-        if filepath.lower().endswith(".json"):
+        if filepath.suffix == ".json":
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     head = f.read(900)
@@ -68,7 +71,7 @@ class NessusParser(BaseParser):
                 if pattern(data):
                     return True
             except Exception as e:
-                log.log.print_error(f"Pattern check failed: {e}")
+                self.ctx.logger.print_error(f"Pattern check failed: {e}")
                 continue
         
         return False

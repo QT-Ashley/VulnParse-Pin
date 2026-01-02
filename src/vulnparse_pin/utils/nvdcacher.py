@@ -4,145 +4,101 @@
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
-
-import os
+from __future__ import annotations
 import gzip
 import json
-import hashlib
-import requests
-from datetime import datetime, timedelta, timezone
-from vulnparse_pin import UA
-import vulnparse_pin.utils.logger_instance as log
+from datetime import datetime
+from typing import Any, Dict, List, TYPE_CHECKING
 
-class NVDCache:
+if TYPE_CHECKING:
+    from vulnparse_pin.core.classes.dataclass import RunContext
+
+class NVDFeedCache:
     '''
     Feed-based NVD Cache.
-    Loads yearly + modified feeds into memory for O(1) lookups.
+    - Pulls feed list + TTL policy from config.yaml
+    - Uses FeedCacheManager for caching/integrity/refresh/offline
+    - Parses cached raw .json.gz feeds into in-memory lookup for O(1) enrichment
     '''
-    
-    BASE_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-"
-    
-    def __init__(self, cache_dir="./nvd_cache", refresh_days=1, offline=False):
-        self.cache_dir = cache_dir
-        self.refresh_days = refresh_days
-        self.offline = offline
-        self.lookup = {}
-        os.makedirs(cache_dir, exist_ok=True)
-        
-    def _download_feed(self, fname: str):
-        """Download nvd data feed if stale or is missing."""
-        path = os.path.join(self.cache_dir, fname)
-            
-        url = self.BASE_URL + fname
-        log.log.print_info(f"Downloading NVD feed: {fname}")
-        r = requests.get(url, timeout=10, headers={
-            "User-Agent": UA
-        })
-        r.raise_for_status()
-        # Save feed
-        with open(path, 'wb') as f:
-            f.write(r.content)
-        return path
-    
-    def _validate_meta(self, fname: str, refresh_cache: bool = False) -> bool:
-        """Validate feed using .meta file (sha256 + lastModifiedDate)."""
-        meta_url = self.BASE_URL + fname.replace(".json.gz", ".meta")
-        try:
-            r = requests.get(meta_url, timeout=15, headers={
-                "User-Agent": UA
-            })
-            r.raise_for_status()
-        except Exception as e:
-            log.log.print_warning(f"[NVDCache] Could not fetch meta for {fname}: {e}")
-            return False
-        
-        
-        lines = r.text.strip().splitlines()
-        meta = {}
-        for line in lines:
-            if ":" in line:
-                k, v = line.split(":", 1)
-                meta[k.strip()] = v.strip()
-                
-        # Paths
-        path = os.path.join(self.cache_dir, fname)
-        if not os.path.exists(path):
-            return False
-        
-        
-        # Prefer lastModDate over hash for freshness
-        last_mod_meta = meta.get("lastModifiedDate")
-        if last_mod_meta:
-            # If local file older than meta timestamp, refresh
-            mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
-            last_mod_dt = datetime.fromisoformat(last_mod_meta.replace("Z", "+00:00"))
-            if mtime >= last_mod_dt and not refresh_cache:
-                return True
-            
-        # If forced refresh or unsure, validate sha256
-        sha256_expected = meta.get("sha256")
-        if sha256_expected and not refresh_cache:
-            sha256_local = hashlib.sha256(open(path, 'rb').read()).hexdigest()
-            if sha256_local == sha256_expected:
-                return True
-            else:
-                log.log.print_warning(f"{fname} hash mismatch detected.")
-                return False
-            
-        return False
-    
-    def _parse_feed(self, path: str):
+
+    def __init__(self, ctx: "RunContext") -> None:
+        self.ctx = ctx
+        self.lookup: Dict[str, Dict[str, Any]] = {}
+
+    def refresh(self, *, config: dict, feed_cache, refresh_cache: bool, offline: bool) -> None:
+        feeds = nvd_feed_plan(config)
+        if not feeds:
+            self.ctx.logger.print_info("NVD disabled via config.")
+            return
+
+        missing: List[str] = []
+
+        for f in feeds:
+            try:
+                path = feed_cache.resolve_nvd_feed(
+                    key=f["key"],
+                    ttl_hours=int(f["ttl_hours"]),
+                    refresh_cache=refresh_cache,
+                    offline=offline,
+                )
+            except FileNotFoundError:
+                missing.append(f["fname"])
+                continue
+
+            self._parse_feed(path)
+
+        if offline and missing:
+            self.ctx.logger.warning(
+                f"Offline mode: {len(missing)} feed(s) missing: {', '.join(missing)}."
+            )
+    # NOTE(perf): NVD feed parse builds in-mem O(1) index at startup (~2-4s).
+    # Deferred until GA+: SQLite-backed indexing (persistent db, incremental refresh)
+    def _parse_feed(self, path: str) -> None:
         """Parse NVD 2.0 feed into lookup dict."""
-        if path.endswith(".gz"):
-            with gzip.open(path, 'rt', encoding='utf-8') as f:
+        ctx = self.ctx
+        path = ctx.pfh.ensure_readable_file(path, label = "NVD Feed (.json.gz)")
+        with ctx.pfh.open_for_read(path, mode="rb", label = "NVD Feed (.json.gz)") as raw:
+            with gzip.open(raw, mode="rt", encoding="utf-8") as f:
                 data = json.load(f)
-        else:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-        
+
         # Parse pertinent information from feeds.
         for item in data.get("vulnerabilities", []):
-            cve = item["cve"]
-            cve_id = cve["id"]
-            
+            cve = (item or {}).get("cve", {}) or {}
+            cve_id = cve.get("id")
+            if not cve_id:
+                continue
             # Description
             desc = ""
-            if cve.get("descriptions"):
-                desc = cve["descriptions"][0]["value"]
-                
-            # Published/LastModified
+            descs = cve.get("descriptions") or []
+            if descs:
+                desc = (descs[0] or {}).get("value", "") or ""
+            # Published/lastMod
             published = cve.get("published")
             last_mod = cve.get("lastModified")
-                
             # CVSS Metrics
-            metrics = cve.get("metrics", {})
+            metrics = cve.get("metrics", {}) or {}
             cvss, vector = None, None
-            
-            # CVSS Prioritization
-            
+            # Break out CVSS Version Prioritization
             if "cvssMetricV31" in metrics:
-                chosen = self._choose_cvss(metrics["cvssMetricV31"])
-                cvss, vector = chosen
+                cvss, vector = self._choose_cvss(metrics["cvssMetricV31"])
             elif "cvssMetricV30" in metrics:
-                chosen = self._choose_cvss(metrics["cvssMetricV30"])
-                cvss, vector = chosen
+                cvss, vector = self._choose_cvss(metrics["cvssMetricV30"])
             elif "cvssMetricV2" in metrics:
-                chosen = self._choose_cvss(metrics["cvssMetricV2"])
-                cvss, vector = chosen
-                
+                cvss, vector = self._choose_cvss(metrics["cvssMetricV2"])
+
+            # Create O1 Lookup
             self.lookup[cve_id] = {
                 "id": cve_id,
                 "description": desc,
                 "cvss_score": cvss,
                 "cvss_vector": vector,
                 "published": published,
-                "last_Modified": last_mod
+                "last_modiifed": last_mod,
             }
-    
-    def _choose_cvss(self, metrics_list):
+
+    def _choose_cvss(self, metrics_list) -> tuple | tuple[None, None]:
         """Pick Primary cvss first, fallback to Secondary."""
         primary = next((m for m in metrics_list if m.get("type") == "Primary"), None)
         if not primary and metrics_list:
@@ -151,62 +107,13 @@ class NVDCache:
             d = primary["cvssData"]
             return d.get("baseScore"), d.get("vectorString")
         return None, None
-    
-    def refresh(self, years=None, refresh_cache=False):
-        """
-        Refresh cache with yearly + modified feeds.
-        
-        years: list[int] or None (defaults to current year only)
-        """
-        if years is None:
-            years = [datetime.now().year]
-            
-        # Feeds
-        feeds = [f"modified.json.gz"] + [f"{y}.json.gz" for y in years]
-        
-        missing_feeds = []
-        
-        for fname in feeds:
-            path = os.path.join(self.cache_dir, fname)
-            
-            # If offline, only use local file
-            if self.offline:
-                if os.path.exists(path):
-                    self._parse_feed(path)
-                else:
-                    missing_feeds.append(fname)
-                continue
-            
-            
-            # Online mode: Apply staggered policy
-            needs_refresh = False
-            if "modified" in fname:
-                refresh_interval = timedelta(hours=2)
-            else:
-                refresh_interval = timedelta(days=1)
-                
-            if os.path.exists(path):
-                mtime = datetime.fromtimestamp(os.path.getmtime(path))
-                if datetime.now() - mtime > refresh_interval:
-                    needs_refresh = True
-            else:
-                needs_refresh = True
-                
-            if needs_refresh or refresh_cache or not self._validate_meta(fname, refresh_cache):
-                path = self._download_feed(fname)
-                
-            self._parse_feed(path)
-            
-            
-        # Consolidated warning if offline and missing feeds
-        if self.offline and missing_feeds:
-            log.log.print_warning(f"[NVD Cache] Offline mode active - {len(missing_feeds)} feeds missing. NVD enrichment will be incomplete until feeds are downloaded in online mode.")
-        
-    def get(self, cve_id: str):
+
+    def get(self, cve_id: str) -> dict[str, Any]:
         """Lookup CVE from cache.
-        Always return a normalized dict with expected keys, even if the CVE is missing (values default to None).
+        Always return a normalized dict with expected keys, even if the CVE is missing
+        (values default to None).
         """
-        
+
         default_record = {
         "id": cve_id,
         "description": "",
@@ -216,13 +123,94 @@ class NVDCache:
         "last_Modified": None,
         "found": False,
         }
-        
+
         record = self.lookup.get(cve_id, {})
         if record is None:
             return default_record
-        
+
         merged = {**default_record, **record}
         merged["found"] = True
         return merged
+
+def _cfg_get(config: Dict[str, Any], path: List[str], default = None):
+    cur = config
+    for k in path:
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(k)
+        if cur is None:
+            return default
+    return cur
+
+def _cfg_int(config: Dict[str, Any], path: List[str], default: int) -> int:
+    v = _cfg_get(config, path, default)
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+def _cfg_bool(config: Dict[str, Any], path: List[str], default: bool) -> bool:
+    v = _cfg_get(config, path, default)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "y", "on")
+    return default
+
+def nvd_policy_from_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pulls NVD policy config values from the config.
+    """
+    enabled = _cfg_bool(config, ["feed_cache", "nvd", "enabled"], True)
+
+    ttl_default = _cfg_int(config, ["feed_cache", "defaults", "ttl_hours"], 24)
+    ttl_yearly = _cfg_int(config, ["feed_cache", "ttl_hours", "nvd_yearly"], ttl_default)
+    ttl_modified = _cfg_int(config, ["feed_cache", "ttl_hours", "nvd_modified"], min(2, ttl_default))
+
+
+    now_year = datetime.now().year
+    start_year = _cfg_int(config, ["feed_cache", "nvd", "start_year"], now_year)
+    end_year = _cfg_int(config, ["feed_cache", "nvd", "end_year"], now_year)
+
+
+    if start_year > end_year:
+        start_year, end_year = end_year, start_year
+    if end_year > now_year:
+        end_year = now_year
+
+    return {
+        "enabled": enabled,
+        "ttl_default": ttl_default,
+        "ttl_yearly": ttl_yearly,
+        "ttl_modified": ttl_modified,
+        "start_year": start_year,
+        "end_year": end_year,
+    }
+
+def nvd_feed_plan(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Returns the NVD Feed plan based off the YAML config parameters.
     
-    
+    :param config: Global config YAML
+    :type config: Dict[str, Any]
+    :return: A list of nvd feed params based on YAML config.
+    :rtype: List[Dict[str, Any]]
+    """
+    p = nvd_policy_from_config(config)
+    if not p["enabled"]:
+        return []
+
+    feeds = [{
+        "key": "nvd.modified",
+        "fname": "modified.json.gz",
+        "ttl_hours": p["ttl_modified"],
+    }]
+
+    for y in range(p["start_year"], p["end_year"] + 1):
+        feeds.append({
+            "key": f"nvd.year.{y}",
+            "fname": f"{y}.json.gz",
+            "ttl_hours": p["ttl_yearly"],
+        })
+
+    return feeds

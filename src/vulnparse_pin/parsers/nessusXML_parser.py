@@ -9,14 +9,14 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-from defusedxml.ElementTree import fromstring
+import os
 from typing import Dict, List, Optional, Tuple
-
+from defusedxml.ElementTree import fromstring
 from iniconfig import ParseError
 from vulnparse_pin.parsers.base_parser import BaseParser
 from vulnparse_pin.core.classes.dataclass import ScanMetaData, ScanResult, Asset, Finding
 import vulnparse_pin.utils.logger_instance as log
-import os
+
 
 class NessusXMLParser(BaseParser):
     def __init__(self, filepath: str | None = None):
@@ -25,7 +25,7 @@ class NessusXMLParser(BaseParser):
     @classmethod
     def detect_file(cls, filepath):
         """Detect if the file is a Nessus XML export (.nessus)"""
-        if filepath.lower().endswith((".nessus", ".xml")):
+        if filepath.suffix in [".nessus", ".xml"]:
             try:
                 # Size guardrail (Lets do >500MB)
                 if os.path.getsize(filepath) > 500 * 1024 * 1024:

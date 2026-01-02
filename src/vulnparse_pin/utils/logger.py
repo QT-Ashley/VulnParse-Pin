@@ -4,7 +4,7 @@
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
 
 from pathlib import Path
@@ -51,7 +51,7 @@ ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 SUCCESS_LEVEL = 25
 logging.addLevelName(SUCCESS_LEVEL, "SUCCESS")
 
-def success(self: logging.Logger, msg: str, *args, **kwargs) -> None:
+def success(self, msg, *args, **kwargs) -> None:
     if self.isEnabledFor(SUCCESS_LEVEL):
         self._log(SUCCESS_LEVEL, msg, args, **kwargs)
 
@@ -89,7 +89,7 @@ class ConsoleFormatter(logging.Formatter):
         raw_label = getattr(record, "label", None)
         label_str = ""
         if raw_label:
-            label_str = f'{self.LABEL_COLOR}"{raw_label}"{Style.RESET_ALL} '
+            label_str = f'{self.LABEL_COLOR}[{raw_label}]{Style.RESET_ALL} '
 
         msg = record.getMessage()
         return f"{color}{level_tag} {icon}{Style.RESET_ALL} {label_str}{msg}".strip()
@@ -123,12 +123,16 @@ class LoggerWrapper:
         - Convenience methods
     """
     def __init__(self, log_file: str, log_level: str = "INFO"):
-        self.logger = logging.getLogger("vulnparse")
-        self.logger.handlers.clear()
+        self.logall = logging.getLogger("vulnparse")
+        self.log_file = logging.getLogger("vulnparse.fileonly")
+        self.logall.handlers.clear()
+        self.log_file.handlers.clear()
 
         level = getattr(logging, log_level.upper(), logging.INFO)
-        self.logger.setLevel(level)
-        self.logger.propagate = False  # don't bubble to root logger
+        self.logall.setLevel(level)
+        self.logall.propagate = False  # don't bubble to root logger
+        self.log_file.setLevel(logging.DEBUG)
+        self.log_file.propagate = False
 
         log_path = Path(log_file)
         if log_path.parent:
@@ -136,33 +140,55 @@ class LoggerWrapper:
 
         # ------ File Handler ------
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
-        file_handler.setLevel(level)
+        file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(FileFormatter())
 
-        self.logger.addHandler(file_handler)
+        self.log_file.addHandler(file_handler)
 
         # ------ Console Handler ------
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
         console_handler.setFormatter(ConsoleFormatter())
-        self.logger.addHandler(console_handler)
-    
-    def get_logger(self) -> logging.Logger:
-        return self.logger
+        self.logall.addHandler(file_handler)
+        self.logall.addHandler(console_handler)
+
+
+    # ------------- File Only methods -------------
+
+    def debug(self, msg: str, *args, **kwargs) -> None:
+        self.log_file.debug(msg, *args, *kwargs)
+
+    def info(self, msg: str, *args, **kwargs) -> None:
+        self.log_file.info(msg, *args, *kwargs)
+
+    def warning(self, msg: str, *args, **kwargs) -> None:
+        self.log_file.warning(msg, *args, *kwargs)
+
+    def error(self, msg: str, *args, **kwargs) -> None:
+        self.log_file.error(msg, *args, *kwargs)
+
+    def exception(self, msg: str, *args, **kwargs) -> None:
+        self.log_file.exception(msg, *args, *kwargs)
+
+    def success(self, msg: str, *args, **kwargs) -> None:
+        self.log_file.success(msg, *args, **kwargs)
 
     # ------------- Public log methods (console + file) -------------
 
     def print_info(self, msg: str, label: Optional[str] = None) -> None:
-        self.logger.info(msg, extra={"label": label} if label else {})
+        self.logall.info(msg, extra={"label": label} if label else {})
 
     def print_success(self, msg: str, label: Optional[str] = None) -> None:
-        self.logger.success(msg, extra={"label": label} if label else {})
+        self.logall.success(msg, extra={"label": label} if label else {})
 
     def print_warning(self, msg: str, label: Optional[str] = None) -> None:
-        self.logger.warning(msg, extra={"label": label} if label else {})
+        self.logall.warning(msg, extra={"label": label} if label else {})
 
     def print_error(self, msg: str, label: Optional[str] = None) -> None:
-        self.logger.error(msg, extra={"label": label} if label else {})
+        self.logall.error(msg, extra={"label": label} if label else {})
+
+    def print_debug(self, msg: str, label: Optional[str] = None) -> None:
+        self.logall.debug(msg, extra={"label": label} if label else {})
 
 class EnrichmentMissLogger:
     def __init__(self, log_file="logs/missed_enrichments.json"):
