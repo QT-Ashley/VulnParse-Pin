@@ -659,7 +659,7 @@ def enrich_scan_results(ctx: "RunContext", results: ScanResult, kev_data: Option
 
 
 
-            # Calculate Risk_Score
+            # Calculate Risk_Score TODO: REMOVE
             cvss = finding.cvss_score or -1.0
             epss = finding.epss_score or -1.0 # Prevent zero-risk bias
 
@@ -671,34 +671,34 @@ def enrich_scan_results(ctx: "RunContext", results: ScanResult, kev_data: Option
                 cvss = baseline_risk
 
             # Risk Calculation
-            raw_risk_score, risk_score, risk_band = calculate_risk_score(
-                cvss_score = cvss,
-                exploit_available = finding.exploit_available, # type: ignore
-                cisa_kev = finding.cisa_kev, # type: ignore
-                epss_score = epss,
-                score_config = score_cfg
-            )
-            if raw_risk_score > 10.0:
-                ctx.logger.info(f"[RiskCalc] Compsite Score for {finding.vuln_id} greater than max threshold due to enrichment scoring. (Composite Score: {raw_risk_score})")
-            else:
-                ctx.logger.info(f"[RiskCalc] {finding.vuln_id} Composite Score: {raw_risk_score}")
-            ctx.logger.info(f"[RiskCalc] {finding.vuln_id} Final Risk Score: {risk_score} | Triage Priority: {risk_band} | ")
+            # raw_risk_score, risk_score, risk_band = calculate_risk_score(
+            #     cvss_score = cvss,
+            #     exploit_available = finding.exploit_available, # type: ignore
+            #     cisa_kev = finding.cisa_kev, # type: ignore
+            #     epss_score = epss,
+            #     score_config = score_cfg
+            # )
+            # if raw_risk_score > 10.0:
+            #     ctx.logger.info(f"[RiskCalc] Compsite Score for {finding.vuln_id} greater than max threshold due to enrichment scoring. (Composite Score: {raw_risk_score})")
+            # else:
+            #     ctx.logger.info(f"[RiskCalc] {finding.vuln_id} Composite Score: {raw_risk_score}")
+            # ctx.logger.info(f"[RiskCalc] {finding.vuln_id} Final Risk Score: {risk_score} | Triage Priority: {risk_band} | ")
 
             # Set risk score attribs
-            finding.raw_risk_score=raw_risk_score
-            finding.risk_score=risk_score
-            finding.risk_band=risk_band
+            finding.raw_risk_score=None
+            finding.risk_score=None
+            finding.risk_band=None
 
 
             # Recalculate Triage Priority
-            finding.triage_priority = determine_triage_priority(
-                raw_score=raw_risk_score,
-                severity=finding.severity,
-                epss_score=epss,
-                cisa_kev=finding.cisa_kev, # type: ignore
-                exploit_available=finding.exploit_available, # type: ignore
-                cfg=TriageConfig()
-            )
+            # finding.triage_priority = determine_triage_priority(
+            #     raw_score=raw_risk_score,
+            #     severity=finding.severity,
+            #     epss_score=epss,
+            #     cisa_kev=finding.cisa_kev, # type: ignore
+            #     exploit_available=finding.exploit_available, # type: ignore
+            #     cfg=TriageConfig()
+            # )
 
             # Update enrichment flag
             finding.enriched = enrichment_attempted and (
@@ -709,9 +709,7 @@ def enrich_scan_results(ctx: "RunContext", results: ScanResult, kev_data: Option
             # Log Summary For Finding
             log_finding_summary(ctx.logger, finding)
 
-        asset.avg_risk_score = round(
-            sum(f.risk_score for f in asset.findings) / len(asset.findings), 2 # type: ignore
-        ) if asset.findings else 0.0
+        asset.avg_risk_score = None
 
 
     print("="*25 + "[Enrichment Summary]" + "="*25)

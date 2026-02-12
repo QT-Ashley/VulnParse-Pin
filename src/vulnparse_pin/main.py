@@ -14,7 +14,11 @@ import time
 from dataclasses import asdict
 from typing import Any, Optional, Sequence, Type
 import os
+from vulnparse_pin.core.classes import ScoringPolicy
+from vulnparse_pin.core.classes.ScoringPolicy import ScoringPolicyV1
 from vulnparse_pin.core.classes.dataclass import FeedCachePolicy, FeedSpec, RunContext, ScanResult, Services
+from vulnparse_pin.core.classes.pass_classes import PassRunner
+from vulnparse_pin.core.passes.ScoringPass import ScoringPass
 from vulnparse_pin.utils.enricher import enrich_scan_results, load_epss, load_kev, update_enrichment_status
 import argparse
 import sys
@@ -60,9 +64,7 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
     exploit_findings = sum(
         sum(1 for f in asset.findings if getattr(f, 'exploit_available', False)) for asset in scan_result.assets
         )
-    avg_risk_score = round(
-        sum(asset.avg_risk_score for asset in scan_result.assets) / total_assets, 2
-    ) if total_assets else 0.0
+    avg_risk_score = None # TODO: Wire up
     highest_risk_asset = max(
         scan_result.assets, key=lambda a: a.avg_risk_score, default=None
     )
@@ -87,11 +89,11 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
     print("="*60)
     print(f" Total Assets Analyzed            : {total_assets:,}")
     print(f" Total Findings Triaged           : {total_findings:,}")
-    print(f" Average Asset Risk Score         : {avg_risk_score:.2f}" if avg_risk_score > 0.0 else " Average Asset Risk Score         : Not Computed (Insufficient Scoring Inputs)")
-    if highest_risk_asset:
-        print(f" Highest Risk Asset               : {highest_risk_asset.hostname} (Score: {highest_risk_asset.avg_risk_score:.2f})" if highest_risk_asset.avg_risk_score > 0.0 else f" Highest Risk Asset               : {highest_risk_asset.hostname} (Score: Not Computed (Insufficient Scoring Inputs))")
-    else:
-        print(" Highest Risk Asset: N/A")
+    # print(f" Average Asset Risk Score         : {avg_risk_score:.2f}" if avg_risk_score > 0.0 else " Average Asset Risk Score         : Not Computed (Insufficient Scoring Inputs)")
+    # if highest_risk_asset:
+    #     print(f" Highest Risk Asset               : {highest_risk_asset.hostname} (Score: {highest_risk_asset.avg_risk_score:.2f})" if highest_risk_asset.avg_risk_score > 0.0 else f" Highest Risk Asset               : {highest_risk_asset.hostname} (Score: Not Computed (Insufficient Scoring Inputs))")
+    # else:
+    #     print(" Highest Risk Asset: N/A")
     print("-" * 60)
     print(f"💣 Findings with Known Exploits   : {exploit_findings:,}")
     print(f"🔥 Critical+ Risk Findings        : {critical_findings:,}")
@@ -136,8 +138,8 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
 
     ctx.logger.info(f"Assets Analyzed: {total_assets:,},"
                 f"Findings Triaged: {total_findings:,},"
-                f"Average Risk Score: {avg_risk_score:.2f},"
-                f"Highest Risk Asset: {highest_risk_asset.hostname if highest_risk_asset else 'N/A'},"
+                # f"Average Risk Score: {avg_risk_score:.2f},"
+                # f"Highest Risk Asset: {highest_risk_asset.hostname if highest_risk_asset else 'N/A'},"
                 f"Critical+: {critical_findings:,}, High: {high_findings:,}, Medium: {medium_findings:,}, Low: {low_findings:,}"
                 )
 
@@ -183,6 +185,10 @@ def parse_mode(value: str) -> int:
         )
 
     return mode
+
+def _require(condition: bool, msg: str) -> None:
+    if not condition:
+        raise ValueError(msg)
 
 def write_output(ctx: "RunContext", data: Dict, file_path: PathLike, pretty_print=False):
     '''
@@ -259,6 +265,32 @@ def select_years(ctx: "RunContext", years_seen: set[int]) -> set[int]:
     else:
         raise RuntimeError("Unable to normalize years. Killswitching for failure mode.")
 
+def load_score_policy(config: dict) -> ScoringPolicyV1:
+    epss = config.get("epss", {})
+    evp = config.get("evidence_points", {})
+    bands = config.get("bands", {})
+    agg = config.get("aggregation", {})
+    weights = config.get("weights", {})
+    risk_ceiling = config.get("risk_ceiling", {})
+
+    return ScoringPolicyV1(
+        epss_scale = float(epss.get("scale", 10.0)),
+        epss_min = float(epss.get("min", 0.0)),
+        epss_max = float(epss.get("max", 1.0)),
+        kev_evd = float(evp.get("kev", 9.5)),
+        exploit_evd = float(evp.get("exploit", 9.0)),
+        band_critical = float(bands.get("critical", 8.9)),
+        band_high = float(bands.get("high", 7.9)),
+        band_medium = float(bands.get("medium", 4.0)),
+        band_low = float(bands.get("low", 2.0)),
+        asset_aggregation = str(agg.get("asset_score", "max")),
+        w_epss_high = float(weights.get("epss_high", 2.0)),
+        w_epss_medium = float(weights.get("epss_medium", 1.0)),
+        w_kev = float(weights.get("kev", 1.25)),
+        w_exploit = float(weights.get("exploit", 2)),
+        max_raw_risk = float(risk_ceiling.get("max_raw_risk", 15)),
+        max_op_risk = float(risk_ceiling.get("max_operational_risk", 10.0)),
+    )
 
 # Resolve feed sources.
 def resolve_feed_path(arg_val, offline_mode: bool, default_online: PathLike, default_offline: PathLike) -> Any | str:
@@ -399,6 +431,25 @@ def main(argv: Optional[Sequence[str]] = None):
 
     cfg_yaml, scoring_cfg = load_config(ctx)
 
+    score_pol: ScoringPolicyV1 = load_score_policy(scoring_cfg)
+    try:
+        _require(score_pol.w_epss_high >= 0, "w_epss_high must be >= 0")
+        _require(score_pol.w_epss_medium >= 0, "w_epss_medium must be >= 0")
+        _require(score_pol.w_exploit >= 0, "w_exploit must be >= 0")
+        _require(score_pol.w_kev >= 0, "w_kev must be >= 0")
+        _require(score_pol.kev_evd >= 0, "kev_evd must be >= 0")
+        _require(score_pol.exploit_evd >= 0, "exploit_evd must be >= 0")
+        _require(score_pol.band_critical >= 0, "band_critical must be >= 0")
+        _require(score_pol.band_high >= 0, "band_high must be >= 0")
+        _require(score_pol.band_medium >= 0, "band_medium must be >= 0")
+        _require(score_pol.band_low >= 0, "band_low must be >= 0")
+        _require(score_pol.epss_scale > 0, "epss.scale must be > 0")
+        _require(score_pol.band_critical > score_pol.band_high > score_pol.band_medium > score_pol.band_low >= 0, "Invalid band thresholds")
+        _require(score_pol.w_epss_high >= score_pol.w_epss_medium >= 0, "Invalid EPSS weights: epss_high must be >= epss_medium")
+    except ValueError as e:
+        logger.print_error("Scoring config has invalid values.", label = "Scoring Config")
+        raise RuntimeError(f"Scoring config has invalid values: {e}") from e
+
     # --------- Build feed cache policy from YAML
     feed_policy = build_feed_cache_policy(cfg_yaml)
 
@@ -408,7 +459,7 @@ def main(argv: Optional[Sequence[str]] = None):
         "kev": FeedSpec(key = "kev", filename = "kev_cache.json", label = "CISA KEV"),
         "exploit_db": FeedSpec(key = "exploit_db", filename = "files_exploit.csv", label = "Exploit-DB"),
     }
-
+    
     feed_cache = FeedCacheManager.from_ctx(ctx, specs = FEED_SPECS, policy = feed_policy)
 
     # Build NVD Cache and attach to ctx.services
@@ -454,6 +505,12 @@ def main(argv: Optional[Sequence[str]] = None):
     logger.print_info(f'Using config: {cfg_yaml_path.name}', label="Global Config")
     logger.print_info(f'Using scoring config: {cfg_score_path.name}', label = "Scoring Weight Config")
     logger.debug("\n%s", pfh.describe_policy(), extra={"vp_label": "PFH Policy"})
+    
+    # Init PassRunner
+    passesList = [
+        ScoringPass(score_pol),
+    ]
+    passOrchestrator = PassRunner(passesList)
 
     # ----------------------------------------
     # Validate all CLI paths through PFH
@@ -679,9 +736,14 @@ def main(argv: Optional[Sequence[str]] = None):
     if kev_data or epss_data and (args.enrich_kev or args.enrich_epss):
         print(" "*25 + "Enrichment Pipeline" + " "*25)
         enrich_scan_results(ctx, scan_result, kev_data, epss_data, offline_mode=args.mode == "offline", score_cfg=scoring_cfg, nvd_cache=nvd_cache)
-        logger.print_success("All enrichments Applied")
+        logger.print_success("All enrichments Applied") #TODO: Move scoring cfg out
 
-    # 5 Do Post-Processing enrichment status update.
+
+    # 5 Passes
+    # Scoring Pass
+    scan_result = passOrchestrator.run_all(ctx = ctx, scan = scan_result)
+
+    # 6 Do Post-Processing enrichment status update.
     for asset in scan_result.assets:
         for finding in asset.findings:
             update_enrichment_status(finding)
