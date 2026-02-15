@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Dict, Optional, TYPE_CHECKING
 from vulnparse_pin.core.classes.ScoringPolicy import ScoringPolicyV1
@@ -44,19 +44,19 @@ class ScoringPass(Pass):
                 scored += 1
                 scored_findings[f.finding_id] = sf
 
-                if best_asset is None or sf.score > best_asset:
-                    best_asset = sf.score
+                if best_asset is None or sf.raw_score > best_asset:
+                    best_asset = sf.raw_score
 
             if best_asset is not None and aid is not None:
                 asset_scores[aid] = best_asset
 
 
-        coverage_pct = (scored / total * 100.0) if total else 0.0
-        avg_scored = (sum(sf.score for sf in scored_findings.values()) / scored) if scored else None
+        coverage_pct = (scored / total * 1.0) if total else 0.0
+        avg_scored = (sum(sf.raw_score for sf in scored_findings.values()) / scored) if scored else None
 
 
-        highest_asset = None
-        highest_score = None
+        highest_asset: str = None
+        highest_score: float = None
         if asset_scores:
             highest_asset = max(asset_scores, key=asset_scores.get)
             highest_score = asset_scores[highest_asset]
@@ -82,7 +82,7 @@ class ScoringPass(Pass):
             created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             notes="Derived risk scoring (truth-preserving)."
         )
-        return DerivedPassResult(meta=meta, data=output)
+        return DerivedPassResult(meta=meta, data=asdict(output))
 
     def _score_one(self, f: "Finding") -> Optional[ScoredFinding]:
         pol = self.policy
@@ -150,7 +150,7 @@ class ScoringPass(Pass):
             finding_id=f.finding_id,
             asset_id=f.asset_id or "SENTINEL:AssetID_Missing",
             raw_score=raw,
-            score=score,
+            operational_score=score,
             risk_band=band,
             reason=";".join(reasons)
         )

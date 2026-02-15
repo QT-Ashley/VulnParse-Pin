@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import time
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from typing import Any, Optional, Sequence, Type
 import os
 from vulnparse_pin.core.classes import ScoringPolicy
@@ -19,6 +19,7 @@ from vulnparse_pin.core.classes.ScoringPolicy import ScoringPolicyV1
 from vulnparse_pin.core.classes.dataclass import FeedCachePolicy, FeedSpec, RunContext, ScanResult, Services
 from vulnparse_pin.core.classes.pass_classes import PassRunner
 from vulnparse_pin.core.passes.ScoringPass import ScoringPass
+from vulnparse_pin.core.passes.types import ScoringPassOutput
 from vulnparse_pin.utils.enricher import enrich_scan_results, load_epss, load_kev, update_enrichment_status
 import argparse
 import sys
@@ -29,6 +30,7 @@ from vulnparse_pin.utils.logger import LoggerWrapper
 from vulnparse_pin.parsers.__init__ import PARSER_SPECS
 from vulnparse_pin.utils.exploit_enrichment_service import *
 from vulnparse_pin.core.schema_detector import SchemaDetector
+from vulnparse_pin.utils.reportgen import materialize_presentation
 from vulnparse_pin.utils.validations import *
 from vulnparse_pin.utils.nvdcacher import NVDFeedCache, nvd_policy_from_config
 from vulnparse_pin.utils.enrichment_stats import stats
@@ -59,29 +61,41 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
     Returns:
         None
     '''
+    def _get_scoring(scan: "ScanResult") -> Dict | None:
+        res = scan.derived.get("Scoring@1.0")
+        if not res:
+            return None
+        data = res.data or {}
+        if not isinstance(data, dict):
+            raise TypeError("Not a dict")
+        return data
+    # Pull from scoring pass
+    scoring = _get_scoring(scan_result)
+    scored_findings = scoring.get("scored_findings", {}) or {}
+    coverage = scoring.get("coverage", {}) or {}
+    highest_asset = scoring.get("highest_risk_asset", {}) or {}
+    highest_asset_raw = scoring.get("highest_risk_asset_score", {}) or {}
+    avg_raw = scoring.get("avg_scored_risk", {}) or {}
+    band_counts = {
+        "Critical": 0,
+        "High": 0,
+        "Medium": 0,
+        "Low": 0,
+        "Informational": 0
+    }
+    for sf in scored_findings.values():
+        band = sf.get("risk_band", "Informational")
+        band_counts[band] = band_counts.get(band, 0) + 1
+
     total_assets = len(scan_result.assets)
     total_findings = sum(len(asset.findings) for asset in scan_result.assets)
     exploit_findings = sum(
         sum(1 for f in asset.findings if getattr(f, 'exploit_available', False)) for asset in scan_result.assets
         )
-    avg_risk_score = None # TODO: Wire up
-    highest_risk_asset = max(
-        scan_result.assets, key=lambda a: a.avg_risk_score, default=None
-    )
+    avg_risk_score = avg_raw
+
     enriched_findings = sum(
         sum(1 for f in asset.findings if f.enriched) for asset in scan_result.assets
-    )
-    critical_findings = sum(
-        sum(1 for f in asset.findings if f.risk_band == 'Critical+') for asset in scan_result.assets
-    )
-    high_findings = sum(
-        sum(1 for f in asset.findings if f.risk_band == 'High') for asset in scan_result.assets
-    )
-    medium_findings = sum(
-        sum(1 for f in asset.findings if f.risk_band == 'Medium') for asset in scan_result.assets
-    )
-    low_findings = sum(
-        sum(1 for f in asset.findings if f.risk_band == 'Low') for asset in scan_result.assets
     )
 
     print("\n" + "="*60)
@@ -89,17 +103,20 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
     print("="*60)
     print(f" Total Assets Analyzed            : {total_assets:,}")
     print(f" Total Findings Triaged           : {total_findings:,}")
-    # print(f" Average Asset Risk Score         : {avg_risk_score:.2f}" if avg_risk_score > 0.0 else " Average Asset Risk Score         : Not Computed (Insufficient Scoring Inputs)")
-    # if highest_risk_asset:
-    #     print(f" Highest Risk Asset               : {highest_risk_asset.hostname} (Score: {highest_risk_asset.avg_risk_score:.2f})" if highest_risk_asset.avg_risk_score > 0.0 else f" Highest Risk Asset               : {highest_risk_asset.hostname} (Score: Not Computed (Insufficient Scoring Inputs))")
-    # else:
-    #     print(" Highest Risk Asset: N/A")
+    print(f" Average Asset Risk Score         : {avg_risk_score:.2f}" if avg_risk_score > 0.0 else " Average Asset Risk Score         : Not Computed (Insufficient Scoring Inputs)")
+    print(f" Scoring Coverage                 : {coverage.get("coverage_pct"):.2%}")
+    print(f" # of Scored Findings             : {coverage.get("scored_findings")}")
+    if highest_asset:
+        print(f" Highest Risk Asset               : {highest_asset} (Score: {highest_asset_raw:.2f})" if highest_asset_raw > 0.0 else f" Highest Risk Asset               : {highest_asset} (Score: Not Computed (Insufficient Scoring Inputs))")
+    else:
+        print(" Highest Risk Asset: N/A")
     print("-" * 60)
     print(f"💣 Findings with Known Exploits   : {exploit_findings:,}")
-    print(f"🔥 Critical+ Risk Findings        : {critical_findings:,}")
-    print(f"⚠️  High Risk Findings             : {high_findings:,}")
-    print(f"🟡 Medium Risk Findings           : {medium_findings:,}")
-    print(f"🟢 Low Risk Findings              : {low_findings:,}")
+    print(f"🔥 Critical Risk Findings         : {band_counts.get("Critical"):,}")
+    print(f"⚠️  High Risk Findings             : {band_counts.get("High"):,}")
+    print(f"🟡 Medium Risk Findings           : {band_counts.get("Medium"):,}")
+    print(f"🟢 Low Risk Findings              : {band_counts.get("Low"):,}")
+    print(f"⚪ Informational Findings         : {band_counts.get("Informational"):,}")
     print("-" * 60)
     print(f"📊 Enriched Findings              : {enriched_findings:,}")
     if output_file:
@@ -140,7 +157,7 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
                 f"Findings Triaged: {total_findings:,},"
                 # f"Average Risk Score: {avg_risk_score:.2f},"
                 # f"Highest Risk Asset: {highest_risk_asset.hostname if highest_risk_asset else 'N/A'},"
-                f"Critical+: {critical_findings:,}, High: {high_findings:,}, Medium: {medium_findings:,}, Low: {low_findings:,}"
+                f"Critical: {band_counts.get("Critical"):,}, High: {band_counts.get("High"):,}, Medium: {band_counts.get("Medium"):,}, Low: {band_counts.get("Low"):,}, Informational: {band_counts.get("Informational"):,}"
                 )
 
 def format_runtime(seconds: float) -> str:
@@ -206,7 +223,7 @@ def write_output(ctx: "RunContext", data: Dict, file_path: PathLike, pretty_prin
         if pretty_print:
             ctx.logger.print_info("Pretty-printing JSON - Standby...", label = "Output")
             try:
-                json.dump(asdict(data), f, indent=4)
+                json.dump(data, f, indent=4)
                 ctx.logger.print_success(f"Parsed results are stored in: {file_path}", label = "Output")
             except Exception as e:
                 ctx.logger.print_error(f"Error attempt to dump to JSON: {e}", label = "Output")
@@ -214,7 +231,7 @@ def write_output(ctx: "RunContext", data: Dict, file_path: PathLike, pretty_prin
         else:
             try:
                 ctx.logger.print_info("[*] Dumping JSON results...")
-                json.dump(asdict(data), f)
+                json.dump(data, f)
                 ctx.logger.print_success(f"JSON results available in: {file_path}", label = "Output")
             except Exception as e:
                 ctx.logger.print_error(f"Error attempt to dump to JSON: {e}", label = "Output")
@@ -771,7 +788,8 @@ def main(argv: Optional[Sequence[str]] = None):
         print("="*25 + "Output" + "="*25)
 
     if args.output:
-        write_output(ctx, data=scan_result, file_path=args.output, pretty_print=args.pretty_print)
+        out = materialize_presentation(scan_result, overlay_mode="flatten", scoring_pass_key="Scoring@1.0")
+        write_output(ctx, data=out, file_path=args.output, pretty_print=args.pretty_print)
 
     if args.output_csv:
         export_to_csv(scan_result, args.output_csv, csv_sanitization=csv_sanitization_enabled)

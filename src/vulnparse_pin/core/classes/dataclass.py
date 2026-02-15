@@ -54,6 +54,7 @@ class Asset:
     """
     Asset class for VPP's result objects.
     """
+    # Wire up Asset_ID
     hostname: str
     ip_address: str
     criticality: Optional[str] = None

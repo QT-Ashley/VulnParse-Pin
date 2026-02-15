@@ -10,7 +10,7 @@ class ScoredFinding:
     finding_id: str
     asset_id: str
     raw_score: float
-    score: float
+    operational_score: float
     risk_band: str
     reason: str = ""
 
