@@ -18,7 +18,7 @@ from vulnparse_pin.core.classes import ScoringPolicy
 from vulnparse_pin.core.classes.ScoringPolicy import ScoringPolicyV1
 from vulnparse_pin.core.classes.dataclass import FeedCachePolicy, FeedSpec, RunContext, ScanResult, Services
 from vulnparse_pin.core.classes.pass_classes import PassRunner
-from vulnparse_pin.core.passes.ScoringPass import ScoringPass
+from vulnparse_pin.core.passes.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.types import ScoringPassOutput
 from vulnparse_pin.utils.enricher import enrich_scan_results, load_epss, load_kev, update_enrichment_status
 import argparse
@@ -76,6 +76,7 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
     highest_asset = scoring.get("highest_risk_asset", {}) or {}
     highest_asset_raw = scoring.get("highest_risk_asset_score", {}) or {}
     avg_raw = scoring.get("avg_scored_risk", {}) or {}
+    avg_op = scoring.get("avg_operational_risk", {}) or {}
     band_counts = {
         "Critical": 0,
         "High": 0,
@@ -104,7 +105,8 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
     print(f" Total Assets Analyzed            : {total_assets:,}")
     print(f" Total Findings Triaged           : {total_findings:,}")
     print(f" Average Asset Risk Score         : {avg_risk_score:.2f}" if avg_risk_score > 0.0 else " Average Asset Risk Score         : Not Computed (Insufficient Scoring Inputs)")
-    print(f" Scoring Coverage                 : {coverage.get("coverage_pct"):.2%}")
+    print(f" Average Operational Risk Score   : {avg_op:.2f}" if avg_op > 0.0 else " Average Operational Risk Score                  : Not Available (Insufficient Scoring Inputs)")
+    print(f" Scoring Coverage                 : {coverage.get("coverage_ratio"):.2%}")
     print(f" # of Scored Findings             : {coverage.get("scored_findings")}")
     if highest_asset:
         print(f" Highest Risk Asset               : {highest_asset} (Score: {highest_asset_raw:.2f})" if highest_asset_raw > 0.0 else f" Highest Risk Asset               : {highest_asset} (Score: Not Computed (Insufficient Scoring Inputs))")
@@ -332,14 +334,14 @@ def resolve_feed_path(arg_val, offline_mode: bool, default_online: PathLike, def
         return default_online
 
 def build_feed_cache_policy(config: dict) -> FeedCachePolicy:
-        fc = config.get("feed_cache", {}) or {}
-        defaults = fc.get("defaults", {}) or {}
-        default_ttl = int(defaults.get("ttl_hours", 24))
+    fc = config.get("feed_cache", {}) or {}
+    defaults = fc.get("defaults", {}) or {}
+    default_ttl = int(defaults.get("ttl_hours", 24))
 
-        ttl_map = fc.get("ttl_hours", {}) or {}
-        ttl_map = {str(k): int(v) for k, v in ttl_map.items()}
+    ttl_map = fc.get("ttl_hours", {}) or {}
+    ttl_map = {str(k): int(v) for k, v in ttl_map.items()}
 
-        return FeedCachePolicy(default_ttl_hours = default_ttl, ttl_hours = ttl_map)
+    return FeedCachePolicy(default_ttl_hours = default_ttl, ttl_hours = ttl_map)
 
 def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -347,32 +349,41 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         description="VulnParse-Pin: Enrich, prioritize, and triage vulnerability scan results.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument("--file", "-f", help="Path to vulnerability scan file", required=True, type=valid_input_file)
-    parser.add_argument("--enrich-kev", "-kev", nargs="?", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
-    parser.add_argument("--enrich-epss", "-epss", nargs="?", help="Path/URL to EPSS .csv or CSV.gz file. If omitted, use official EPSS feed.")
-    parser.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Output is in JSON")
-    parser.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
-    parser.add_argument("--log-file", default="vulnparse_pin.log", help="Log File destination.")
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
-    parser.add_argument("--version", "-v", help="Show program version and exit.", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
-    parser.add_argument("--exploit-db", "-edb", type=str, help="Path to offline exploit database (CSV)")
-    parser.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.")
-    parser.add_argument("--mode", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
-    parser.add_argument("--refresh-cache", action="store_true", help="Forces cache refesh for feeds.")
-    parser.add_argument("--allow_regen", action="store_true", help="Allows regeneration of cache meta and checksum if missing using 'best-effort'. Default: True", default=True)
-    parser.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
-    parser.add_argument("--output-csv", type=str, metavar="PATH", help="Path to save enriched results in CSV format (optional)")
-    parser.add_argument("--allow-large", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests. Default: False")
-    parser.add_argument("--no-csv-sanitize", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools). Default: Off")
-    parser.add_argument("--forbid-symlinks_read", "-fbsr", action="store_true", default=False, help="Disables following symlinks when resolving paths during read operations.")
-    parser.add_argument("--forbid-symlinks_write", "-fbsw", action="store_true", default=True, help="Disables following symlinks when resolving paths during write operations.")
-    parser.add_argument("--enforce-root-read", "-err", action="store_true", help="Enforces read operations only on files located within the list of acceptable roots.")
-    parser.add_argument("--enforce-root-write", "-erw", action="store_true", default=True, help="Enforces write operations only on files located within the list of acceptable roots. Default: True")
-    parser.add_argument("--file-mode", "-fm", type=parse_mode, default=0o700, nargs=1, metavar="0o700", help="POSIX ONLY - Enables file-level chmod permissions on file write operations.")
-    parser.add_argument("--dir-mode", "-dm", type=parse_mode, default=0o760, nargs=1, metavar="0o760", help="POSIX ONLY - Enables file-level chmod permissions on file write operations.")
-    parser.add_argument("--debug-path-policy", action="store_true", help="Display path policy for PFHandler and exit.")
-    parser.add_argument("--portable", action="store_true", help="Use ./data folder next to executable/script for application data(config/cache/logs/output).")
+    gen_group = parser.add_argument_group("General Options", "General runtime flags.")
+    enrich_group = parser.add_argument_group("Enrichment", "Vulnerability enrichment flags.")
+    file_group = parser.add_argument_group("Filesystem Options", "[Security Warning] Filesystem I/O and permissions flags. Take caution and read documentation on potential effects of flags.")
+    port_group = parser.add_argument_group("Portability", "Options to run VulnParse in a portable setting.")
+    output_group = parser.add_argument_group("Output Options", "Flags that deal with output such as output location or presentation modes.")
+    gen_group.add_argument("--file", "-f", help="Path to vulnerability scan file", required=True, type=valid_input_file)
+    enrich_group.add_argument("--enrich-kev", "-kev", nargs="?", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
+    enrich_group.add_argument("--enrich-epss", "-epss", nargs="?", help="Path/URL to EPSS .csv or CSV.gz file. If omitted, use official EPSS feed.")
+    output_group.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Output is in JSON")
+    gen_group.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
+    gen_group.add_argument("--log-file", "-Lf", default="vulnparse_pin.log", help="Log File destination.")
+    gen_group.add_argument("--log-level", "-Ll", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
+    gen_group.add_argument("--version", "-v", help="Show program version and exit.", action="version", version=f"%(prog)s {__version__}")
+    enrich_group.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
+    enrich_group.add_argument("--exploit-db", "-edb", type=str, help="Path to offline exploit database (CSV)")
+    enrich_group.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.", default=True)
+    enrich_group.add_argument("--mode", "-m", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
+    enrich_group.add_argument("--refresh-cache", action="store_true", help="Forces cache refesh for feeds.")
+    enrich_group.add_argument("--allow_regen", action="store_true", help="Allows regeneration of cache meta and checksum if missing using 'best-effort'. Default: True", default=True)
+    enrich_group.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
+    output_group.add_argument("--output-csv", "-oC", type=str, metavar="PATH", help="Path to save enriched results in CSV format (optional)")
+    gen_group.add_argument("--allow-large", "-al", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests. Default: False")
+    output_group.add_argument("--no-csv-sanitize", "-noC", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools). Default: Off")
+    file_group.add_argument("--forbid-symlinks_read", "-Sr", action="store_true", default=False, help="Disables following symlinks when resolving paths during read operations.")
+    file_group.add_argument("--forbid-symlinks_write", "-Sw", action="store_true", default=True, help="Disables following symlinks when resolving paths during write operations.")
+    file_group.add_argument("--enforce-root-read", "-err", action="store_true", help="Enforces read operations only on files located within the list of acceptable roots.")
+    file_group.add_argument("--enforce-root-write", "-erw", action="store_true", default=True, help="Enforces write operations only on files located within the list of acceptable roots. Default: True")
+    file_group.add_argument("--file-mode", "-fm", type=parse_mode, default=0o700, nargs=1, metavar="0o700", help="POSIX ONLY - Enables file-level chmod permissions on file write operations.")
+    file_group.add_argument("--dir-mode", "-dm", type=parse_mode, default=0o760, nargs=1, metavar="0o760", help="POSIX ONLY - Enables file-level chmod permissions on file write operations.")
+    file_group.add_argument("--debug-path-policy", action="store_true", help="Display path policy for PFHandler and exit.")
+    port_group.add_argument("--portable", "-P", action="store_true", help="Use ./data folder next to executable/script for application data(config/cache/logs/output).")
+    output_group.add_argument("--presentation", action="store_true", help = "Export a presentation-friendly JSON view by overlaying derived pass output onto findings. (Does not change provenence of artifacts in memory)")
+    output_group.add_argument("--overlay-mode", choices=["flatten", "namespace"], default="flatten", help="Overlay mode used with --presentation. "
+                              "'flatten' injects scoring fields at finding root; "
+                              "'namespace' stores scoring under finding.derived. Default: flatten")
 
     args = parser.parse_args(argv)
 
@@ -381,6 +392,15 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         output_dir = os.path.dirname(os.path.abspath(args.output)) or '.'
         if not os.access(output_dir, os.W_OK):
             parser.error(f"Output directory '{output_dir}' is not writable.")
+
+    if ("--overlay-mode" in sys.argv) and (not args.presentation):
+        parser.error("--overlay-mode requires --presentation")
+
+    if ("--output-csv" not in sys.argv) and (args.no_csv_sanitize):
+        parser.error("[Security Warning] --no-csv-sanitize requires --output-csv")
+
+    if (args.exploit_source == "offline") and ("--exploit-db" not in sys.argv):
+        parser.error("Offline exploit source requires --exploit-db to be set.")
 
     return args
 
@@ -788,8 +808,13 @@ def main(argv: Optional[Sequence[str]] = None):
         print("="*25 + "Output" + "="*25)
 
     if args.output:
-        out = materialize_presentation(scan_result, overlay_mode="flatten", scoring_pass_key="Scoring@1.0")
-        write_output(ctx, data=out, file_path=args.output, pretty_print=args.pretty_print)
+        if args.presentation and not scan_result.derived.get("Scoring@1.0"):
+            raise RuntimeError("Presentation overlay requested, but Scoring@1.0 pass result not found.")
+        if args.presentation:
+            out = materialize_presentation(scan_result, overlay_mode=args.overlay_mode, scoring_pass_key="Scoring@1.0")
+            write_output(ctx, data=out, file_path=args.output, pretty_print=args.pretty_print)
+        else:
+            write_output(ctx, data=asdict(scan_result), file_path=args.output, pretty_print=args.pretty_print)
 
     if args.output_csv:
         export_to_csv(scan_result, args.output_csv, csv_sanitization=csv_sanitization_enabled)

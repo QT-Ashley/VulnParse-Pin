@@ -18,7 +18,7 @@ class ScoredFinding:
 class ScoreCoverage:
     total_findings: int
     scored_findings: int
-    coverage_pct: float
+    coverage_ratio: float
 
 @dataclass(frozen=True)
 class ScoringPassOutput:
@@ -28,3 +28,4 @@ class ScoringPassOutput:
     highest_risk_asset: Optional[str] = None
     highest_risk_asset_score: Optional[float] = None
     avg_scored_risk: Optional[float] = None
+    avg_operational_risk: Optional[float] = None

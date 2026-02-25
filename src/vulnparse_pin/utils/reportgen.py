@@ -160,16 +160,23 @@ def materialize_presentation(
                     f_derived = {}
                     f["derived"] = f_derived
                 f_derived[chosen_key or "Scoring@?"] = sf
+                f_derived[chosen_key or "Scoring@?"]["raw_score"] = round(f_derived[chosen_key or "Scoring@?"]["raw_score"], 2)
+                f_derived[chosen_key or "Scoring@?"]["operational_score"] = round(f_derived[chosen_key or "Scoring@?"]["operational_score"], 2)
 
             elif overlay_mode == "flatten":
                 # UX Friendly
-                f["raw_risk_score"] = raw
-                f["risk_score"] = op
+                f["raw_risk_score"] = round(raw, 2)
+                f["operational_score"] = round(op, 2)
+                f["risk_score"] = round(op, 2)
                 f["risk_band"] = band
                 f["reason"] = reason
 
             else:
                 raise ValueError(f"Unknown overlay_mode={overlay_mode}")
+
+    if overlay_mode:
+        base.pop("derived")
+
 
     if include_meta and isinstance(base, dict):
         pres = base.get("presentation")
@@ -180,6 +187,7 @@ def materialize_presentation(
         pres["scoring_pass"] = chosen_key
         pres["band_source"] = "raw_score"
         pres["operational_scale"] = "0-10"
+        pres["overlay_mode"] = overlay_mode
         cov = _ensure_dict(scoring_data.get("coverage"))
         if cov:
             pres["scoring_coverage"] = cov

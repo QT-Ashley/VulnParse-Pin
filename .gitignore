@@ -9,3 +9,4 @@ tests_output/
 logs/
 !config/**
 .history/
+.*

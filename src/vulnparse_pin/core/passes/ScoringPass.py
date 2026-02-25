@@ -51,8 +51,9 @@ class ScoringPass(Pass):
                 asset_scores[aid] = best_asset
 
 
-        coverage_pct = (scored / total * 1.0) if total else 0.0
-        avg_scored = (sum(sf.raw_score for sf in scored_findings.values()) / scored) if scored else None
+        coverage_ratio = (scored / total * 1.0) if total else 0.0
+        avg_scored = round((sum(sf.raw_score for sf in scored_findings.values()) / scored), 2) if scored else None
+        avg_op = round((sum(sf.operational_score for sf in scored_findings.values()) / scored), 2) if scored else None
 
 
         highest_asset: str = None
@@ -64,15 +65,16 @@ class ScoringPass(Pass):
         output = ScoringPassOutput(
             scored_findings=scored_findings,
             asset_scores=asset_scores,
-            coverage=ScoreCoverage(total_findings=total, scored_findings=scored, coverage_pct=coverage_pct),
+            coverage=ScoreCoverage(total_findings=total, scored_findings=scored, coverage_ratio=coverage_ratio),
             highest_risk_asset=highest_asset,
             highest_risk_asset_score=highest_score,
-            avg_scored_risk=avg_scored
+            avg_scored_risk=avg_scored,
+            avg_operational_risk=avg_op
         )
 
         ctx.logger.info(
             "[pass:scoring] scored=%d/%d (%.2f%%)",
-            scored, total, coverage_pct,
+            scored, total, coverage_ratio,
             extra = {"vp_label": "ScoringPass"}
         )
 
@@ -149,8 +151,8 @@ class ScoringPass(Pass):
         return ScoredFinding(
             finding_id=f.finding_id,
             asset_id=f.asset_id or "SENTINEL:AssetID_Missing",
-            raw_score=raw,
-            operational_score=score,
+            raw_score=round(raw, 2),
+            operational_score=round(score, 2),
             risk_band=band,
             reason=";".join(reasons)
         )
