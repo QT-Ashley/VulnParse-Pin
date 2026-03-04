@@ -19,6 +19,7 @@ from vulnparse_pin.utils.nvdcacher import NVDFeedCache
 
 if TYPE_CHECKING:
     from vulnparse_pin.core.passes.TopN.TN_triage_config import TriageConfigLoadResult
+    from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
 
 @dataclass
 class Finding:
@@ -109,6 +110,7 @@ class Services:
     """
     feed_cache: Optional["FeedCacheManager"] = None
     nvd_cache: Optional["NVDFeedCache"] = None
+    scoring_config: Optional["ScoringPolicyV1"] = None
     topn_config: Optional["TriageConfigLoadResult"] = None
 
 @dataclass(frozen = True)

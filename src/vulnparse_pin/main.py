@@ -20,6 +20,7 @@ from vulnparse_pin.core.classes.dataclass import FeedCachePolicy, FeedSpec, RunC
 from vulnparse_pin.core.classes.pass_classes import PassRunner
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.TopN.TN_triage_config import TriageConfigLoadResult, load_tn_config
+from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
 from vulnparse_pin.core.passes.types import ScoringPassOutput
 from vulnparse_pin.utils.enricher import enrich_scan_results, load_epss, load_kev, update_enrichment_status
 import argparse
@@ -158,8 +159,8 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
 
     ctx.logger.info(f"Assets Analyzed: {total_assets:,},"
                 f"Findings Triaged: {total_findings:,},"
-                # f"Average Risk Score: {avg_risk_score:.2f},"
-                # f"Highest Risk Asset: {highest_risk_asset.hostname if highest_risk_asset else 'N/A'},"
+                f"Average Risk Score: {avg_risk_score:.2f},"
+                f"Highest Risk Asset: {highest_asset if highest_asset else 'N/A'},"
                 f"Critical: {band_counts.get("Critical"):,}, High: {band_counts.get("High"):,}, Medium: {band_counts.get("Medium"):,}, Low: {band_counts.get("Low"):,}, Informational: {band_counts.get("Informational"):,}"
                 )
 
@@ -515,7 +516,7 @@ def main(argv: Optional[Sequence[str]] = None):
 
 
     # Build/Init Services
-    services = Services(feed_cache = feed_cache, nvd_cache = nvd_cache, topn_config = topn_pol.config)
+    services = Services(feed_cache = feed_cache, nvd_cache = nvd_cache, scoring_config = score_pol, topn_config = topn_pol.config)
     # -------------------------------------
     #   Final CTX(Runtime)
     # -------------------------------------
@@ -549,7 +550,8 @@ def main(argv: Optional[Sequence[str]] = None):
     
     # Init PassRunner
     passesList = [
-        ScoringPass(score_pol),
+        ScoringPass(ctx.services.scoring_config),
+        TopNPass(ctx.services.topn_config)
     ]
     passOrchestrator = PassRunner(passesList)
 

@@ -181,7 +181,7 @@ def load_config(ctx: "RunContext") -> Tuple[dict, dict, dict]:
     :param paths: Various attributes available from AppPaths dataclass.
     :type paths: AppPaths
     :return: Returns dict objects with config data.
-    :rtype: Tuple[dict, dict]
+    :rtype: Tuple[dict, dict, dict]
     """
     cfg_path_yaml, cfg_path_scoring, cfg_path_topn = ensure_user_configs(ctx.paths)
 
@@ -208,7 +208,7 @@ def load_config(ctx: "RunContext") -> Tuple[dict, dict, dict]:
         raise RuntimeError("Scoring config must be an object at top-level.")
 
     try:
-        with ctx.pfh.open_for_read(cfg_path_topn, mode = "r", label = "TopN Sconfig (JSON)") as r:
+        with ctx.pfh.open_for_read(cfg_path_topn, mode = "r", label = "TopN Config (JSON)") as r:
             cfg_topn = json.load(r)
     except (json.JSONDecodeError, TypeError, ValueError) as e:
         raise RuntimeError("Could not load json config file.") from e
@@ -216,7 +216,7 @@ def load_config(ctx: "RunContext") -> Tuple[dict, dict, dict]:
     if not isinstance(cfg_topn, dict):
         raise RuntimeError("TopN config must be an object at top-level.")
 
-    return cfg_yaml, cfg_json, cfg_path_topn
+    return cfg_yaml, cfg_json, cfg_topn
 
 def _harden_dir(path: Path, mode: int) -> None:
     """
