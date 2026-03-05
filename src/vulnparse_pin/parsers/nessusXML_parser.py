@@ -121,13 +121,19 @@ class NessusXMLParser(BaseParser):
                     or item.findtext("synopsis")
                     or "SENTINEL:No_Description"
                 ).strip()
+                if len(description) > 250:
+                    description = description[:250] + "..."
 
                 solution = (item.findtext("solution") or "").strip() or "SENTINEL:No_Solution"
+                if len(solution) > 250:
+                    solution = solution[:250] + "..."
                 plugin_output = (item.findtext("plugin_output") or "").strip()
 
                 # Summarize plugin output -> evidence
                 summary, evidence = self._summarize_plugin_output(plugin_output)
                 plugin_output_final = plugin_output or "SENTINEL:No_Plugin_Output"
+                if len(plugin_output_final) > 250:
+                    plugin_output_final = plugin_output_final[:250] + "..."
                 plugin_evidence = evidence or ["SENTINEL:No_Evidence"]
 
                 # Port/Proto

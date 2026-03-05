@@ -108,7 +108,7 @@ class BaseParser(ABC):
         return chunks
 
     @staticmethod
-    def _summarize_plugin_output(output: Optional[str], max_lines: int = 5) -> Tuple[str, List[str]]:
+    def _summarize_plugin_output(output: Optional[str], max_lines: int = 3) -> Tuple[str, List[str]]:
         '''
         Summarize plugin_output field from scanners.
 

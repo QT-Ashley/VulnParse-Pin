@@ -45,13 +45,13 @@ KEV_FEED = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulne
 EPSS_FEED = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 NVD_MIN_YEAR = 2002
 
-def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sources=None):
+def print_summary_banner(ctx: "RunContext", scan_result, output_file: Path = None, sources=None):
     '''
     Prints a formatted summary banner with key metrics from the scan result.
 
     Args:
         scan_result (ScanResult): The final processed scan results.
-        output_file (str, optional): The path to the output JSON file.
+        output_file (Path, optional): The path to the output JSON file.
         sources (dict, optional): Dict of enrichment source status, e.g.:
             {
                 "exploitdb": True,
@@ -124,7 +124,7 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file=None, sourc
     print("-" * 60)
     print(f"📊 Enriched Findings              : {enriched_findings:,}")
     if output_file:
-        print(f"📁 Output Location                : {output_file}")
+        print(f"📁 Output Location                : {ctx.pfh.format_for_log(output_file)}")
 
 
     # Enrichment source status
@@ -602,9 +602,8 @@ def main(argv: Optional[Sequence[str]] = None):
             src = pfh.ensure_readable_file(args.exploit_db, label="Exploit-DB Input File")
             dst = pfh.ensure_writable_file(paths.cache_dir / "Exploit_DB" / "files_exploits.csv", label="Exploit-DB Cache File", create_parents=True, overwrite=True)
 
-            with pfh.open_for_read(src, mode="rb", label="Exploit-DB Input File") as r, \
-                pfh.open_for_write(dst, mode="wb", label="Exploit-DB Cached File") as w:
-                    w.write(r.read())
+            with pfh.open_for_read(src, mode="rb", label="Exploit-DB Input File") as r, pfh.open_for_write(dst, mode="wb", label="Exploit-DB Cached File") as w:
+                w.write(r.read())
 
             exploit_db = dst
         else:
@@ -778,7 +777,7 @@ def main(argv: Optional[Sequence[str]] = None):
     logger.phase("Enrichment Pipeline")
     if kev_data or epss_data and (args.enrich_kev or args.enrich_epss):
         print(" "*25 + "Enrichment Pipeline" + " "*25)
-        enrich_scan_results(ctx, scan_result, kev_data, epss_data, offline_mode=args.mode == "offline", score_cfg=scoring_cfg, nvd_cache=nvd_cache)
+        enrich_scan_results(ctx, scan_result, kev_data, epss_data, offline_mode = args.mode == "offline", score_cfg = ctx.services.scoring_config, nvd_cache = nvd_cache)
         logger.print_success("All enrichments Applied") #TODO: Move scoring cfg out
 
 
@@ -823,7 +822,7 @@ def main(argv: Optional[Sequence[str]] = None):
             write_output(ctx, data=asdict(scan_result), file_path=args.output, pretty_print=args.pretty_print)
 
     if args.output_csv:
-        export_to_csv(scan_result, args.output_csv, csv_sanitization=csv_sanitization_enabled)
+        export_to_csv(ctx, scan_result, csv_path = csv_output, csv_sanitization = csv_sanitization_enabled)
 
     if args.pretty_print and not args.output:
         logger.print_info("Displaying results to console...")
@@ -831,7 +830,7 @@ def main(argv: Optional[Sequence[str]] = None):
 
     if kev_source or epss_source:
         logger.phase("Summary")
-        print_summary_banner(ctx, scan_result, args.output if args.output else None, sources=sources)
+        print_summary_banner(ctx, scan_result, json_output if json_output else None, sources=sources)
     total_runtime = time.time() - start_time
     print(f"Total runtime: {format_runtime(total_runtime)}")
     return 0
