@@ -47,15 +47,15 @@ class FileInputValidator:
 
     def is_valid_extension_structure(self):
         fstr = str(self.file_path)
-        if not fstr.lower().endswith(".json"):
+        if not fstr.lower().endswith((".json", ".xml", ".nessus")):
             return False
         try:
             if self.pfh:
                 with self.pfh.open_for_read(self.file_path, mode='r', label="File Validator") as f:
-                    return f.read(1).strip() in ['{', '[']
+                    return f.read(1).strip() in ['{', '[', '<']
             else:
                 with open(self.file_path, 'r', encoding='utf-8') as f:
-                    return f.read(1).strip() in ['{', '[']
+                    return f.read(1).strip() in ['{', '[', '<']
         except Exception:
             return False
 
@@ -76,39 +76,45 @@ class FileInputValidator:
         limit = self.max_large_size_bytes if self.allow_large else self.max_size_bytes
 
         if size_bytes > limit:
-            ctx.logger.print_error(f"File exceeds size limit. Size: {size_bytes/1024/1024:.2f} MB exceeds limit" f"({limit/1024/1024:.0f} MB). Use --allow-large for enterprise-size reports.")
+            self.ctx.logger.print_error(f"File exceeds size limit. Size: {size_bytes/1024/1024:.2f} MB exceeds limit" f"({limit/1024/1024:.0f} MB). Use --allow-large for enterprise-size reports.")
             sys.exit(1)
 
         if self.allow_large and size_bytes > self.max_size_bytes:
-            ctx.logger.print_warning(f"⚠️ Large file mode enabled. File size = {size_bytes/1024/1024:.2f} MB. "
+            self.ctx.logger.print_warning(f"⚠️ Large file mode enabled. File size = {size_bytes/1024/1024:.2f} MB. "
         f"Parsing may be slow or memory intensive.")
 
+        # Load and validate JSON structure only for .json files
+        # XML and .nessus files will be validated by their respective parsers
+        fstr = str(self.file_path).lower()
+        is_json_file = fstr.endswith(".json")
 
-        # Load file now after validation
+        if is_json_file:
+            try:
+                if self.pfh:
+                    with self.pfh.open_for_read(self.file_path, mode='r', label="File Validator") as f:
+                        self.report_json = json.load(f)
+                else:
+                    with open(self.file_path, 'r', encoding='utf-8') as f:
+                        self.report_json = json.load(f)
+                self.ctx.logger.print_success(f"File loaded: {self.file_path}")
+            except json.JSONDecodeError as e:
+                self.ctx.logger.print_error(f"Invalid JSON format: {e}")
+                sys.exit(1)
+            except Exception as e:
+                self.ctx.logger.print_error(f"Error reading file: {e}")
+                sys.exit(1)
 
-        try:
-            if self.pfh:
-                with self.pfh.open_for_read(self.file_path, mode='r', label="File Validator") as f:
-                    self.report_json = json.load(f)
-            else:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    self.report_json = json.load(f)
-            self.ctx.logger.print_success(f"File loaded: {self.file_path}")
-        except json.JSONDecodeError as e:
-            self.ctx.logger.print_error(f"Invalid JSON format: {e}")
-            sys.exit(1)
-        except Exception as e:
-            self.ctx.logger.print_error(f"Error reading file: {e}")
-            sys.exit(1)
+            # Check nest depth for JSON files
+            if max_depth(self.report_json) > self.max_nesting:
+                self.ctx.logger.print_error("Nesting depth exceeds safe limit.")
+                sys.exit(1)
 
-        # Check nest depth
-        if max_depth(self.report_json) > self.max_nesting:
-            ctx.logger.print_error("Nesting depth exceeds safe limit.")
-            sys.exit(1)
-
-        # Last sanity check
-        if not isinstance(self.report_json, dict):
-            ctx.logger.print_error("Top-level JSON structure is not an object.")
-            sys.exit(1)
+            # Last sanity check for JSON files
+            if not isinstance(self.report_json, dict):
+                self.ctx.logger.print_error("Top-level JSON structure is not an object.")
+                sys.exit(1)
+        else:
+            # For XML and .nessus files, just confirm file is readable
+            self.ctx.logger.print_success(f"File validated: {self.file_path}")
 
         return self.file_path

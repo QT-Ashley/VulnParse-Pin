@@ -248,6 +248,85 @@ class TestParallelScoring:
         assert asset2_score is not None
         assert asset1_score > asset2_score  # asset-1 gets consistently higher CVSS
 
+    def test_chunk_tuning_preserves_results(self, ctx):
+        """Verify configurable chunk/worker tuning does not change scoring output."""
+        policy = make_policy()
+        default_scoring = ScoringPass(policy)
+        tuned_scoring = ScoringPass(policy, min_findings_per_worker=10)
+
+        findings = []
+        for i in range(300):
+            findings.append(
+                make_finding(
+                    f"f{i}",
+                    asset_id=f"asset-{i % 15}",
+                    cvss_score=4.0 + (i % 6),
+                    epss_score=0.2 + (i % 10) / 100,
+                    cisa_kev=(i % 9 == 0),
+                    exploit_available=(i % 11 == 0),
+                )
+            )
+
+        asset = Asset(hostname="host-test", ip_address="192.168.1.1", findings=findings)
+        scan = ScanResult(
+            scan_metadata=ScanMetaData(
+                source="test",
+                scan_date=datetime.now(),
+                asset_count=1,
+                vulnerability_count=len(findings),
+            ),
+            assets=[asset],
+        )
+
+        default_result = default_scoring.run(ctx, scan).data
+        tuned_result = tuned_scoring.run(ctx, scan).data
+
+        assert default_result["coverage"] == tuned_result["coverage"]
+        assert default_result["asset_scores"] == tuned_result["asset_scores"]
+        assert default_result["scored_findings"] == tuned_result["scored_findings"]
+
+    def test_memoization_reuses_scoring_components(self, ctx, monkeypatch):
+        """Verify sequential mode reuses repeated score signatures via memoization."""
+        policy = make_policy()
+        scoring = ScoringPass(policy, parallel_threshold=10_000)
+
+        findings = [
+            make_finding(
+                f"f{i}",
+                asset_id=f"asset-{i % 3}",
+                cvss_score=7.0,
+                epss_score=0.5,
+                cisa_kev=False,
+                exploit_available=True,
+            )
+            for i in range(200)
+        ]
+
+        asset = Asset(hostname="host-test", ip_address="192.168.1.1", findings=findings)
+        scan = ScanResult(
+            scan_metadata=ScanMetaData(
+                source="test",
+                scan_date=datetime.now(),
+                asset_count=1,
+                vulnerability_count=len(findings),
+            ),
+            assets=[asset],
+        )
+
+        calls = {"count": 0}
+        original = scoring._calculate_score_components
+
+        def wrapped(attrs):
+            calls["count"] += 1
+            return original(attrs)
+
+        monkeypatch.setattr(scoring, "_calculate_score_components", wrapped)
+
+        result = scoring.run(ctx, scan)
+
+        assert result.data["coverage"]["scored_findings"] == 200
+        assert calls["count"] == 1
+
 
 class TestThreadSafety:
     """Validate concurrent execution doesn't corrupt results."""
@@ -327,3 +406,50 @@ class TestPerformanceBehavior:
         # Should complete 1000 findings in < 5 seconds (generous baseline)
         assert elapsed < 5.0, f"Scoring 1000 findings took {elapsed:.2f}s, expected < 5s"
         assert len(result.data["scored_findings"]) == 1000
+
+
+class TestProcessPoolScoring:
+    """Validate process-pool path for large workloads remains contract-safe."""
+
+    def test_process_pool_path_preserves_output_shape(self, ctx):
+        policy = make_policy()
+        scoring = ScoringPass(
+            policy,
+            parallel_threshold=10,
+            process_pool_threshold=50,
+            process_workers=2,
+        )
+
+        findings = [
+            make_finding(
+                f"pf-{i}",
+                asset_id=f"asset-{i % 5}",
+                cvss_score=5.0 + (i % 4),
+                epss_score=0.2 + ((i % 10) / 100),
+                cisa_kev=(i % 17 == 0),
+                exploit_available=(i % 13 == 0),
+            )
+            for i in range(120)
+        ]
+
+        asset = Asset(hostname="host-test", ip_address="192.168.1.1", findings=findings)
+        scan = ScanResult(
+            scan_metadata=ScanMetaData(
+                source="test",
+                scan_date=datetime.now(),
+                asset_count=1,
+                vulnerability_count=len(findings),
+            ),
+            assets=[asset],
+        )
+
+        result = scoring.run(ctx, scan)
+        data = result.data
+
+        assert data["coverage"]["total_findings"] == len(findings)
+        assert data["coverage"]["scored_findings"] > 0
+        assert isinstance(data["scored_findings"], dict)
+        for scored in data["scored_findings"].values():
+            assert "raw_score" in scored
+            assert "operational_score" in scored
+            assert "risk_band" in scored

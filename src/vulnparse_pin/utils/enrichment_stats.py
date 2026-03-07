@@ -15,6 +15,15 @@ class EnrichmentStats:
         self.cvss_vectors_assigned = 0
         self.cvss_vectors_validated = 0
         self.exploitdb_hits = 0
+        
+        # CVSSVector resolution statistics (batch logging optimization)
+        self.cvss_scanner_v3_used = 0
+        self.cvss_scanner_v2_used = 0
+        self.cvss_nvd_fallback = 0
+        self.cvss_score_only = 0
+        self.cvss_not_found = 0
+        self.cvss_no_cve_skipped = 0
+        self.cvss_parse_errors = 0
 
     def reset(self):
         self.__init__()

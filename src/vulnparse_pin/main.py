@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import time
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields, is_dataclass
 from typing import Any, Optional, Sequence, Type
 import os
 from vulnparse_pin.core.classes import scoring_pol
@@ -212,7 +212,21 @@ def _require(condition: bool, msg: str) -> None:
     if not condition:
         raise ValueError(msg)
 
-def write_output(ctx: "RunContext", data: Dict, file_path: PathLike, pretty_print=False):
+def _json_default(obj: Any):
+    """
+    JSON default serializer that preserves backward-compatible output semantics.
+    - Dataclasses are emitted as shallow field dicts (stream-friendly)
+    - Path-like objects are converted to string paths
+    - Everything else falls back to str()
+    """
+    if is_dataclass(obj):
+        return {f.name: getattr(obj, f.name) for f in fields(obj)}
+    if isinstance(obj, Path):
+        return str(obj)
+    return str(obj)
+
+
+def write_output(ctx: "RunContext", data: Any, file_path: PathLike, pretty_print=False):
     '''
     Write JSON results to disk using the path‑policy handler with streaming output.
 
@@ -237,7 +251,7 @@ def write_output(ctx: "RunContext", data: Dict, file_path: PathLike, pretty_prin
                     ctx.logger.debug(f"Large dataset detected ({data_size:,} bytes), using streaming JSON output", extra={"vp_label": "JSON Output"})
                     _stream_json_dump(data, f, indent=4)
                 else:
-                    json.dump(data, f, indent=4)
+                    json.dump(data, f, indent=4, default=_json_default)
                 ctx.logger.print_success(f"Parsed results are stored in: {target}", label="Output")
             except Exception as e:
                 ctx.logger.print_error(f"Error attempt to dump to JSON: {e}", label="Output")
@@ -254,7 +268,7 @@ def write_output(ctx: "RunContext", data: Dict, file_path: PathLike, pretty_prin
                 sys.exit(1)
 
 
-def _estimate_dict_size(data: Dict, sample_size: int = 100) -> int:
+def _estimate_dict_size(data: Any, sample_size: int = 100) -> int:
     """
     Estimate dictionary size in bytes for optimization decisions.
     Uses sampling for large datasets to avoid expensive computation.
@@ -264,22 +278,30 @@ def _estimate_dict_size(data: Dict, sample_size: int = 100) -> int:
 
     # For small datasets, calculate exactly
     if len(data) <= sample_size:
-        return len(json.dumps(data, default=str).encode('utf-8'))
+        return len(json.dumps(data, default=_json_default).encode('utf-8'))
 
     # For large datasets, sample and extrapolate
     sample_keys = list(data.keys())[:sample_size]
     sample_data = {k: data[k] for k in sample_keys}
-    sample_bytes = len(json.dumps(sample_data, default=str).encode('utf-8'))
+    sample_bytes = len(json.dumps(sample_data, default=_json_default).encode('utf-8'))
 
     # Extrapolate: assume uniform distribution
     return int((sample_bytes / sample_size) * len(data))
 
 
-def _stream_json_dump(data: Dict, file_obj, indent=None):
+def _stream_json_dump(data: Any, file_obj, indent=None):
     """
     Stream JSON dump to avoid loading entire structure into memory.
     Uses incremental writing for better memory efficiency.
     """
+    # Non-dict payloads (e.g., ScanResult dataclass) are streamed directly.
+    if not isinstance(data, dict):
+        encoder = json.JSONEncoder(indent=indent, default=_json_default)
+        for chunk in encoder.iterencode(data):
+            file_obj.write(chunk)
+        file_obj.write('\n')
+        return
+
     file_obj.write('{')
 
     first_item = True
@@ -290,14 +312,14 @@ def _stream_json_dump(data: Dict, file_obj, indent=None):
         first_item = False
 
         # Write key
-        file_obj.write(json.dumps(key, default=str))
+        file_obj.write(json.dumps(key, default=_json_default))
         file_obj.write(':')
 
         if indent is not None:
             file_obj.write('\n')
             file_obj.write(' ' * indent)
 
-        json.dump(value, file_obj, indent=indent, default=str)
+        json.dump(value, file_obj, indent=indent, default=_json_default)
 
     # Write closing brace
     if indent is not None:
@@ -629,14 +651,14 @@ def main(argv: Optional[Sequence[str]] = None):
     if getattr(args, "enrich_kev", None) and not args.enrich_kev.startswith("http"):
         kev_path = pfh.ensure_readable_file(args.enrich_kev, label="KEV Local Cache File")
     else:
-        kev_path = ctx.paths.kev_dir
+        kev_path, _, _ = ctx.services.feed_cache.resolve("kev")
 
     # --enrich_epss PATH
     epss_path = None
     if getattr(args, "enrich_epss", None) and not args.enrich_epss.startswith("http"):
         epss_path = pfh.ensure_readable_file(args.enrich_epss, label="EPSS Local Cache File")
     else:
-        epss_path = ctx.paths.epss_dir
+        epss_path, _, _ = ctx.services.feed_cache.resolve("epss")
 
     # --output
     json_output = None
@@ -730,13 +752,12 @@ def main(argv: Optional[Sequence[str]] = None):
 
     input_file = scanner_input
 
-    # If JSON - Check and validate json structure.
-    if str(input_file).endswith(".json"):
-        validator = FileInputValidator(ctx, input_file, allow_large=args.allow_large)
-        try:
-            input_file = validator.validate()
-        except Exception:
-            sys.exit(1)
+    # Validate Input File
+    validator = FileInputValidator(ctx, input_file, allow_large=args.allow_large)
+    try:
+        input_file = validator.validate()
+    except Exception:
+        sys.exit(1)
 
 
     # Available parsers
@@ -782,10 +803,10 @@ def main(argv: Optional[Sequence[str]] = None):
 
     # NVD
 
-    if not args.no_nvd and cfg_yaml.get("feed_cache", {}).get("nvd").get("enabled"):
+    nvd_policy = nvd_policy_from_config(cfg_yaml)
+    if not args.no_nvd and nvd_policy.get("enabled", True):
         if ctx.services.nvd_cache is not None:
             print_section_header("National Vulnerability Database (NVD)")
-            nvd_policy = nvd_policy_from_config(cfg_yaml)
             logger.print_info(f"Policy: {nvd_policy}", label="NVD Cache Policy")
             years_seen = extract_cve_years(ctx, scan_result)
             normalized_years = select_years(ctx, years_seen)
@@ -848,9 +869,7 @@ def main(argv: Optional[Sequence[str]] = None):
         logger.print_success("Exploit enrichment applied to findings.", label = "Enrichment")
 
     # 3 Apply heuristic tagging *before* enrichment and risk scoring
-    for asset in scan_result.assets:
-        for finding in asset.findings:
-            apply_heuristic_exploit_tag(ctx, finding)
+    apply_heuristic_exploit_tags_batch(ctx, scan_result)
 
     # 4 Apply enrichments
     logger.phase("Enrichment Pipeline")
@@ -858,7 +877,6 @@ def main(argv: Optional[Sequence[str]] = None):
         enrich_scan_results(
             ctx, scan_result, kev_data, epss_data,
             offline_mode=args.mode == "offline",
-            score_cfg=ctx.services.scoring_config,
             nvd_cache=nvd_cache
         )
         logger.print_success("All enrichments Applied")  # TODO: Move scoring cfg out
@@ -866,7 +884,7 @@ def main(argv: Optional[Sequence[str]] = None):
 
     # 5 Passes
     # Scoring Pass
-    logger.phase("Dervied Pass Pipeline")
+    logger.phase("Derived Pass Pipeline")
     logger.print_info(f"Executing derived passes pipeline — Passes: {[getattr(p, "name") for p in passesList] if len(passesList) > 1 else passesList[0]}", label = "Pass Pipeline")
     scan_result = passOrchestrator.run_all(ctx = ctx, scan = scan_result)
     logger.print_success("Derived Passes Pipeline complete.", label = "Pass Pipeline")
@@ -905,14 +923,14 @@ def main(argv: Optional[Sequence[str]] = None):
             out = materialize_presentation(scan_result, overlay_mode=args.overlay_mode, scoring_pass_key="Scoring@1.0")
             write_output(ctx, data=out, file_path=json_output, pretty_print=args.pretty_print)
         else:
-            write_output(ctx, data=asdict(scan_result), file_path=json_output, pretty_print=args.pretty_print)
+            write_output(ctx, data=scan_result, file_path=json_output, pretty_print=args.pretty_print)
 
     if args.output_csv:
         export_to_csv(ctx, scan_result, csv_path = csv_output, csv_sanitization = csv_sanitization_enabled)
 
     if args.pretty_print and not args.output:
         logger.print_info("Displaying results to console...")
-        print(json.dumps(asdict(scan_result), indent=4))
+        print(json.dumps(scan_result, indent=4, default=_json_default))
 
     if kev_source or epss_source:
         logger.phase("Summary")

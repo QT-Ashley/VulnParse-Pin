@@ -1,4 +1,6 @@
 import os
+import json
+from dataclasses import dataclass
 from pathlib import Path
 import pytest
 
@@ -87,6 +89,25 @@ def test_write_output_uses_pfh(tmp_path):
     # dummy pfh should have recorded a write
     assert ctx.pfh.writes, "PFH did not open file for write"
     assert dest.exists()
+
+
+def test_write_output_handles_dataclass_payload(tmp_path):
+    @dataclass
+    class Tiny:
+        foo: str
+        count: int
+
+    ctx = make_dummy_ctx(tmp_path)
+    dest = tmp_path / "out_dataclass.json"
+    from vulnparse_pin.main import write_output
+
+    payload = Tiny(foo="bar", count=2)
+    write_output(ctx, payload, dest, pretty_print=False)
+
+    assert ctx.pfh.writes, "PFH did not open file for write"
+    with open(dest, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    assert data == {"foo": "bar", "count": 2}
 
 
 def test_fileinputvalidator_uses_pfh(tmp_path):

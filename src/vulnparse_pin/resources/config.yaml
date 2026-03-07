@@ -2,16 +2,32 @@ feed_cache:
   defaults:
     ttl_hours: 24
 
+  # Legacy TTL map for backward compatibility
   ttl_hours:
     exploit_db: 24
     kev: 24
     epss: 6
-
-    # NVD TTLs
     nvd_yearly: 24
-    mvd_modified: 2
+    nvd_modified: 2
 
-  nvd:
-    enabled: true
-    start_year: 2023
-    end_year: 2025
+  feeds:
+    exploit_db:
+      enabled: true
+      ttl_hours: 24
+    kev:
+      enabled: true
+      ttl_hours: 24
+    epss:
+      enabled: true
+      ttl_hours: 6
+    nvd:
+      enabled: true
+      ttl_yearly: 24
+      ttl_modified: 2
+      start_year: 2023
+      end_year: 2025
+      sqlite_enforce_permissions: true
+      sqlite_file_mode: "0o600"
+      sqlite_max_age_hours: 336
+      sqlite_max_rows: 500000
+

@@ -16,6 +16,8 @@ from pathlib import Path
 import sys
 import json
 import hashlib
+import hmac
+import os
 
 import requests
 from vulnparse_pin import UA
@@ -234,6 +236,86 @@ class FeedCacheManager:
                 h.update(chunk)
         return h.hexdigest()
 
+    def _feed_integrity_secret(self) -> Optional[bytes]:
+        raw = os.getenv("VP_FEED_CACHE_HMAC_KEY")
+        if not raw:
+            return None
+        return raw.encode("utf-8")
+
+    def _feed_integrity_path(self, data_path: Path) -> Path:
+        return Path(str(data_path) + ".integrity.json")
+
+    def _write_feed_integrity(self, key: str, data_path: Path, digest: str) -> None:
+        integrity_path = self._feed_integrity_path(data_path)
+        secret = self._feed_integrity_secret()
+        mode = "sha256"
+        signature = digest
+        if secret is not None:
+            mode = "hmac-sha256"
+            signature = hmac.new(secret, digest.encode("utf-8"), hashlib.sha256).hexdigest()
+
+        payload = {
+            "feed": key,
+            "filename": data_path.name,
+            "mode": mode,
+            "digest": digest,
+            "signature": signature,
+            "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+
+        integrity_path = self.pfh.ensure_writable_file(
+            integrity_path,
+            label=f"{key} Integrity Sidecar",
+            create_parents=True,
+            overwrite=True,
+        )
+        with self.pfh.open_for_write(integrity_path, mode="w", label=f"{key} Integrity Sidecar") as w:
+            w.write(json.dumps(payload, indent=2))
+
+    def _verify_feed_integrity(self, key: str, data_path: Path, digest: str, *, allow_regen: bool) -> bool:
+        integrity_path = self._feed_integrity_path(data_path)
+
+        if not integrity_path.exists():
+            self._write_feed_integrity(key, data_path, digest)
+            return False
+
+        try:
+            with self.pfh.open_for_read(integrity_path, mode="r", label=f"{key} Integrity Sidecar") as r:
+                payload = json.load(r)
+
+            mode = str(payload.get("mode", "sha256"))
+            expected_digest = str(payload.get("digest", ""))
+            expected_signature = str(payload.get("signature", ""))
+
+            if not hmac.compare_digest(expected_digest, digest):
+                if allow_regen:
+                    self._write_feed_integrity(key, data_path, digest)
+                    return False
+                return False
+
+            if mode == "hmac-sha256":
+                secret = self._feed_integrity_secret()
+                if secret is None:
+                    if allow_regen:
+                        self._write_feed_integrity(key, data_path, digest)
+                        return False
+                    return False
+                computed_sig = hmac.new(secret, digest.encode("utf-8"), hashlib.sha256).hexdigest()
+            else:
+                computed_sig = digest
+
+            if not hmac.compare_digest(expected_signature, computed_sig):
+                if allow_regen:
+                    self._write_feed_integrity(key, data_path, digest)
+                    return False
+                return False
+            return True
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            if allow_regen:
+                self._write_feed_integrity(key, data_path, digest)
+                return False
+            return False
+
     def ensure_feed_checksum(self, key: str, *, allow_regen: bool) -> bool:
         """
         Ensure checksum + meta exist and are consistent with the feed.
@@ -274,6 +356,7 @@ class FeedCacheManager:
                                           f"Integrity vs upstream mirror CANNOT be verified — best-effort cache.", label = "Cache Manager")
                 # Regen Checksum for missing .sha256
                 self._create_cs(key, actual)
+                self._write_feed_integrity(key, data_path, actual)
                 self.update_cache_meta(key)
 
                 # Get User Consent
@@ -289,6 +372,18 @@ class FeedCacheManager:
                 return False
 
             # Checksum matches
+            integrity_ok = self._verify_feed_integrity(key, data_path, actual, allow_regen=allow_regen)
+            if not integrity_ok and not allow_regen:
+                raise RuntimeError(
+                    f"Integrity sidecar mismatch for {data_path.name}. "
+                    f"Refusing to trust cache without tamper-safe metadata."
+                )
+            if not integrity_ok:
+                self.logger.print_warning(
+                    f"Integrity sidecar refreshed for {data_path.name}; continuing in best-effort mode.",
+                    label="Cache Manager"
+                )
+                return False
             self.logger.print_success(f"Checksum valid for {spec.label}: {data_path.name}", label = "Cache Manager")
             return True
 
@@ -303,6 +398,7 @@ class FeedCacheManager:
         # Missing checksum but Regen checksum + minimal meta allowed
         actual = self.compute_checksum(key)
         self._create_cs(key, actual)
+        self._write_feed_integrity(key, data_path, actual)
         self.update_cache_meta(key)
 
         # Warn user of Locally generated checksum .sha256. Prompt to continue
@@ -442,6 +538,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(sha_path, mode = "w", label = f"{spec.label} SHA256") as w:
             w.write(f"{digest} {data_path.name}\n")
+        self._write_feed_integrity(key, data_path, digest)
 
         # Write/update meta
         now = datetime.now(timezone.utc).isoformat()
@@ -550,6 +647,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(sha_path, mode = "w", label = f"{spec.label} SHA256") as w:
             w.write(f"{digest} {data_path.name}\n")
+        self._write_feed_integrity(key, data_path, digest)
 
         # Write meta file
         now = datetime.now(timezone.utc).isoformat()
@@ -622,7 +720,7 @@ class FeedCacheManager:
 
         if offline:
             if data_path.exists():
-                return self.pfh.ensure_readlable_file(data_path, label = f"NVD Feed Cache ({key})")
+                return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
             raise FileNotFoundError(f"Offline mode: missing cached NVD feed for {key}")
 
         # Soft TTL: if fresh, skip remote meta
@@ -850,6 +948,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(sha_path, mode = "w", label = f"{data_path.name} SHA256") as w:
             w.write(f"{digest} {data_path.name}\n")
+        self._write_feed_integrity(key, data_path, digest)
 
         # Write/update meta
         now = datetime.now(timezone.utc).isoformat()

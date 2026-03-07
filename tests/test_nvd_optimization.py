@@ -12,7 +12,7 @@ import gzip
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-from vulnparse_pin.utils.nvdcacher import NVDFeedCache
+from vulnparse_pin.utils.nvdcacher import NVDFeedCache, nvd_policy_from_config
 from vulnparse_pin.utils.logger import LoggerWrapper
 
 
@@ -286,4 +286,24 @@ def test_refresh_combines_multiple_feeds(tmp_path, monkeypatch):
     # Both CVEs should be indexed
     assert "CVE-2019-0001" in cache.lookup
     assert "CVE-2020-0002" in cache.lookup
+
+
+def test_nvd_policy_prefers_centralized_nvd_ttl_keys():
+    cfg = {
+        "feed_cache": {
+            "defaults": {"ttl_hours": 24},
+            "ttl_hours": {"nvd_yearly": 10, "nvd_modified": 1},
+            "nvd": {
+                "enabled": True,
+                "ttl_yearly": 30,
+                "ttl_modified": 4,
+                "start_year": 2021,
+                "end_year": 2025,
+            },
+        }
+    }
+
+    policy = nvd_policy_from_config(cfg)
+    assert policy["ttl_yearly"] == 30
+    assert policy["ttl_modified"] == 4
 

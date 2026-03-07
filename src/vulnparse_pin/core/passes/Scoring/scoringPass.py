@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Dict, Optional, TYPE_CHECKING, List, Tuple, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import threading
 import os
 
@@ -14,14 +14,116 @@ if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext, ScanResult
     from vulnparse_pin.core.classes.dataclass import Finding
 
+
+def _score_components_from_policy(
+    attrs: Dict[str, Any],
+    policy_values: Dict[str, float],
+) -> Optional[Tuple[float, float, str, str]]:
+    """Process-safe scoring helper for process pool workers."""
+    kev = bool(attrs.get("kev", False))
+    exploit = bool(attrs.get("exploit", False))
+    cvss = attrs.get("cvss", None)
+    epss = attrs.get("epss", None)
+
+    if not kev and not exploit and cvss is None and epss is None:
+        return None
+
+    raw = 0.0
+    reasons: List[str] = []
+
+    if cvss is not None:
+        try:
+            c = float(cvss)
+            raw += c
+            reasons.append(f"cvss={c:.2f}")
+        except (TypeError, ValueError):
+            pass
+
+    if epss is not None:
+        try:
+            e = float(epss)
+            e = min(max(e, float(policy_values["epss_min"])), float(policy_values["epss_max"]))
+            e_scaled = e * float(policy_values["epss_scale"])
+
+            mult = 1.0
+            if e >= 0.70:
+                mult = float(policy_values["w_epss_high"])
+                reasons.append(f"epss_high*{policy_values['w_epss_high']:g}")
+            elif e >= 0.40:
+                mult = float(policy_values["w_epss_medium"])
+                reasons.append(f"epss_medium*{policy_values['w_epss_medium']:g}")
+
+            raw += e_scaled * mult
+            reasons.append(f"epss={e:.5f}({e_scaled:.2f})")
+        except (TypeError, ValueError):
+            pass
+
+    if kev:
+        raw += float(policy_values["kev_evd"]) * float(policy_values["w_kev"])
+        reasons.append("KEV Present")
+
+    if exploit:
+        raw += float(policy_values["exploit_evd"]) * float(policy_values["w_exploit"])
+        reasons.append("Exploit Available")
+
+    max_raw_risk = float(policy_values["max_raw_risk"])
+    max_op_risk = float(policy_values["max_op_risk"])
+    score = (raw / max_raw_risk) * max_op_risk
+    score = max(0.0, min(score, max_op_risk))
+
+    if raw >= float(policy_values["band_critical"]):
+        band = "Critical"
+    elif raw >= float(policy_values["band_high"]):
+        band = "High"
+    elif raw >= float(policy_values["band_medium"]):
+        band = "Medium"
+    elif raw >= float(policy_values["band_low"]):
+        band = "Low"
+    else:
+        band = "Informational"
+
+    return raw, score, band, ";".join(reasons)
+
+
+def _score_chunk_process(
+    chunk: List[Tuple[str, str, Dict[str, Any]]],
+    policy_values: Dict[str, float],
+) -> Tuple[Dict[str, Tuple[str, float, float, str, str]], Dict[str, float]]:
+    """Process worker: returns finding tuples and per-asset max score."""
+    chunk_results: Dict[str, Tuple[str, float, float, str, str]] = {}
+    chunk_assets: Dict[str, float] = {}
+
+    for finding_id, asset_id, attrs in chunk:
+        score_parts = _score_components_from_policy(attrs, policy_values)
+        if score_parts is None:
+            continue
+        raw, score, band, reason = score_parts
+        chunk_results[finding_id] = (asset_id, raw, score, band, reason)
+        if asset_id not in chunk_assets or raw > chunk_assets[asset_id]:
+            chunk_assets[asset_id] = raw
+
+    return chunk_results, chunk_assets
+
 @dataclass
 class ScoringPass(Pass):
     name: str = "Scoring"
     version: str = "1.0"
 
-    def __init__(self, policy: ScoringPolicyV1):
+    def __init__(
+        self,
+        policy: ScoringPolicyV1,
+        parallel_threshold: int = 100,
+        min_findings_per_worker: int = 50,
+        process_pool_threshold: int = 20_000,
+        process_workers: Optional[int] = None,
+    ):
         self.policy = policy
+        self.parallel_threshold = max(1, int(parallel_threshold))
+        self.min_findings_per_worker = max(1, int(min_findings_per_worker))
+        self.process_pool_threshold = max(1, int(process_pool_threshold))
+        self.process_workers = process_workers
         self._result_lock = threading.Lock()
+        self._memo_lock = threading.Lock()
 
     def run(self, ctx: "RunContext", scan: "ScanResult") -> "DerivedPassResult":
         """
@@ -42,15 +144,23 @@ class ScoringPass(Pass):
         plugin_cache = self._build_plugin_cache(findings_with_context)
 
         # Parallel execution for medium+ workloads
-        use_parallel = len(findings_with_context) > 100
+        use_parallel = len(findings_with_context) > self.parallel_threshold
+
+        # Shared memo for repeated score signatures (thread-safe in parallel mode)
+        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]] = {}
         
         if use_parallel and (os.cpu_count() or 1) > 1:
-            scored_findings, asset_scores = self._score_parallel(
-                ctx, findings_with_context, plugin_cache
-            )
+            if len(findings_with_context) >= self.process_pool_threshold:
+                scored_findings, asset_scores = self._score_process_pool(
+                    ctx, findings_with_context, plugin_cache
+                )
+            else:
+                scored_findings, asset_scores = self._score_parallel(
+                    ctx, findings_with_context, plugin_cache, score_memo
+                )
         else:
             scored_findings, asset_scores = self._score_sequential(
-                findings_with_context, plugin_cache
+                findings_with_context, plugin_cache, score_memo
             )
 
         scored = len(scored_findings)
@@ -74,7 +184,9 @@ class ScoringPass(Pass):
             avg_operational_risk=avg_op
         )
 
-        mode_label = "parallel" if use_parallel else "sequential"
+        mode_label = "sequential"
+        if use_parallel:
+            mode_label = "process" if len(findings_with_context) >= self.process_pool_threshold else "parallel"
         ctx.logger.info(
             "[pass:scoring] %s | scored=%d/%d (%.2f%%)",
             mode_label, scored, total, coverage_ratio,
@@ -115,7 +227,8 @@ class ScoringPass(Pass):
     def _score_sequential(
         self, 
         findings_with_context: List[Tuple[Any, str, str]],
-        plugin_cache: Dict[str, Dict[str, Any]]
+        plugin_cache: Dict[str, Dict[str, Any]],
+        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
     ) -> Tuple[Dict[str, ScoredFinding], Dict[str, float]]:
         """Score findings sequentially (fallback or small workloads)."""
         scored_findings: Dict[str, ScoredFinding] = {}
@@ -123,7 +236,7 @@ class ScoringPass(Pass):
 
         for finding, asset_id, _ in findings_with_context:
             attrs = plugin_cache[finding.finding_id]
-            sf = self._score_one_cached(finding, asset_id, attrs)
+            sf = self._score_one_with_memo(finding, asset_id, attrs, score_memo)
             
             if sf is None:
                 continue
@@ -135,25 +248,97 @@ class ScoringPass(Pass):
 
         return scored_findings, asset_scores
 
+    def _score_process_pool(
+        self,
+        ctx: "RunContext",
+        findings_with_context: List[Tuple[Any, str, str]],
+        plugin_cache: Dict[str, Dict[str, Any]],
+    ) -> Tuple[Dict[str, ScoredFinding], Dict[str, float]]:
+        """Score very large workloads via process pool (GIL-safe speedup)."""
+        cpu_total = os.cpu_count() or 1
+        worker_cap = self.process_workers if self.process_workers is not None else cpu_total
+        num_workers = max(1, min(worker_cap, cpu_total))
+
+        policy_values = {
+            "epss_scale": self.policy.epss_scale,
+            "epss_min": self.policy.epss_min,
+            "epss_max": self.policy.epss_max,
+            "w_epss_high": self.policy.w_epss_high,
+            "w_epss_medium": self.policy.w_epss_medium,
+            "kev_evd": self.policy.kev_evd,
+            "w_kev": self.policy.w_kev,
+            "exploit_evd": self.policy.exploit_evd,
+            "w_exploit": self.policy.w_exploit,
+            "max_raw_risk": self.policy.max_raw_risk,
+            "max_op_risk": self.policy.max_op_risk,
+            "band_critical": self.policy.band_critical,
+            "band_high": self.policy.band_high,
+            "band_medium": self.policy.band_medium,
+            "band_low": self.policy.band_low,
+        }
+
+        work_items: List[Tuple[str, str, Dict[str, Any]]] = []
+        for finding, asset_id, _ in findings_with_context:
+            work_items.append((finding.finding_id, asset_id, plugin_cache[finding.finding_id]))
+
+        chunk_size = max(1, len(work_items) // num_workers)
+        chunks = [
+            work_items[i:i + chunk_size]
+            for i in range(0, len(work_items), chunk_size)
+        ]
+
+        scored_findings: Dict[str, ScoredFinding] = {}
+        asset_scores: Dict[str, float] = {}
+
+        try:
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = {
+                    executor.submit(_score_chunk_process, chunk, policy_values): index
+                    for index, chunk in enumerate(chunks)
+                }
+
+                for future in as_completed(futures):
+                    chunk_results, chunk_assets = future.result()
+
+                    for finding_id, payload in chunk_results.items():
+                        asset_id, raw, score, band, reason = payload
+                        scored_findings[finding_id] = ScoredFinding(
+                            finding_id=finding_id,
+                            asset_id=asset_id,
+                            raw_score=round(raw, 4),
+                            operational_score=round(score, 4),
+                            risk_band=band,
+                            reason=reason,
+                        )
+
+                    for asset_id, score in chunk_assets.items():
+                        if asset_id not in asset_scores or score > asset_scores[asset_id]:
+                            asset_scores[asset_id] = score
+
+            return scored_findings, asset_scores
+        except Exception as exc:
+            ctx.logger.warning(
+                "[pass:scoring] process pool unavailable, falling back to thread pool | reason=%s",
+                exc,
+                extra={"vp_label": "ScoringPass"},
+            )
+            score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]] = {}
+            return self._score_parallel(ctx, findings_with_context, plugin_cache, score_memo)
+
     def _score_parallel(
         self,
         ctx: "RunContext",
         findings_with_context: List[Tuple[Any, str, str]],
-        plugin_cache: Dict[str, Dict[str, Any]]
+        plugin_cache: Dict[str, Dict[str, Any]],
+        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
     ) -> Tuple[Dict[str, ScoredFinding], Dict[str, float]]:
         """
         Score findings in parallel using ThreadPoolExecutor.
         Thread-safe result aggregation with minimal lock contention.
         """
         # Determine optimal chunk size and worker count
-        num_workers = min(len(findings_with_context) // 50 + 1, os.cpu_count() or 1)
+        num_workers = min(len(findings_with_context) // self.min_findings_per_worker + 1, os.cpu_count() or 1)
         chunk_size = max(1, len(findings_with_context) // num_workers)
-
-        # Split into chunks for parallel processing
-        chunks = [
-            findings_with_context[i:i + chunk_size]
-            for i in range(0, len(findings_with_context), chunk_size)
-        ]
 
         scored_findings: Dict[str, ScoredFinding] = {}
         asset_scores: Dict[str, float] = {}
@@ -161,8 +346,15 @@ class ScoringPass(Pass):
         # Submit all chunks to executor
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = {
-                executor.submit(self._score_chunk, chunk, plugin_cache): i
-                for i, chunk in enumerate(chunks)
+                executor.submit(
+                    self._score_chunk_range,
+                    findings_with_context,
+                    i,
+                    min(i + chunk_size, len(findings_with_context)),
+                    plugin_cache,
+                    score_memo,
+                ): i
+                for i in range(0, len(findings_with_context), chunk_size)
             }
 
             # Collect results as they complete (not necessarily in order)
@@ -178,10 +370,13 @@ class ScoringPass(Pass):
 
         return scored_findings, asset_scores
 
-    def _score_chunk(
+    def _score_chunk_range(
         self,
-        chunk: List[Tuple[Any, str, str]],
-        plugin_cache: Dict[str, Dict[str, Any]]
+        findings_with_context: List[Tuple[Any, str, str]],
+        start_idx: int,
+        end_idx: int,
+        plugin_cache: Dict[str, Dict[str, Any]],
+        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
     ) -> Tuple[Dict[str, ScoredFinding], Dict[str, float]]:
         """
         Score a batch of findings (thread worker function).
@@ -190,9 +385,9 @@ class ScoringPass(Pass):
         chunk_findings: Dict[str, ScoredFinding] = {}
         chunk_assets: Dict[str, float] = {}
 
-        for finding, asset_id, _ in chunk:
+        for finding, asset_id, _ in findings_with_context[start_idx:end_idx]:
             attrs = plugin_cache[finding.finding_id]
-            sf = self._score_one_cached(finding, asset_id, attrs)
+            sf = self._score_one_with_memo(finding, asset_id, attrs, score_memo)
             
             if sf is None:
                 continue
@@ -212,6 +407,66 @@ class ScoringPass(Pass):
         attrs: Dict[str, Any]
     ) -> Optional[ScoredFinding]:
         """Score a single finding using pre-cached attributes."""
+        score_parts = self._calculate_score_components(attrs)
+        if score_parts is None:
+            return None
+
+        raw, score, band, reason = score_parts
+
+        return ScoredFinding(
+            finding_id=f.finding_id,
+            asset_id=asset_id,
+            raw_score=round(raw, 4),
+            operational_score=round(score, 4),
+            risk_band=band,
+            reason=reason
+        )
+
+    def _score_one_with_memo(
+        self,
+        f: "Finding",
+        asset_id: str,
+        attrs: Dict[str, Any],
+        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
+    ) -> Optional[ScoredFinding]:
+        """Score a finding using signature memoization for repeated attribute sets."""
+        signature = self._score_signature(attrs)
+        cached = score_memo.get(signature)
+
+        if cached is None and signature not in score_memo:
+            computed = self._calculate_score_components(attrs)
+            with self._memo_lock:
+                score_memo[signature] = computed
+            cached = computed
+
+        if cached is None:
+            return None
+
+        raw, score, band, reason = cached
+
+        return ScoredFinding(
+            finding_id=f.finding_id,
+            asset_id=asset_id,
+            raw_score=round(raw, 4),
+            operational_score=round(score, 4),
+            risk_band=band,
+            reason=reason,
+        )
+
+    def _score_signature(self, attrs: Dict[str, Any]) -> Tuple[bool, bool, Any, Any]:
+        """Build deterministic memoization key from cached scoring inputs."""
+        return (
+            bool(attrs.get("kev", False)),
+            bool(attrs.get("exploit", False)),
+            attrs.get("cvss", None),
+            attrs.get("epss", None),
+        )
+
+    def _calculate_score_components(
+        self,
+        attrs: Dict[str, Any]
+    ) -> Optional[Tuple[float, float, str, str]]:
+        """Calculate raw/op score components from cached attrs. Returns None if gated."""
         pol = self.policy
 
         kev = attrs["kev"]
@@ -269,15 +524,7 @@ class ScoringPass(Pass):
         score = (raw / pol.max_raw_risk) * pol.max_op_risk
         score = max(0.0, min(score, pol.max_op_risk))
         band = self._band(raw)
-
-        return ScoredFinding(
-            finding_id=f.finding_id,
-            asset_id=asset_id,
-            raw_score=round(raw, 4),
-            operational_score=round(score, 4),
-            risk_band=band,
-            reason=";".join(reasons)
-        )
+        return raw, score, band, ";".join(reasons)
 
     def _score_one(self, f: "Finding") -> Optional[ScoredFinding]:
         """

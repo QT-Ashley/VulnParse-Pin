@@ -10,20 +10,18 @@
 import hashlib
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import gzip
 import csv
 import re
 import os
 import json
-from dataclasses import dataclass
 import requests
 from vulnparse_pin.utils.logger import SEVERITY_COLOR, EnrichmentMissLogger, colorize
 from vulnparse_pin.utils.enrichment_stats import stats
 from vulnparse_pin.utils.cve_selector import select_authoritative_cve
-from vulnparse_pin.utils.triage_priority_helper import determine_triage_priority
 from vulnparse_pin.utils.cvss_utils import detect_cvss_version, is_valid_cvss_vector, parse_cvss_vector
-from vulnparse_pin.core.classes.dataclass import Finding, RunContext, ScanResult, TriageConfig
+from vulnparse_pin.core.classes.dataclass import Finding, RunContext, ScanResult
 from vulnparse_pin import UA
 
 # ------------- Globals -----------------
@@ -63,6 +61,7 @@ def load_epss(ctx: RunContext, *, path_url: str, force_refresh: bool, allow_rege
     key = "epss"
     fc = ctx.services.feed_cache
     cache_path, _, _ = fc.resolve(key)
+    path_url_str = str(path_url)
 
     # -----------------------------------
     #   CSV Parser
@@ -100,7 +99,7 @@ def load_epss(ctx: RunContext, *, path_url: str, force_refresh: bool, allow_rege
     # ----------------------------
     # Online Mode
     # ----------------------------
-    if path_url.startswith("http"):
+    if path_url_str.startswith("http"):
         if (not force_refresh) and cache_path.exists() and fc.is_fresh(key):
             ctx.logger.print_info("Using cached EPSS (TTL valid).", label="EPSS Loader")
             fc.ensure_feed_checksum(key, allow_regen = allow_regen)
@@ -113,7 +112,7 @@ def load_epss(ctx: RunContext, *, path_url: str, force_refresh: bool, allow_rege
         try:
             fc.write_atomic_stream_gunzip(
                 key,
-                source_url=path_url,
+                source_url=path_url_str,
                 mode = "Online",
                 validated = False,
                 checksum_src = "Local",
@@ -142,7 +141,7 @@ def load_epss(ctx: RunContext, *, path_url: str, force_refresh: bool, allow_rege
     # ----------------------------
     # Local/Offline Mode
     # ----------------------------
-    src_path = Path(path_url)
+    src_path = Path(path_url_str)
     if src_path.exists():
 
         ctx.logger.print_info(f"Importing local EPPS source {ctx.pfh.format_for_log(src_path)}", label="EPSS Loader")
@@ -209,6 +208,7 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
     kev_data: Dict[str, bool] = {}
     key = "kev"
     fc = ctx.services.feed_cache
+    path_url_str = str(path_url)
 
     def parse_json(feed_path: Path):
         # Handle .gz and .json
@@ -229,7 +229,7 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
     # ----------------------------
     # Online Mode    (URL)
     # ----------------------------
-    if path_url.startswith('http'):
+    if path_url_str.startswith('http'):
         data_path, _, _ = fc.resolve(key)
 
 
@@ -246,11 +246,11 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
             return kev_data
 
         # ------------------------- Refresh Path -------------------------
-        ctx.logger.print_info(f"Downloading CISA KEV feed from {path_url}...", label = "KEV Loader")
+        ctx.logger.print_info(f"Downloading CISA KEV feed from {path_url_str}...", label = "KEV Loader")
         headers = {"User-Agent": user_agent}
 
         try:
-            resp = requests.get(path_url, allow_redirects = True, timeout = timeout, headers = headers)
+            resp = requests.get(path_url_str, allow_redirects = True, timeout = timeout, headers = headers)
             resp.raise_for_status()
             raw = resp.content
         except requests.RequestException as e:
@@ -272,7 +272,7 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
         fc.write_atomic( # type: ignore
             key,
             raw,
-            source_url = path_url,
+            source_url = path_url_str,
             mode = "Online",
             validated = False,
             checksum_src = "Local",
@@ -292,12 +292,12 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
     # -----------------------------
     # Offline / LOCAL
     # -----------------------------
-    if os.path.exists(path_url):
+    if os.path.exists(path_url_str):
         # For local-only file, TTL doesn't matter; validate or regen checksum
         try:
-            feed_path = ctx.pfh.ensure_readable_file(path_url, label = "Local KEV Cache")
+            feed_path = ctx.pfh.ensure_readable_file(path_url_str, label = "Local KEV Cache")
         except Exception as e:
-            raise FileNotFoundError(f"Local KEV file not readable: {ctx.pfh.format_for_log(path_url)}") from e
+            raise FileNotFoundError(f"Local KEV file not readable: {ctx.pfh.format_for_log(path_url_str)}") from e
 
         if feed_path.suffix.lower() == ".gz":
             raise RuntimeError(
@@ -359,8 +359,7 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
     # Invalid Path or File Not Found
     # -----------------------------
     else:
-        raise FileNotFoundError(f'File or URL not found: {path_url}')
-
+        raise FileNotFoundError(f'File or URL not found: {path_url_str}')
 def calculate_risk_score(cvss_score: float, exploit_available: bool, cisa_kev: bool, epss_score: float, score_config: dict):
     weights = score_config["weights"]
     risk_cap = score_config["risk_cap"]
@@ -442,19 +441,16 @@ def resolve_cvss_vector(ctx: "RunContext", scanner_vector: str, auth_cve: str, n
     2. Fall back to NVD cache vector for auth CVE
     3. If only a base score exists, return scoreonly
     4. Othewise mark as Attempted_NotFound sentinel.
+    
+    Note: Uses aggregate statistics tracking for batch logging optimization.
+    Check EnrichmentStats for resolution path counters.
     """
-    @dataclass(frozen=True)
-    class CvssDecision:
-        source: Literal["scanner", "nvd", "none"]
-        vector: str | None
-        score: float | None
-        reason: str
-        scanner_vct: str | None
-        nvd_vct: str | None
-
     # Guard
     if not auth_cve or auth_cve.startswith("SENTINEL:"):
-        ctx.logger.warning("[CVSSVector] Skipping CVSS resolution because no real CVE is associated with this finding.")
+        stats.cvss_no_cve_skipped += 1
+        # Preserve critical warning for first few findings
+        if stats.cvss_no_cve_skipped <= 3:
+            ctx.logger.warning("[CVSSVector] Skipping CVSS resolution because no real CVE is associated with this finding.")
         return "SENTINEL:NoCVE", current_score
 
     version = detect_cvss_version(scanner_vector)
@@ -466,40 +462,33 @@ def resolve_cvss_vector(ctx: "RunContext", scanner_vector: str, auth_cve: str, n
             try:
                 base_score = parse_cvss_vector(ctx, scanner_vector)[0] # type: ignore
             except Exception as e:
+                stats.cvss_parse_errors += 1
+                # Preserve error logs (critical issues)
                 ctx.logger.error(f"[CVSSVector] Error parsing CVSS v3 vector '{scanner_vector}': {e}. "
                                     f"Keeping existing score {current_score}")
-                ctx.logger.debug("Using scanner vector without recalculated score: %s", scanner_vector, extra = {"vp_label": "Vector Resolver"})
-                decision = CvssDecision("scanner", scanner_vector, current_score, e, scanner_vector, nvd_cache.get(auth_cve).get("cvss_vector"))
-                ctx.logger.debug("Source: %s, Vector: %s, Current Score: %s, Reason: %s, Scanner_Vector: %s, NVD_Vector: %s", decision.source, decision.vector, decision.score, decision.reason, decision.scanner_vct, decision.nvd_vct, extra = {"vp_label": "Vector Resolver"})
                 return scanner_vector, current_score
 
             if abs(base_score - current_score) > 0.1: # type: ignore
-                ctx.logger.debug("[CVSSVector] Score mismatch (scanner %s vs stored %s), reconciling...", base_score, current_score, extra = {"vp_label": "Vector Resolver"})
                 current_score = base_score # type: ignore
-            ctx.logger.debug("Using valid scanner CVSS V3 vector: %s", scanner_vector, extra = {"vp_label": "Vector Resolver"})
-            decision = CvssDecision("scanner", scanner_vector, current_score, "Valid Scanner CVSSv3 Vector", scanner_vector, nvd_cache.get(auth_cve).get("cvss_vector"))
-            ctx.logger.debug("Source: %s, Vector: %s, Current Score: %s, Reason: %s, Scanner_Vector: %s, NVD_Vector: %s", decision.source, decision.vector, decision.score, decision.reason, decision.scanner_vct, decision.nvd_vct, extra = {"vp_label": "Vector Resolver"})
+            
+            stats.cvss_scanner_v3_used += 1
             return scanner_vector, current_score
+        
         # v2: Don't feed into CVSS3 Lib - trust scanner score.
         if version == "v2":
             try:
                 base_score = parse_cvss_vector(ctx, scanner_vector)[0] # type: ignore
             except Exception as e:
+                stats.cvss_parse_errors += 1
+                # Preserve error logs (critical issues)
                 ctx.logger.error(f"[CVSSVector] Error parsing CVSS v2 vector '{scanner_vector}': {e}. "
                                     f"Keeping existing score {current_score}")
-                ctx.logger.debug("Using scanner vector without recalculated score: %s", scanner_vector, extra = {"vp_label": "Vector Resolver"})
-
-                decision = CvssDecision("scanner", scanner_vector, current_score, e, scanner_vector, nvd_cache.get(auth_cve).get("cvss_vector")) # type: ignore
-                ctx.logger.debug("Source: %s, Vector: %s, Current Score: %s, Reason: %s, Scanner_Vector: %s, NVD_Vector: %s", decision.source, decision.vector, decision.score, decision.reason, decision.scanner_vct, decision.nvd_vct, extra={"vp_label": "Vector Resolver"})
                 return scanner_vector, current_score
 
             if abs(base_score - current_score) > 0.1: # type: ignore
-                ctx.logger.debug("[CVSSVector] Score mismatch (scanner %s vs stored %s), reconciling...", base_score, current_score, extra = {"vp_label": "Vector Resolver"})
                 current_score = base_score # type: ignore
-            ctx.logger.debug("Using scanner CVSS v2 vector: %s (score=%s)", scanner_vector, current_score, extra={"vp_label": "Vector Resolver"})
-
-            decision = CvssDecision("scanner", scanner_vector, current_score, "Valid Scanner CVSSv2 Vector", scanner_vector, nvd_cache.get(auth_cve).get("cvss_vector")) # type: ignore
-            ctx.logger.debug("Source: %s, Vector: %s, Current Score: %s, Reason: %s, Scanner_Vector: %s, NVD_Vector: %s", decision.source, decision.vector, decision.score, decision.reason, decision.scanner_vct, decision.nvd_vct, extra={"vp_label": "Vector Resolver Decision"})
+            
+            stats.cvss_scanner_v2_used += 1
             #TODO: LAter plug in a CVSS2 Vector parser
             return scanner_vector, current_score
 
@@ -510,20 +499,30 @@ def resolve_cvss_vector(ctx: "RunContext", scanner_vector: str, auth_cve: str, n
             nvd_vector = nvd_record.get("cvss_vector")
             if nvd_vector and is_valid_cvss_vector(nvd_vector):
                 base_score = parse_cvss_vector(ctx, nvd_vector)[0] # type: ignore
-                ctx.logger.debug(f"[CVSSVector] Using NVD vector for {auth_cve}: {nvd_vector}")
+                stats.cvss_nvd_fallback += 1
                 return nvd_vector, base_score # type: ignore
 
             # Case 3: Score-only fallback
             nvd_score = nvd_record.get("cvss_score")
             if nvd_score is not None:
-                ctx.logger.print_warning(f"[CVSSVector] No valid vector for {auth_cve}," f"using ScoreOnly sentinel with base score {nvd_score}")
+                stats.cvss_score_only += 1
+                # Preserve warning for first few score-only cases
+                if stats.cvss_score_only <= 3:
+                    ctx.logger.print_warning(f"[CVSSVector] No valid vector for {auth_cve}," f"using ScoreOnly sentinel with base score {nvd_score}")
                 return f"SENTINEL:ScoreOnly:{nvd_score}", nvd_score
 
     # Case 4: Nothing
-    ctx.logger.debug(f"[CVSSVector] No CVSS vector available for {auth_cve or 'Unknown'}." " Marking as 'Attempted_NotFound'")
+    stats.cvss_not_found += 1
     return "SENTINEL:Attempted_NotFound", current_score
 
-def enrich_scan_results(ctx: "RunContext", results: ScanResult, kev_data: Optional[Dict[str, bool]] = None, epss_data: Optional[Dict[str, float]] = None, offline_mode: bool = False, score_cfg: Dict[Dict[str, float]] = None, nvd_cache: Optional[Any] = None) -> None: # type: ignore
+def enrich_scan_results(
+    ctx: "RunContext",
+    results: ScanResult,
+    kev_data: Optional[Dict[str, bool]] = None,
+    epss_data: Optional[Dict[str, float]] = None,
+    offline_mode: bool = False,
+    nvd_cache: Optional[Any] = None,
+) -> None:  # type: ignore
     '''
     Enrich the findings in a ScanResult object with EPSS Score, CISA KEV status, exploit indicators, and recalculate triage priority.
 
@@ -538,176 +537,130 @@ def enrich_scan_results(ctx: "RunContext", results: ScanResult, kev_data: Option
 
     baseline_risk_count = 0
 
+    kev_lookup: Dict[str, bool] = {
+        str(cve).upper(): bool(flag)
+        for cve, flag in (kev_data or {}).items()
+    }
 
-    kev_data = kev_data or {}
-    epss_data = epss_data or {}
+    epss_lookup: Dict[str, float] = {}
+    for cve, score in (epss_data or {}).items():
+        try:
+            epss_lookup[str(cve).upper()] = float(score)
+        except (TypeError, ValueError):
+            continue
 
-    enrichment_map = {}
+    nvd_get = getattr(nvd_cache, "get", None) if nvd_cache is not None else None
+    nvd_record_cache: Dict[str, Any] = {}
+    parsed_vector_score_cache: Dict[str, Optional[float]] = {}
+    no_record = object()
 
+    finding_counter = 0
 
     for asset in results.assets:
         for finding in asset.findings:
-            cisa_hits = []
-            epss_scores = []
+            finding_counter += 1
             enrichment_attempted = False
-            enrichment_map.clear()
-            if kev_data is not None and epss_data is not None:
-                ctx.logger.debug("Processing finding vulnerability: %s for enrichment...", finding.vuln_id, extra = {"vp_label": f"{str(finding.vuln_id)} Enrichment"})
-                for cve in finding.cves:
-                    if not CVE_RE.match(cve):
-                        continue
-                    stats.total_cves += 1
-                    enrichment_attempted = True
+            any_kev_hit = False
+            any_epss_hit = False
+            enrichment_map: Dict[str, Dict[str, Any]] = {}
 
+            cves: List[str] = []
+            for raw_cve in getattr(finding, "cves", []) or []:
+                cve_upper = str(raw_cve).upper().strip()
+                if CVE_RE.match(cve_upper):
+                    cves.append(cve_upper)
 
-                    # CISA KEV Enrichment
-                    kev_hit = kev_data.get(cve.upper(), False)
-                    cisa_hits.append(kev_hit)
+            if cves:
+                enrichment_attempted = True
+                stats.total_cves += len(cves)
 
-
+                for cve in cves:
+                    kev_hit = kev_lookup.get(cve, False)
                     if kev_hit:
                         stats.kev_hits += 1
-                        ctx.logger.info(f"[Enrichment] {cve} found in CISA KEV")
+                        any_kev_hit = True
                     else:
-                        ctx.logger.debug(f"[Enrichment] No CISA KEV record for {cve}.")
                         miss_logger.log_miss(cve, cisa_kev=False, epss_score=None)
 
-
-                    # EPSS Score Enrichment
-                    epss_score = epss_data.get(cve)
-                    if epss_score is not None:
-                        epss_scores.append(epss_score)
-                        ctx.logger.info(f"[Enrichment] {cve} EPSS Score: {epss_score}")
-                    else:
-                        ctx.logger.debug(f"[Enrichment] No EPSS Score for {cve}")
-                        epss_scores.append(0.0)
+                    epss_score = epss_lookup.get(cve)
+                    if epss_score is None:
                         stats.epss_misses += 1
                         miss_logger.log_miss(cve, cisa_kev=kev_hit, epss_score=None)
+                    else:
+                        if epss_score > 0.1:
+                            any_epss_hit = True
 
-                    # Build Enrichment map of CVEs
+                    nvd_vector = None
+                    nvd_score = None
+                    if nvd_get is not None:
+                        record = nvd_record_cache.get(cve, no_record)
+                        if record is no_record:
+                            record = nvd_get(cve)
+                            nvd_record_cache[cve] = record
+
+                        if record:
+                            vector = record.get("cvss_vector")
+                            if vector and is_valid_cvss_vector(vector):
+                                score_cached = parsed_vector_score_cache.get(vector)
+                                if score_cached is None:
+                                    try:
+                                        score_cached = parse_cvss_vector(ctx, vector)[0]  # type: ignore
+                                    except Exception:
+                                        score_cached = None
+                                    parsed_vector_score_cache[vector] = score_cached
+                                if score_cached is not None:
+                                    nvd_vector = vector
+                                    nvd_score = score_cached
+                            elif record.get("cvss_score") is not None:
+                                nvd_score = record.get("cvss_score")
 
                     enrichment_map[cve] = {
-                        "epss_score": epss_data.get(cve, None),
-                        "cisa_kev": kev_data.get(cve.upper(), False),
-                        "exploit_available": getattr(finding, "exploit_available", False),
-                        "cvss_score": None,
-                        "cvss_vector": None
+                        "epss_score": epss_score,
+                        "cisa_kev": kev_hit,
+                        "exploit_available": bool(getattr(finding, "exploit_available", False)),
+                        "cvss_score": nvd_score,
+                        "cvss_vector": nvd_vector,
                     }
 
-                    # Fetch nvd_data as secondary source
-                    if nvd_cache:
-                        nvd_record = nvd_cache.get(cve)
-                        if nvd_record:
-                            vector = nvd_record.get("cvss_vector")
-                            if vector and is_valid_cvss_vector(vector):
-                                enrichment_map[cve]["cvss_vector"] = vector
-                                enrichment_map[cve]["cvss_score"] = parse_cvss_vector(ctx, vector)[0] # type: ignore
-                                ctx.logger.debug("CVSS Vector available in NVD Cache for %s. Vector: %s Score: %s", cve, vector, enrichment_map[cve]["cvss_score"], extra = {"vp_label": "NVD Enrichment Mapping"})
-                            elif nvd_record.get("cvss_score") is not None:
-                                enrichment_map[cve]["cvss_score"] = nvd_record["cvss_score"]
-                                ctx.logger.debug("No vector, but base score available for %s: score: %s", cve, nvd_record['cvss_score'], extra = {"vp_label": "NVD Enrichment Mapping"})
-                        else:
-                            ctx.logger.debug("No usable CVSS vector found for %s in NVD Cache", cve, extra = {"vp_label": "NVD Enrichment Mapping"})
-
-                # Select authoritative CVE(Highest Perceived Risk)
-                authoritative_cve = select_authoritative_cve(list(enrichment_map.keys()), enrichment_map)
-
+                authoritative_cve = select_authoritative_cve(cves, enrichment_map)
                 if authoritative_cve:
                     best = enrichment_map[authoritative_cve]
-                    epss_c = best["epss_score"]
+                    epss_c = best.get("epss_score")
                     finding.epss_score = epss_c if epss_c is not None else None
-                    finding.cisa_kev = best["cisa_kev"] or any(cve_data["cisa_kev"] for cve_data in enrichment_map.values())
+                    finding.cisa_kev = bool(best.get("cisa_kev", False) or any(v.get("cisa_kev", False) for v in enrichment_map.values()))
                     finding.cvss_vector, finding.cvss_score = resolve_cvss_vector(
                         ctx,
-                        scanner_vector=finding.cvss_vector, # type: ignore
+                        scanner_vector=finding.cvss_vector,  # type: ignore
                         auth_cve=authoritative_cve,
-                        nvd_cache=nvd_cache, # type: ignore
-                        current_score=best["cvss_score"]
+                        nvd_cache=nvd_cache,  # type: ignore
+                        current_score=best.get("cvss_score") or finding.cvss_score or 0.0,
                     )
 
-                    # Aggregate exploit refs and KEV flag across all CVES
-                    kev_flag = False
-                    exploit_flag = False
-
-                    for cve, cve_data in enrichment_map.items():
-                        if cve_data.get("cisa_kev"):
-                            kev_flag = True
-                        if cve_data.get("exploit_available"):
-                            exploit_flag = True
-
+                    kev_flag = any(v.get("cisa_kev", False) for v in enrichment_map.values())
+                    exploit_flag = any(v.get("exploit_available", False) for v in enrichment_map.values())
                     finding.exploit_available = bool(finding.exploit_references) or exploit_flag or kev_flag
-
-
                     finding.enrichment_source_cve = authoritative_cve
-                    ctx.logger.info(
-                        f"[Enrichment] "
-                        f"Authoritative CVE: {authoritative_cve} => "
-                        f"EPSS={best['epss_score']} | KEV={best['cisa_kev']} | Exploit={finding.exploit_available}"
-                    )
-                else:
-                    ctx.logger.debug(f"[Enrichment] No authoritative CVE selected for Vuln ID: {finding.vuln_id}")
 
+            if finding.cvss_vector and not finding.cvss_vector.startswith("SENTINEL:"):
+                stats.cvss_vectors_assigned += 1
+                stats.cvss_vectors_validated += 1
 
-            # Stats Vector Tracking
-            if finding.cvss_vector:
-                if finding.cvss_vector.startswith("SENTINEL:"):
-                    ctx.logger.debug(f"[CVSSVector] Skipping validation for sentinel state: "f"{finding.cvss_vector}")
-                else:
-                    stats.cvss_vectors_assigned += 1
-                    stats.cvss_vectors_validated += 1
-                    ctx.logger.info(f"[CVSSVector] "f"Validated vector for {finding.vuln_id}: {finding.cvss_vector}")
-
-
-
-            # Calculate Risk_Score TODO: REMOVE
             cvss = finding.cvss_score or -1.0
-            epss = finding.epss_score or -1.0 # Prevent zero-risk bias
-
-            # Baseline risk adjustment if missing CVSS but has exploit/high+ severity or risk band
-            if cvss == 0.0 and (finding.exploit_available or finding.severity in ['Critical', 'High']):
+            if cvss == 0.0 and (finding.exploit_available or finding.severity in ["Critical", "High"]):
                 baseline_risk_count += 1
-                baseline_risk = 7
-                ctx.logger.debug(f"[RiskCalc] Missing CVSS for {finding.vuln_id}, setting baseline risk {baseline_risk} due to exploit/high-critical severity")
-                cvss = baseline_risk
 
-            # Risk Calculation
-            # raw_risk_score, risk_score, risk_band = calculate_risk_score(
-            #     cvss_score = cvss,
-            #     exploit_available = finding.exploit_available, # type: ignore
-            #     cisa_kev = finding.cisa_kev, # type: ignore
-            #     epss_score = epss,
-            #     score_config = score_cfg
-            # )
-            # if raw_risk_score > 10.0:
-            #     ctx.logger.info(f"[RiskCalc] Compsite Score for {finding.vuln_id} greater than max threshold due to enrichment scoring. (Composite Score: {raw_risk_score})")
-            # else:
-            #     ctx.logger.info(f"[RiskCalc] {finding.vuln_id} Composite Score: {raw_risk_score}")
-            # ctx.logger.info(f"[RiskCalc] {finding.vuln_id} Final Risk Score: {risk_score} | Triage Priority: {risk_band} | ")
+            finding.raw_risk_score = None
+            finding.risk_score = None
+            finding.risk_band = None
 
-            # Set risk score attribs
-            finding.raw_risk_score=None
-            finding.risk_score=None
-            finding.risk_band=None
-
-
-            # Recalculate Triage Priority
-            # finding.triage_priority = determine_triage_priority(
-            #     raw_score=raw_risk_score,
-            #     severity=finding.severity,
-            #     epss_score=epss,
-            #     cisa_kev=finding.cisa_kev, # type: ignore
-            #     exploit_available=finding.exploit_available, # type: ignore
-            #     cfg=TriageConfig()
-            # )
-
-            # Update enrichment flag
             finding.enriched = enrichment_attempted and (
-                any(cisa_hits) or
-                any(score > 0.1 for score in epss_scores) or
-                finding.exploit_available)
+                any_kev_hit or
+                any_epss_hit or
+                bool(finding.exploit_available)
+            )
 
-            # Log Summary For Finding
-            log_finding_summary(ctx.logger, finding)
+            if finding_counter <= 20 or finding_counter % 100000 == 0:
+                log_finding_summary(ctx.logger, finding)
 
         asset.avg_risk_score = None
 
@@ -719,6 +672,21 @@ def enrich_scan_results(ctx: "RunContext", results: ScanResult, kev_data: Option
     ctx.logger.print_info(f"   Total CVSS Vectors Validated : {stats.cvss_vectors_validated:,}")
     ctx.logger.print_info(f"   Total EPSS Misses : {stats.epss_misses:,}")
     ctx.logger.print_info(f"   Total Findings Rx Baseline Risk Adjustment: {baseline_risk_count:,}")
+    
+    # CVSSVector Resolution Summary (batch logging optimization)
+    total_cvss_resolutions = (
+        stats.cvss_scanner_v3_used + stats.cvss_scanner_v2_used + 
+        stats.cvss_nvd_fallback + stats.cvss_score_only + 
+        stats.cvss_not_found + stats.cvss_no_cve_skipped
+    )
+    if total_cvss_resolutions > 0:
+        ctx.logger.print_info("   CVSSVector Resolution Summary:")
+        ctx.logger.print_info(f"      Scanner V3: {stats.cvss_scanner_v3_used:,} | Scanner V2: {stats.cvss_scanner_v2_used:,}")
+        ctx.logger.print_info(f"      NVD Fallback: {stats.cvss_nvd_fallback:,} | Score Only: {stats.cvss_score_only:,}")
+        ctx.logger.print_info(f"      Not Found: {stats.cvss_not_found:,} | No CVE: {stats.cvss_no_cve_skipped:,}")
+        if stats.cvss_parse_errors > 0:
+            ctx.logger.print_info(f"      Parse Errors: {stats.cvss_parse_errors:,} (check ERROR logs)")
+    
     print("="*25 + "[Enrichment Summary End]" + "="*25)
 
     miss_logger.write_log()
