@@ -1,18 +1,18 @@
-# VulnParse-Pin – Vulnerability Parsing and Triage Engine
-# Copyright (C) 2025 Shade216
-
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
 
 from datetime import datetime, timezone
 from pathlib import Path
 import os
+from xml.etree.ElementTree import ParseError
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from defusedxml.ElementTree import fromstring
-from iniconfig import ParseError
 from vulnparse_pin.core.id import make_asset_id, make_finding_base_canon, make_finding_id
 from vulnparse_pin.parsers.base_parser import BaseParser
 from vulnparse_pin.core.classes.dataclass import ScanMetaData, ScanResult, Asset, Finding
@@ -97,6 +97,7 @@ class NessusXMLParser(BaseParser):
 
             asset_key = ip or host_name
             if asset_key not in assets:
+                generated_asset_id = make_asset_id(ip, asset_key)
                 assets[asset_key] = Asset(
                     hostname=asset_key,
                     ip_address=ip,
@@ -104,6 +105,7 @@ class NessusXMLParser(BaseParser):
                     os=os_name,
                     findings=[],
                     shodan_data=None,
+                    asset_id=generated_asset_id,
                 )
 
             # Iterate ReportItem nodes
@@ -130,7 +132,7 @@ class NessusXMLParser(BaseParser):
                 plugin_output = (item.findtext("plugin_output") or "").strip()
 
                 # Summarize plugin output -> evidence
-                summary, evidence = self._summarize_plugin_output(plugin_output)
+                _, evidence = self._summarize_plugin_output(plugin_output)
                 plugin_output_final = plugin_output or "SENTINEL:No_Plugin_Output"
                 if len(plugin_output_final) > 250:
                     plugin_output_final = plugin_output_final[:250] + "..."
@@ -159,7 +161,8 @@ class NessusXMLParser(BaseParser):
                 ]
                 scanner_sig = "nessus:" + plugin_id
                 kind = title
-                asset_id = make_asset_id(assets[asset_key].ip_address, assets[asset_key].hostname)
+                asset_obj = assets[asset_key]
+                asset_id = asset_obj.asset_id or make_asset_id(asset_obj.ip_address, asset_obj.hostname)
                 canon_fid = make_finding_base_canon(
                     asset_id=asset_id,
                     scanner_sig=scanner_sig,
@@ -193,15 +196,19 @@ class NessusXMLParser(BaseParser):
 
         asset_count = len(assets)
         vuln_count = sum(len(asset.findings) for asset in assets.values())
+        parsed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        normalized_scan_date = scan_date
+        if not normalized_scan_date or str(normalized_scan_date).startswith("SENTINEL:"):
+            normalized_scan_date = parsed_at
 
         metadata = ScanMetaData(
         source="Nessus",
         scan_name=scan_name,
-        scan_date=scan_date if scan_date else "SENTINEL:Date_Unavailable",
+        scan_date=normalized_scan_date,
         source_file=str(self.filepath),
         asset_count=asset_count,
         vulnerability_count=vuln_count,
-        parsed_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        parsed_at=parsed_at,
         )
 
         return ScanResult(scan_metadata=metadata, assets=list(assets.values()))

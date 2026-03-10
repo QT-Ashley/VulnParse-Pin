@@ -71,7 +71,9 @@ def make_dummy_ctx(tmp_path):
             return Path(path)
         def open_for_write(self, path, mode="w", **kwargs):
             self.writes.append((path, mode))
-            return open(path, mode)
+            p = Path(path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            return open(p, mode)
         def open_for_read(self, path, mode="r", **kwargs):
             self.reads.append((path, mode))
             return open(path, mode)

@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+from typing import Optional, Sequence, Union
+
+from vulnparse_pin import __version__
+
+PathLikeSimple = Union[str, Path]
+
+
+def parse_mode(value: str) -> int:
+    """
+    Parse a chmod-style mode string into an int.
+
+    Accepted form:
+    - "600"     -> octal
+    - "0644"    -> octal
+    - "0o600"   -> octal
+    - "0x1A4"   -> octal
+    """
+    s = value.strip()
+
+    try:
+        if s.startswith(("0o", "0O")):
+            mode = int(s, 8)
+        elif s.startswith(("0x", "0X")):
+            mode = int(s, 16)
+        else:
+            mode = int(s, 8)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"Invalid mode '{value}' is out of valid range (0000-7777)."
+            f" Trace: {e}"
+        )
+
+    return mode
+
+
+def valid_input_file(path: PathLikeSimple) -> Path:
+    if not os.path.isfile(path):
+        raise argparse.ArgumentTypeError(f"File: '{path}' does not exist or is not a file.")
+    if not os.access(path, os.R_OK):
+        raise argparse.ArgumentTypeError(f"File: '{path}' is not readable.")
+    return Path(path)
+
+
+def valid_log_level(level):
+    levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    lvl = level.upper()
+    if lvl not in levels:
+        raise argparse.ArgumentTypeError(f"Invalid log level '{level}. Choce from {levels}.")
+    return lvl
+
+
+def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="vulnparse-pin",
+        description="VulnParse-Pin: Enrich, prioritize, and triage vulnerability scan results.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    gen_group = parser.add_argument_group("General Options", "General runtime flags.")
+    enrich_group = parser.add_argument_group("Enrichment", "Vulnerability enrichment flags.")
+    file_group = parser.add_argument_group("Filesystem Options", "[Security Warning] Filesystem I/O and permissions flags. Take caution and read documentation on potential effects of flags.")
+    port_group = parser.add_argument_group("Portability", "Options to run VulnParse in a portable setting.")
+    output_group = parser.add_argument_group("Output Options", "Flags that deal with output such as output location or presentation modes.")
+    gen_group.add_argument("--file", "-f", help="Path to vulnerability scan file", required=True, type=valid_input_file)
+    enrich_group.add_argument("--enrich-kev", "-kev", nargs="?", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
+    enrich_group.add_argument("--enrich-epss", "-epss", nargs="?", help="Path/URL to EPSS .csv or CSV.gz file. If omitted, use official EPSS feed.")
+    output_group.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Output is in JSON")
+    gen_group.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
+    gen_group.add_argument("--log-file", "-Lf", default="vulnparse_pin.log", help="Log File destination.")
+    gen_group.add_argument("--log-level", "-Ll", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
+    gen_group.add_argument("--version", "-v", help="Show program version and exit.", action="version", version=f"%(prog)s {__version__}")
+    enrich_group.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
+    enrich_group.add_argument("--exploit-db", "-edb", type=str, help="Path to offline exploit database (CSV)")
+    enrich_group.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.", default=True)
+    enrich_group.add_argument("--mode", "-m", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
+    enrich_group.add_argument("--refresh-cache", action="store_true", help="Forces cache refesh for feeds.")
+    enrich_group.add_argument("--allow_regen", action="store_true", help="Allows regeneration of cache meta and checksum if missing using 'best-effort'. Default: False", default=False)
+    enrich_group.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
+    output_group.add_argument("--output-csv", "-oC", type=str, metavar="PATH", help="Path to save enriched results in CSV format (optional)")
+    output_group.add_argument("--output-md", "-oM", type=str, metavar="PATH", help="Generate executive summary Markdown report")
+    output_group.add_argument("--output-md-technical", "-oMT", type=str, metavar="PATH", help="Generate detailed technical Markdown report")
+    gen_group.add_argument("--allow-large", "-al", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests. Default: False")
+    output_group.add_argument("--no-csv-sanitize", "-noC", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools). Default: Off")
+    file_group.add_argument("--forbid-symlinks_read", "-Sr", action="store_true", default=False, help="Disables following symlinks when resolving paths during read operations.")
+    file_group.add_argument("--forbid-symlinks_write", "-Sw", action="store_true", default=True, help="Disables following symlinks when resolving paths during write operations.")
+    file_group.add_argument("--enforce-root-read", "-err", action="store_true", help="Enforces read operations only on files located within the list of acceptable roots.")
+    file_group.add_argument("--enforce-root-write", "-erw", action="store_true", default=True, help="Enforces write operations only on files located within the list of acceptable roots. Default: True")
+    file_group.add_argument("--file-mode", "-fm", type=parse_mode, default=0o700, nargs=1, metavar="0o700", help="POSIX ONLY - Enables file-level chmod permissions on file write operations.")
+    file_group.add_argument("--dir-mode", "-dm", type=parse_mode, default=0o760, nargs=1, metavar="0o760", help="POSIX ONLY - Enables file-level chmod permissions on file write operations.")
+    file_group.add_argument("--debug-path-policy", action="store_true", help="Display path policy for PFHandler and exit.")
+    port_group.add_argument("--portable", "-P", action="store_true", help="Use ./data folder next to executable/script for application data(config/cache/logs/output).")
+    output_group.add_argument("--presentation", action="store_true", help = "Export a presentation-friendly JSON view by overlaying derived pass output onto findings. (Does not change provenence of artifacts in memory)")
+    output_group.add_argument("--overlay-mode", choices=["flatten", "namespace"], default="flatten", help="Overlay mode used with --presentation. "
+                              "'flatten' injects scoring fields at finding root; "
+                              "'namespace' stores scoring under finding.derived. Default: flatten")
+
+    args = parser.parse_args(argv)
+
+    if args.output:
+        output_dir = os.path.dirname(os.path.abspath(args.output)) or '.'
+        if not os.access(output_dir, os.W_OK):
+            parser.error(f"Output directory '{output_dir}' is not writable.")
+
+    if ("--overlay-mode" in sys.argv) and (not args.presentation):
+        parser.error("--overlay-mode requires --presentation")
+
+    if ("--output-csv" not in sys.argv) and (args.no_csv_sanitize):
+        parser.error("[Security Warning] --no-csv-sanitize requires --output-csv")
+
+    if (args.exploit_source == "offline") and ("--exploit-db" not in sys.argv):
+        parser.error("Offline exploit source requires --exploit-db to be set.")
+
+    return args

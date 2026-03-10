@@ -1,10 +1,10 @@
-# VulnParse-Pin – Vulnerability Parsing and Triage Engine
-# Copyright (C) 2025 Shade216
-
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
 
 # THIS MODULE IS EXPERIMENTAL AND INCOMPLETE AT THIS TIME.
@@ -18,12 +18,12 @@ EXPERIMENTAL = True
 EXPERIMENTAL_REASON = "Pending real-world JSON samples; parser not validated."
 
 from typing import TYPE_CHECKING
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import ipaddress
 from collections import Counter, defaultdict
 from vulnparse_pin.core.classes.dataclass import ScanMetaData, ScanResult, Asset, Finding
+from vulnparse_pin.core.id import make_asset_id
 from vulnparse_pin.parsers.base_parser import BaseParser
 from vulnparse_pin.utils.normalizer import coerce_float, coerce_int, coerce_ip, coerce_list, coerce_list_of_strs, coerce_protocol, coerce_severity, coerce_str
 
@@ -132,16 +132,16 @@ class NessusParser(BaseParser):
         for report_host in report_data:
             hostname = coerce_str(self.get_key_case_ins(report_host, ["host-name", "hostname", "host_name", "host"], default="Unknown"))
             ip_address = coerce_ip(self.get_key_case_ins(report_host, ["host-ip", "ip", "ip-address", "ip_address", "host_ip", "host"], default="Unknown"))
-            asset_id_raw = hostname or ip_address or "Unknown"
-            asset_id = coerce_str(asset_id_raw, default="Unknown")
+            canonical_asset_id = make_asset_id(ip_address or "Unknown", hostname or "Unknown")
 
-            if asset_id not in assets:
-                assets[asset_id] = Asset(
+            if canonical_asset_id not in assets:
+                assets[canonical_asset_id] = Asset(
                     hostname=hostname,
                     ip_address=ip_address or "Unknown",
                     criticality=None,
                     findings=[],
-                    shodan_data=None #TODO: Build this out.
+                    shodan_data=None, #TODO: Build this out.
+                    asset_id=canonical_asset_id,
                 )
 
             severity_counter = Counter()
@@ -171,11 +171,8 @@ class NessusParser(BaseParser):
                 severity_counter[severity] += 1
 
                 # Create Finding ID
-                scanner_sig = ""
-                kind = ""
-                asset_id = ""
-                canon_fid = ""
                 finding_id = ""
+                finding_asset_id = assets[canonical_asset_id].asset_id or canonical_asset_id
 
                 finding = Finding(
                     finding_id=finding_id,
@@ -197,23 +194,27 @@ class NessusParser(BaseParser):
                     protocol=protocol,
                     references=references,
                     detection_plugin=title,
-                    asset_id=asset_id
+                    asset_id=finding_asset_id
                 )
 
-                assets[asset_id].findings.append(finding)
+                assets[canonical_asset_id].findings.append(finding)
 
             # Determine criticality
-            assets[asset_id].criticality = self.determine_asset_criticality(severity_counter)
+            assets[canonical_asset_id].criticality = self.determine_asset_criticality(severity_counter)
 
         asset_count = len(assets)
         vuln_count = sum(len(asset.findings) for asset in assets.values())
+        parsed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        normalized_scan_date = scan_date
+        if not normalized_scan_date or str(normalized_scan_date).startswith("SENTINEL:"):
+            normalized_scan_date = parsed_at
 
         metadata = ScanMetaData(
             source="Nessus",
-            scan_date=scan_date if scan_date else "SENTINEL:Date_Unavailable",
+            scan_date=normalized_scan_date,
             asset_count=asset_count,
             vulnerability_count=vuln_count,
-            parsed_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            parsed_at=parsed_at
         )
 
         result = ScanResult(

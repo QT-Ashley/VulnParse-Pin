@@ -31,3 +31,6 @@ feed_cache:
       sqlite_max_age_hours: 336
       sqlite_max_rows: 500000
 
+summary:
+  top_n_findings: 20
+

@@ -1,7 +1,16 @@
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# any later version.
+# See the LICENSE file for full terms.
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Sequence, TYPE_CHECKING
+from typing import Any, Dict, Tuple, Sequence, TYPE_CHECKING
 
 from vulnparse_pin.core.passes.TopN.TN_triage_schema import (
     SchemaIssue,
@@ -11,12 +20,10 @@ from vulnparse_pin.core.passes.TopN.TN_triage_schema import (
 from vulnparse_pin.core.passes.TopN.TN_triage_semantics import (
     ConfidenceThreshold,
     InferenceConfig,
-    ParsedRule,
     SemanticIssue,
     TNTriageConfig,
     TopNConfig,
     validate_and_normalize_semantics,
-    SemanticValidationError
 )
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext

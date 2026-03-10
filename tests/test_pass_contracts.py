@@ -209,3 +209,22 @@ def test_missing_pass_dependency_behavior(tmp_path):
     assert result == scan
     # derived context should still be empty
     assert not scan.derived.passes, "Derived context should remain empty if TopN skipped"
+
+
+def test_downstream_uses_asset_level_asset_id(tmp_path):
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+
+    scan.assets[0].asset_id = "ASSET-CANONICAL"
+    for finding in scan.assets[0].findings:
+        finding.asset_id = "ASSET-LEGACY"
+
+    scan = _run_full_pipeline(ctx, scan)
+
+    scoring = scan.derived.passes["Scoring@1.0"].data
+    topn = scan.derived.passes["TopN@1.0"].data
+
+    assert "ASSET-CANONICAL" in scoring.get("asset_scores", {})
+    assert "ASSET-LEGACY" not in scoring.get("asset_scores", {})
+    assert "ASSET-CANONICAL" in topn.get("findings_by_asset", {})
+    assert "ASSET-LEGACY" not in topn.get("findings_by_asset", {})

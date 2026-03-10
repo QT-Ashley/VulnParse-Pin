@@ -1,6 +1,6 @@
-# VulnParse-Pin – Vulnerability Parsing and Triage Engine
-# Copyright (C) 2025 Shade216
-
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
@@ -164,7 +164,7 @@ class SchemaDetector:
                 r.parser_name,
             )
         # If multiple matched, pick highest conf, then priority
-        return max(matched, key=lambda r: r.confidence)
+        return max(matched, key=sort_key)
 
     def _log_decision(self, ctx, path: Path, sniff: str, all_results: list[DetectionResult], winner: DetectionResult) -> None:
         ctx.logger.debug("SchemaDetector: sniff=%s file=%s", sniff, path.name)

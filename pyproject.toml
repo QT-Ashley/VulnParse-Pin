@@ -4,27 +4,43 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "VulnParse-Pin"
-description = "Vulnerability report parser + enrichment + triage engine."
+description = "Vulnerability Intelligence and Decision Support Engine - Parse, enrich, prioritize, and report on security scan results."
 dynamic = ["version"]
+readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    {name = "Shade216"}
+    {name = "QT.Shade", email = "qt.ashley@vulnparse-pin.com"}
 ]
-dependencies = ["defusedxml", "cvss", "requests", "ruamel.yaml", "platformdirs"]
-readme = "README.md"
+maintainers = [
+    {name = "QTShade", email = "qt.ashley@vulnparse-pin.com"}
+]
+dependencies = ["defusedxml>=0.7.1", "cvss>=3.6", "requests>=2.32.5", "ruamel.yaml>=0.19.1", "platformdirs>=4.9.4", "colorama>=0.4.6", "jsonschema>=4.26.0"]
 license = { text = "AGPL-3.0-or-later" }
 classifiers = [
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Architecture",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Natural Language :: English",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)"
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
 ]
-keywords = ["vulnparse", "vm", "vulnerability-management", "security-tools", "security", "defensive-security"]
+keywords = ["vulnerability", "vm", "vulnerability-management", "security-tools", "security", "defensive-security", "nessus", "openvas", "triage", "cvss", "nvd", "cisa-kev", "epss", "threat-intel"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
-sbom = ["cyclonedx-bom"]
+dev = ["pytest>=9.0.2"]
+sbom = ["cyclonedx-bom>=7.2.2"]
+
+[project.urls]
+Homepage = "https://github.com/VulnParse-Pin/VulnParse-Pin"
+Repository = "https://github.com/VulnParse-Pin/VulnParse-Pin"
+Issues = "https://github.com/VulnParse-Pin/VulnParse-Pin/issues"
+Documentation = "https://github.com/VulnParse-Pin/VulnParse-Pin/blob/main/README.md"
 
 [tool.setuptools]
 license-files = ["LICENSE"]
@@ -33,8 +49,15 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+vulnparse_pin = [
+    "resources/*.yaml",
+    "resources/*.json",
+    "core/schemas/*.json",
+]
+
 [tool.setuptools.dynamic]
 version = { attr = "vulnparse_pin.__version__" }
 
 [project.scripts]
-vulnparse-pin = "vulnparse_pin.main:main"
+vpp = "vulnparse_pin.main:main"

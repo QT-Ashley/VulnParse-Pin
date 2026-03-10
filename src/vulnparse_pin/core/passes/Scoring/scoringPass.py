@@ -1,3 +1,12 @@
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# any later version.
+# See the LICENSE file for full terms.
+
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Dict, Optional, TYPE_CHECKING, List, Tuple, Any
@@ -137,7 +146,7 @@ class ScoringPass(Pass):
         for asset in scan.assets:
             for f in asset.findings:
                 total += 1
-                asset_id = f.asset_id or asset.ip_address
+                asset_id = getattr(asset, "asset_id", None) or f.asset_id or asset.ip_address
                 findings_with_context.append((f, asset_id, asset.ip_address))
 
         # Pre-compute plugin attributes once (smart caching)

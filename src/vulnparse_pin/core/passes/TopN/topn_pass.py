@@ -1,14 +1,21 @@
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# any later version.
+# See the LICENSE file for full terms.
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import ipaddress
 import os
-import heapq
 
-from vulnparse_pin.core.classes.pass_classes import DerivedPassResult, PassMeta
+from vulnparse_pin.core.classes.pass_classes import DerivedPassResult, Pass, PassMeta
 from vulnparse_pin.core.passes.types import (
     ExposureInference,
     RankedAssetRef,
@@ -16,251 +23,13 @@ from vulnparse_pin.core.passes.types import (
     TopNPassOutput
 )
 from vulnparse_pin.core.passes.TopN.TN_triage_semantics import TNTriageConfig, ParsedPredicate
+from vulnparse_pin.core.passes.TopN.workers import _rank_findings_chunk_worker, _topn_asset_chunk_worker
+from vulnparse_pin.core.passes.TopN.workers import _is_private_ip, _is_public_ip
 
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext, ScanResult
     from vulnparse_pin.core.passes.types import ScoredFinding
     from vulnparse_pin.core.passes.TopN.TN_triage_semantics import ConfidenceThreshold
-
-# -------------------------------------------
-# Process-safe worker functions for parallel execution
-# -------------------------------------------
-
-def _rank_findings_chunk_worker(
-    chunk: List[Tuple[str, str, List[str]]],  # [(asset_id, rank_basis, [fid, fid, ...]), ...]
-    scoring_data: Dict[str, Dict[str, Any]],  # {finding_id: {raw_score, operational_score, risk_band, reason}}
-    finding_attrs: Dict[str, Dict[str, Any]],  # {finding_id: {port, proto, plugin_id}}
-    max_findings: int,
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Process worker: rank findings for a chunk of assets.
-    Returns: {asset_id: [ranked_finding_dict, ...]}
-    """
-    results: Dict[str, List[Dict[str, Any]]] = {}
-    
-    for asset_id, rank_basis, finding_ids in chunk:
-        rows: List[Tuple[float, str, Dict[str, Any]]] = []
-        
-        for fid in finding_ids:
-            rec = scoring_data.get(fid)
-            if rec is None:
-                continue
-                
-            raw = float(rec.get("raw_score", 0.0))
-            op = float(rec.get("operational_score", raw))
-            score = raw if rank_basis == "raw" else op
-            
-            band = str(rec.get("risk_band", "unknown"))
-            reasons = tuple(rec.get("reason", "").strip().split(";"))
-            
-            attrs = finding_attrs.get(fid, {})
-            port = attrs.get("port")
-            proto = attrs.get("proto")
-            plugin_id = attrs.get("plugin_id")
-            
-            ref_dict = {
-                "finding_id": fid,
-                "asset_id": asset_id,
-                "rank": 0,
-                "score_basis": rank_basis,
-                "score": score,
-                "risk_band": band,
-                "reasons": reasons,
-                "port": port if isinstance(port, int) else None,
-                "proto": str(proto) if proto is not None else None,
-                "plugin_id": str(plugin_id) if plugin_id is not None else None,
-            }
-            
-            rows.append((score, fid, ref_dict))
-        
-        # Sort by score descending, then by finding_id
-        rows.sort(key=lambda x: (-x[0], x[1]))
-        
-        # Assign ranks and take top N
-        ranked = []
-        for i, (_, _, ref_dict) in enumerate(rows[:max_findings], start=1):
-            ref_dict["rank"] = i
-            ranked.append(ref_dict)
-        
-        results[asset_id] = ranked
-    
-    return results
-
-
-def _bucket_confidence_worker(score: int, thresholds: Dict[str, int]) -> str:
-    if score >= int(thresholds["high"]):
-        return "high"
-    if score >= int(thresholds["medium"]):
-        return "medium"
-    return "low"
-
-
-def _predicate_matches_worker(
-    pred_name: str,
-    pred_ports: Tuple[int, ...],
-    pred_tokens: Tuple[str, ...],
-    ip: str,
-    hostname: str,
-    ports_set: set[int],
-    public_service_ports_set: set[int],
-) -> bool:
-    if pred_name == "ip_is_public":
-        return _is_public_ip(ip)
-    if pred_name == "ip_is_private":
-        return _is_private_ip(ip)
-    if pred_name == "any_port_in_public_list":
-        return any(p in public_service_ports_set for p in ports_set)
-    if pred_name == "port_in":
-        return any(p in ports_set for p in pred_ports)
-    if pred_name == "hostname_contains_any":
-        return any(tok in hostname for tok in pred_tokens)
-    return False
-
-
-def _infer_exposure_worker(
-    obs: Dict[str, Any],
-    inference_cfg: Dict[str, Any],
-) -> Dict[str, Any]:
-    score = 0
-    evidence: List[str] = []
-    hit_tags = set()
-
-    ip = (obs.get("ip") or "").strip()
-    hostname = (obs.get("hostname") or "").strip().lower()
-    ports_set = set(obs.get("open_ports", ()))
-
-    for rule in inference_cfg["rules"]:
-        if not rule["enabled"]:
-            continue
-        if _predicate_matches_worker(
-            rule["predicate_name"],
-            tuple(rule["predicate_ports"]),
-            tuple(rule["predicate_tokens"]),
-            ip,
-            hostname,
-            ports_set,
-            set(inference_cfg["public_service_ports"]),
-        ):
-            score += int(rule["weight"])
-            hit_tags.add(rule["tag"])
-            ev = rule["evidence"].strip() if rule["evidence"] else f"{rule['rule_id']} ({int(rule['weight']):+d})"
-            evidence.append(ev)
-
-    confidence = _bucket_confidence_worker(score, inference_cfg["thresholds"])
-    externally = ("externally_facing" in hit_tags) and (confidence in ("medium", "high"))
-    public_ports = "public_service_ports" in hit_tags
-
-    return {
-        "exposure_score": int(score),
-        "confidence": confidence,
-        "externally_facing_inferred": externally,
-        "public_service_ports_inferred": public_ports,
-        "evidence": tuple(sorted(evidence)),
-    }
-
-
-def _topn_asset_chunk_worker(
-    chunk: List[Tuple[str, List[str]]],
-    scoring_data: Dict[str, Dict[str, Any]],
-    finding_attrs: Dict[str, Dict[str, Any]],
-    asset_obs_by_id: Dict[str, Dict[str, Any]],
-    inference_cfg: Dict[str, Any],
-    rank_basis: str,
-    max_findings_per_asset: int,
-    k: int,
-    decay: Tuple[float, ...],
-    include_global_top: bool,
-    global_top_max: int,
-) -> Dict[str, Any]:
-    out_inference: Dict[str, Dict[str, Any]] = {}
-    out_findings: Dict[str, List[Dict[str, Any]]] = {}
-    out_assets: List[Tuple[float, int, int, str, Tuple[float, ...]]] = []
-    global_heap: List[Tuple[float, str, str, int, Dict[str, Any]]] = []
-    entry_counter = 0  # Unique counter for heap tie-breaking
-
-    for asset_id, finding_ids in chunk:
-        obs = asset_obs_by_id.get(asset_id, {"asset_id": asset_id, "ip": None, "hostname": None, "open_ports": ()})
-        out_inference[asset_id] = _infer_exposure_worker(obs, inference_cfg)
-
-        rows: List[Tuple[float, str, Dict[str, Any]]] = []
-        asset_scores: List[float] = []
-        crit_high = 0
-        scorable_count = 0
-
-        for fid in finding_ids:
-            rec = scoring_data.get(fid)
-            if rec is None:
-                continue
-
-            raw = float(rec.get("raw_score", 0.0))
-            op = float(rec.get("operational_score", raw))
-            score = raw if rank_basis == "raw" else op
-            band = str(rec.get("risk_band", "unknown"))
-            reason_text = rec.get("reason", "")
-            reasons = tuple(str(reason_text).strip().split(";")) if str(reason_text).strip() else tuple()
-
-            attrs = finding_attrs.get(fid, {})
-            port = attrs.get("port")
-            proto = attrs.get("proto")
-            plugin_id = attrs.get("plugin_id")
-
-            ref_dict = {
-                "finding_id": fid,
-                "asset_id": asset_id,
-                "rank": 0,
-                "score_basis": rank_basis,
-                "score": score,
-                "risk_band": band,
-                "reasons": reasons,
-                "port": port if isinstance(port, int) else None,
-                "proto": str(proto) if proto is not None else None,
-                "plugin_id": str(plugin_id) if plugin_id is not None else None,
-            }
-
-            rows.append((score, fid, ref_dict))
-            asset_scores.append(score)
-            scorable_count += 1
-            if band.lower() in ("critical", "high"):
-                crit_high += 1
-
-            if include_global_top:
-                key = (score, asset_id, fid)
-                if len(global_heap) < global_top_max:
-                    heapq.heappush(global_heap, (key[0], key[1], key[2], entry_counter, ref_dict))
-                    entry_counter += 1
-                else:
-                    min_key = (global_heap[0][0], global_heap[0][1], global_heap[0][2])
-                    if key > min_key:
-                        heapq.heapreplace(global_heap, (key[0], key[1], key[2], entry_counter, ref_dict))
-                        entry_counter += 1
-
-        rows.sort(key=lambda x: (-x[0], x[1]))
-        ranked_findings: List[Dict[str, Any]] = []
-        for i, (_, _, ref_dict) in enumerate(rows[:max_findings_per_asset], start=1):
-            ref_dict["rank"] = i
-            ranked_findings.append(ref_dict)
-        out_findings[asset_id] = ranked_findings
-
-        asset_scores.sort(reverse=True)
-        top_scores = tuple(asset_scores[:k])
-        asset_score = 0.0
-        for i, value in enumerate(top_scores):
-            if i < len(decay):
-                asset_score += float(value) * float(decay[i])
-
-        out_assets.append((asset_score, crit_high, scorable_count, asset_id, top_scores))
-
-    global_candidates = [
-        (score, asset_id, fid, ref_dict)
-        for score, asset_id, fid, _, ref_dict in global_heap
-    ]
-
-    return {
-        "inference": out_inference,
-        "findings": out_findings,
-        "assets": out_assets,
-        "global_candidates": global_candidates,
-    }
 
 # -------------------------------------------
 # Observation View
@@ -278,7 +47,7 @@ class AssetObservation:
 # TopN Pass
 # -------------------------------------------
 
-class TopNPass:
+class TopNPass(Pass):
     name = "TopN"
     version: str = "1.0"
 
@@ -428,7 +197,7 @@ class TopNPass:
         asset_obs_by_id: Dict[str, Dict[str, Any]] = {}
 
         for asset in scan.assets:
-            aid = None
+            aid = getattr(asset, "asset_id", None)
             ip_addr = getattr(asset, "ip_address", None)
             hostname = getattr(asset, "hostname", None)
             open_ports: set[int] = set()
@@ -635,8 +404,16 @@ class TopNPass:
     def _index_findings_by_asset(self, scan: "ScanResult") -> dict[str, List[str]]:
         maps: Dict[str, List[str]] = {}
         for asset in scan.assets:
+            aid = getattr(asset, "asset_id", None)
+            if aid is None:
+                for finding in asset.findings:
+                    aid = getattr(finding, "asset_id", None)
+                    if aid:
+                        break
+            if not aid:
+                continue
             for finding in asset.findings:
-                maps.setdefault(finding.asset_id, []).append(finding.finding_id)
+                maps.setdefault(aid, []).append(finding.finding_id)
 
         for aid, _ in maps.items(): # TODO:VERIFY
             maps[aid].sort()
@@ -669,12 +446,12 @@ class TopNPass:
         """
         asset = None
         for a in scan.assets:
-            for f in a.findings:
-                if f.asset_id:
-                    asset = a
-                    break
+            candidate_asset_id = getattr(a, "asset_id", None)
+            if candidate_asset_id == asset_id:
+                asset = a
+                break
 
-        ip = getattr(asset, "ip", None) if asset else None
+        ip = getattr(asset, "ip_address", None) if asset else None
         hostname = getattr(asset, "hostname", None) if asset else None
 
         # Gather open ports
@@ -1054,17 +831,3 @@ def _bucket_confidence(score: int, thresholds: "ConfidenceThreshold") -> str:
     if score >= thresholds.medium:
         return "medium"
     return "low"
-
-def _is_private_ip(ip: str) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip)
-        return addr.is_private
-    except Exception:
-        return False
-
-def _is_public_ip(ip: str) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip)
-        return addr.is_global
-    except Exception:
-        return False

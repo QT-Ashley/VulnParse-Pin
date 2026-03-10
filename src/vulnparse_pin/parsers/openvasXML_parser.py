@@ -1,13 +1,13 @@
-# VulnParse-Pin – Vulnerability Parsing and Triage Engine
-# Copyright (C) 2025 Shade216
-
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
+
 from __future__ import annotations
-from ipaddress import ip_address
 from pathlib import Path
 
 from datetime import datetime, timezone
@@ -141,12 +141,13 @@ class OpenVASXMLParser(BaseParser):
                     value = detail.findtext("value") or "N/A"
                     evidence.append(f"{name}: {value}")
 
-            summary, summarized_evidence = self._summarize_plugin_output(plugin_output)
+            _, summarized_evidence = self._summarize_plugin_output(plugin_output)
             if not evidence:
                 evidence = summarized_evidence
 
             # Now time for Asset Creation
             if host not in assets:
+                generated_asset_id = make_asset_id(host, host)
                 assets[host] = Asset(
                     hostname=host,
                     ip_address=host,
@@ -154,12 +155,14 @@ class OpenVASXMLParser(BaseParser):
                     os=None,
                     findings=[],
                     shodan_data=None,
+                    asset_id=generated_asset_id,
                 )
 
             # Create Unique Finding_ID
             scanner_sig = "openvas:" + nvt_field.attrib.get("oid") if nvt_field is not None else "No_SigID"
             kind = title
-            asset_id = make_asset_id(assets[host].ip_address, assets[host].hostname)
+            asset_obj = assets[host]
+            asset_id = asset_obj.asset_id or make_asset_id(asset_obj.ip_address, asset_obj.hostname)
             canon_fid = make_finding_base_canon(
                 asset_id=asset_id,
                 scanner_sig=scanner_sig,
@@ -196,16 +199,20 @@ class OpenVASXMLParser(BaseParser):
 
         asset_count = len(assets)
         vuln_count = sum(len(asset.findings) for asset in assets.values())
+        parsed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        normalized_scan_date = scan_date
+        if not normalized_scan_date or str(normalized_scan_date).startswith("SENTINEL:"):
+            normalized_scan_date = parsed_at
 
         # Build Metadata
         metadata = ScanMetaData(
             source="OpenVAS",
             scan_name=scan_name,
-            scan_date=scan_date,
+            scan_date=normalized_scan_date,
             source_file=str(self.filepath),
             asset_count=asset_count,
             vulnerability_count=vuln_count,
-            parsed_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            parsed_at=parsed_at,
         )
 
         return ScanResult(scan_metadata=metadata, assets=list(assets.values()))

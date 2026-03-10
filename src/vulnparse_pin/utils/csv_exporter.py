@@ -1,10 +1,10 @@
-# VulnParse-Pin – Vulnerability Parsing and Triage Engine
-# Copyright (C) 2025 Shade216
-
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
 
 from collections.abc import Sequence
@@ -216,7 +216,7 @@ def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_findin
     exploit_ids, exploit_titles, exploit_urls = _flatten_exploits(finding.exploit_references)
 
     fid = getattr(finding, "finding_id", "") or ""
-    aid = getattr(finding, "asset_id", "") or getattr(asset, "asset_id", "") or ""
+    aid = getattr(asset, "asset_id", "") or getattr(finding, "asset_id", "") or ""
 
     srec = scored_findings.get(fid) if fid else None
     topn_frec = topn_finding_rank.get(fid) if fid else None

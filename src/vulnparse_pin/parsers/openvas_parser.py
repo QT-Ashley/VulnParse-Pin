@@ -1,10 +1,10 @@
-# VulnParse-Pin – Vulnerability Parsing and Triage Engine
-# Copyright (C) 2025 Shade216
-
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 QTShade
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
 # by the Free Software Foundation, either version 3 of the License, or
-#  any later version.
+# any later version.
 # See the LICENSE file for full terms.
 
 # THIS MODULE IS EXPERIMENTAL AND INCOMPLETE AT THIS TIME.
@@ -24,6 +24,7 @@ from vulnparse_pin.utils.cvss_utils import is_valid_cvss_vector
 
 from typing import Any, Counter, Dict, List, Optional, Union
 from vulnparse_pin.core.classes.dataclass import ScanResult, ScanMetaData, Asset, Finding
+from vulnparse_pin.core.id import make_asset_id
 from vulnparse_pin.parsers.base_parser import BaseParser
 from vulnparse_pin.utils.normalizer import coerce_float, coerce_int, coerce_list, coerce_severity, coerce_str
 
@@ -139,16 +140,16 @@ class OpenVASParser(BaseParser):
        for item in report_data["results"]:
            hostname = coerce_str(self.get_key_cins(item, ["host", "hostname", "host-name", "host_name"]), default="unknown_host")
            ip_address = coerce_str(self.get_key_cins(item, ["ip", "host-ip", "ip-address", "ip_address", "host_ip"], default="N/A"))
-           asset_id_raw = hostname or ip_address or "N/A"
-           asset_id = coerce_str(asset_id_raw, default="N/A")
+           canonical_asset_id = make_asset_id(ip_address or "N/A", hostname or "unknown_host")
 
-           if asset_id not in assets:
-               assets[asset_id] = Asset(
+           if canonical_asset_id not in assets:
+               assets[canonical_asset_id] = Asset(
                    hostname=hostname,
                    ip_address=ip_address,
                    criticality=None,
                    findings=[],
-                   shodan_data=None
+                   shodan_data=None,
+                   asset_id=canonical_asset_id,
                )
 
 
@@ -197,11 +198,8 @@ class OpenVASParser(BaseParser):
            exploit_available = any(indicator in search_text for indicator in exploit_indicators)
 
            # Create Finding ID
-           scanner_sig = ""
-           kind = ""
-           asset_id = ""
-           canon_fid = ""
            finding_id = ""
+           finding_asset_id = assets[canonical_asset_id].asset_id or canonical_asset_id
 
 
            finding = Finding(
@@ -223,10 +221,10 @@ class OpenVASParser(BaseParser):
                protocol=protocol,
                references=references_list,
                detection_plugin=title,
-               asset_id=asset_id
+               asset_id=finding_asset_id
            )
 
-           assets[asset_id].findings.append(finding)
+           assets[canonical_asset_id].findings.append(finding)
 
        for asset in assets.values():
            # Determine criticality
@@ -235,13 +233,17 @@ class OpenVASParser(BaseParser):
 
        asset_count = len(assets)
        vuln_count = sum(len(asset.findings) for asset in assets.values())
+       parsed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+       normalized_scan_date = metadata_time
+       if not normalized_scan_date or str(normalized_scan_date).startswith("SENTINEL:"):
+           normalized_scan_date = parsed_at
 
        metadata_final = ScanMetaData(
            source="OpenVAS",
-           scan_date=metadata_time,
+           scan_date=normalized_scan_date,
            asset_count=asset_count,
            vulnerability_count=vuln_count,
-           parsed_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+           parsed_at=parsed_at
        )
 
        result = ScanResult(

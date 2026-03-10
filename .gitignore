@@ -11,4 +11,4 @@ logs/
 .history/
 .*
 *.md
-debug_topn.py
+!sbom*
