@@ -14,7 +14,7 @@ authors = [
 maintainers = [
     {name = "Quashawn Ashley", email = "qt.ashley@vulnparse-pin.com"}
 ]
-dependencies = ["defusedxml>=0.7.1", "cvss>=3.6", "requests>=2.32.5", "ruamel.yaml>=0.19.1", "platformdirs>=4.9.4", "colorama>=0.4.6", "jsonschema>=4.26.0"]
+dependencies = ["defusedxml>=0.7.1", "cvss>=3.6", "requests>=2.32.5", "ruamel.yaml>=0.19.1", "platformdirs>=4.9.4", "colorama>=0.4.6", "jsonschema>=4.26.0", "ijson>=3.5.0"]
 license = { text = "AGPL-3.0-or-later" }
 classifiers = [
     "Intended Audience :: Information Technology",
