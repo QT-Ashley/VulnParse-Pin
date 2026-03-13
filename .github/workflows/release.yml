@@ -1,120 +1,112 @@
-name: Release Build and Publish
+name: Release - Publish
 
 on:
   push:
+    branches:
+      - main
     tags:
-      - "v*"
-  workflow_dispatch:
+      - 'v*'
+
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
-  python-packages:
-    name: Build Python Package (sdist+wheel)
-    runs-on: ubuntu-latest
+  build:
+    name: Build release artifacts
+    uses: ./.github/workflows/re_build.yml
+    with:
+      python-version: "3.14"
+    secrets: inherit
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build sdist and wheel
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build
-          python -m build
-
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-dist
-          path: dist/*
-
-  binaries:
-    name: Build Binary (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install project and pyinstaller
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install . pyinstaller
-
-      - name: Build single-file binary
-        run: |
-          pyinstaller --name vpp --onefile src/vulnparse_pin/__main__.py
-
-      - name: Rename binary with OS and arch (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          ARCH="${{ runner.arch }}"
-          OS="${{ runner.os }}"
-          mv dist/vpp "dist/vpp-${OS}-${ARCH}"
-
-      - name: Rename binary with OS and arch (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $arch = "${{ runner.arch }}"
-          $os = "${{ runner.os }}"
-          Move-Item "dist/vpp.exe" "dist/vpp-${os}-${arch}.exe"
-
-      - name: Upload binary artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.os }}
-          path: dist/*
-
-  publish-release-assets:
-    name: Publish Release Assets
-    runs-on: ubuntu-latest
-    needs: [python-packages, binaries]
+  finalize-release:
+    name: Generate SBOM, checksums, and publish github release
     if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: build
 
     steps:
-      - name: Download package artifacts
-        uses: actions/download-artifact@v4
+      - name: Checkout
+        uses: actions/checkout@v6.0.1
+
+      - name: Download Python distributions
+        uses: actions/download-artifact@v8.0.0
         with:
           name: python-dist
-          path: release-assets
+          path: dist
 
-      - name: Download Linux binary
-        uses: actions/download-artifact@v4
+      - name: Download Binaries
+        uses: actions/download-artifact@v8.0.0
         with:
-          name: binary-ubuntu-latest
-          path: release-assets
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
 
-      - name: Download Windows binary
-        uses: actions/download-artifact@v4
+      - name: Setup Python
+        uses: actions/setup-python@v6.2.0
         with:
-          name: binary-windows-latest
-          path: release-assets
+          python-version: "3.14"
 
-      - name: Download macOS binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binary-macos-latest
-          path: release-assets
+      - name: Install SBOM tool
+        run: |
+          python -m pip install --upgrade pip
+          pip install cyclonedx-py
 
-      - name: Upload assets to GitHub release
+      - name: Generate CycloneDX SBOM from Python reqs
+        run: |
+          mkdir -p dist/sbom
+          cyclonedx-py environment > dist/sbom/vulnparse-pin-sbom.json
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          find . -type f \
+          ! -name "SHA256SUMS" \
+          ! -name "*.asc" \
+          -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+
+      - name: Import GPG Key
+        if: secrets.GPG_PRIVATE_KEY != ''
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+      - name: Sign SHA256SUMS
+        if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_PASSPHRASE != ''
+        working-directory: dist
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          gpg --batch --yes \
+          --pinentry-mode loopback \
+          --passphrase "$GPG_PASSPHRASE" \
+          --armor --detach-sign SHA256SUMS
+
+      - name: Publish Github Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*
           generate_release_notes: true
+          make_latest: "true"
+          files: |
+            dist/*
+            dist/sbom/vulnparse-pin-sbom.json
+        
+  publish-pypi:
+    name: Publish python distributions to pypi
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: Production
+
+    steps:
+      - name: Download Python distributions
+        uses: actions/download-artifact@v8.0.0
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Publish to PyPi via Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1.13

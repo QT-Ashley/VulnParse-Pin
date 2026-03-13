@@ -1,0 +1,87 @@
+name: Build Artifacts
+
+on:
+    workflow_call:
+        inputs:
+            python-version:
+                description: Python version to use
+                required: false
+                default: "3.14"
+                type: string
+
+jobs:
+    build-python-dist:
+        name: Build Python Dists
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6.0.1
+
+            - name: Set Up Python
+              uses: actions/setup-python@v6.2.0
+              with:
+                python-version: ${{ inputs.python-version }}
+            
+            - name: Install build tools
+              run: |
+                python -m pip install --upgrade pip
+                pip install build
+            
+            - name: Build sdist and wheel
+              run: |
+                python -m build
+
+            - name: Upload python dist artifacts
+              uses: actions/upload-artifact@v7
+              with:
+                name: python-dist
+                path: 'dist/*'
+                if-no-files-found: error
+
+    build-executables:
+        name: Build Binaries (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest, macos-latest]
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6.0.1
+
+            - name: Set up Python
+              uses: actions/setup-python@v6.2.0
+              with:
+                python-version: ${{ inputs.python-version }}
+
+            - name: Install build dependencies with pyinstaller
+              run: |
+                python -m pip install --upgrade pip
+                pip install --no-cache-dir . pyinstaller
+
+            - name: Build Single File Binary
+              run: |
+                pyinstaller --name vpp --onefile src/vulnparse_pin/__main__.py
+
+            - name: Rename binary with OS/ARCH (Linux)
+              if: runner.os != 'Windows'
+              run: |
+                ARCH="${{ runner.arch }}"
+                OS="${{ runner.os }}"
+                mv dist/vpp "dist/vpp-${OS}-${ARCH}"
+
+            - name: Rename binary with OS/ARCH (Windows)
+              if: runner.os == 'Windows'
+              shell: pwsh
+              run: |
+                $arch = "${{ runner.arch }}"
+                $os = "${{ runner.os }}"
+                Move-Item "dist/vpp.exe" "dist/vpp-${os}-${arch}.exe"
+
+            - name: Upload Binary artifacts
+              uses: actions/upload-artifact@v7
+              with:
+                name: binary-${{ matrix.os }}
+                path: 'dist/*'
