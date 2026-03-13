@@ -67,17 +67,18 @@ jobs:
           -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 
       - name: Import GPG Key
-        if: secrets.GPG_PRIVATE_KEY != ''
+        if: ${{ env.GPG_PRIVATE_KEY != '' }}
         env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY:  secrets.GPG_PRIVATE_KEY 
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
 
       - name: Sign SHA256SUMS
-        if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_PASSPHRASE != ''
+        if: ${{ env.GPG_PRIVATE_KEY != '' && env.GPG_PASSPHRASE != '' }}
         working-directory: dist
         env:
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_PRIVATE_KEY: secrets.GPG_PRIVATE_KEY
+          GPG_PASSPHRASE: secrets.GPG_PASSPHRASE
         run: |
           gpg --batch --yes \
           --pinentry-mode loopback \
