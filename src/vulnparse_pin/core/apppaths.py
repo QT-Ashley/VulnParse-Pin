@@ -10,6 +10,7 @@
 from __future__ import annotations
 from importlib import resources
 import os
+import stat
 import json
 from typing import TYPE_CHECKING, Tuple
 from dataclasses import dataclass
@@ -231,5 +232,5 @@ def _harden_dir(path: Path, mode: int) -> None:
         current = stat.S_IMODE(path.stat().st_mode)
         if current != mode:
             path.chmod(mode)
-    except Exception as e:
+    except (PermissionError, NameError, ImportError) as e:
         raise PermissionError("Invalid permissions. Unable to set permission mode on path.") from e
