@@ -1,0 +1,177 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://vulnparse-pin.com/schemas/topN.schema.json",
+    "title": "VulnParse-Pin TopN Configuration Schema",
+    "description": "Schema for TopN ranking and exposure inferernce rule configuration. Structural validation only",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["topn", "inference"],
+    "properties": {
+        "meta": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "name": { "type": "string", "minLength": 1, "maxLength": 128},
+                "version": { "type": "string", "minLength": 1, "maxLength": 32},
+                "notes": { "type": "string", "maxLength": 4096}
+            }
+        },
+
+        "topn": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["rank_basis", "decay"],
+            "properties": {
+                "rank_basis": {
+                    "type": "string",
+                    "enum": ["raw", "operational"],
+                    "description": "Score basis used for ranking. Default is raw (engine canonical)."
+                },
+
+                "decay": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 25,
+                    "items": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0
+                    },
+                    "description": "Top-K decay weights for aggregating top findings per asset. K is defined as len(decay)."
+                },
+
+                "max_assets": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "default": 25,
+                    "description": "Max number of ranked assets to emit."
+                },
+
+                "max_findings_per_asset": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "default": 10,
+                    "description": "Max number of ranked findings to emit per ranked asset."
+                },
+
+                "include_global_top_findings": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to emit a global Top-N findings list in TopNPass output."
+                },
+
+                "global_top_findings_max": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "default": 50,
+                    "description": "Max number of findings to emit in the global Top-N findings list."
+                }
+            }
+        },
+
+        "inference": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["confidence_thresholds", "public_service_ports", "rules"],
+            "properties": {
+                "confidence_thresholds": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["low", "medium", "high"],
+                    "properties": {
+                        "low": { "type": "integer", "minimum": -100, "maximum": 100 },
+                        "medium": { "type": "integer", "minimum": -100, "maximum": 100 },
+                        "high": { "type": "integer", "minimum": -100, "maximum": 100 }
+                    },
+                    "description": "Exposure score thresholds used to bucket confidence. Validation enforces low < medium < high."
+                },
+
+                "public_service_ports": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 2000,
+                    "uniqueItems": true,
+                    "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "description": "Ports treated as common public-service ports for inference signals."
+                },
+
+                "allow_predicates": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+                    "default": [
+                        "ip_is_public",
+                        "ip_is_private",
+                        "any_port_in_public_list",
+                        "port_in",
+                        "hostname_contains_any"
+                    ],
+                    "description": "Allowlist of supported predicate names."
+                },
+
+                "rules": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 500,
+                    "items": { "$ref": "#/$defs/InferenceRule" }
+                }
+            }
+        }
+    },
+
+    "$defs": {
+        "InferenceTag": {
+            "type": "string",
+            "enum": ["externally_facing", "public_service_ports"],
+            "description": "Derived-only inference tags. These do not claim certainty"
+        },
+
+        "InferenceRule": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "when", "weight", "tag"],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_\\-]{1,64}$",
+                    "description": "Rule identifier (stable)."
+                },
+
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether the rule is active."
+                },
+
+                "tag": { "$ref": "#/$defs/InferenceTag" },
+
+                "weight": {
+                    "type": "integer",
+                    "minimum": -50,
+                    "maximum": 50,
+                    "description": "Signed integer score contribution when predicate matches."
+                },
+
+                "when": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "Predicate expression."
+                },
+
+                "evidence": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "Optional evidence message template. If omitted, engine generates a default evidence string."
+                }
+            }
+        }
+    }
+}
+

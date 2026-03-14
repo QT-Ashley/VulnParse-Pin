@@ -17,7 +17,7 @@ from vulnparse_pin.core.passes.TopN.TN_triage_config import TriageConfigLoadResu
 from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
 from vulnparse_pin.core.schema_detector import SchemaDetector
 from vulnparse_pin.io.pfhandler import PermFileHandler
-from vulnparse_pin.parsers.__init__ import PARSER_SPECS
+from vulnparse_pin.parsers import PARSER_SPECS
 from vulnparse_pin.utils.banner import print_banner
 from vulnparse_pin.utils.feed_cache import FeedCacheManager
 from vulnparse_pin.utils.logger import LoggerWrapper

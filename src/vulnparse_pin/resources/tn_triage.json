@@ -1,0 +1,105 @@
+{
+    "meta": {
+        "name": "VulnParse-Pin TopN Triage Config",
+        "version": "1",
+        "notes": "Token-based infernece rules. Ranking uses raw score by default. K = len(topn.decay)."
+    },
+    "topn": {
+        "rank_basis": "raw",
+        "decay": [1.0, 0.7, 0.5, 0.35, 0.25],
+        "max_assets": 25,
+        "max_findings_per_asset": 10,
+        "include_global_top_findings": true,
+        "global_top_findings_max": 50
+    },
+    "inference": {
+        "confidence_thresholds": {
+            "low": 2,
+            "medium": 5,
+            "high": 8
+        },
+        "public_service_ports": [
+            7, 8, 13, 17, 18,
+            20, 21, 22, 23, 25,
+            53, 69,
+            80, 81, 88,
+            110, 111, 115, 119,
+            123,
+            135, 137, 138, 139,
+            143, 161, 162,
+            389, 443, 445,
+            465, 514, 587,
+            636,
+            873,
+            993, 995,
+            1433, 1521,
+            2049, 2375, 2376,
+            3306, 3389,
+            5432,
+            5900,
+            5985, 5986,
+            6379,
+            8080, 8081, 8443,
+            9200,
+            11211,
+            27017
+        ],
+        "allow_predicates": [
+            "ip_is_public",
+            "ip_is_private",
+            "any_port_in_public_list",
+            "port_in",
+            "hostname_contains_any"
+        ],
+        "rules": [
+            {
+                "id": "public_ip",
+                "enabled": true,
+                "tag": "externally_facing",
+                "weight": 6,
+                "when": "ip_is_public",
+                "evidence": "Public IP address observed (+6)"
+            },
+            {
+                "id": "private_ip",
+                "enabled": true,
+                "tag": "externally_facing",
+                "weight": -4,
+                "when": "ip_is_private",
+                "evidence": "RFC1918/private IP observed (-4)"
+            },
+            {
+                "id": "public_service_port_hit",
+                "enabled": true,
+                "tag": "public_service_ports",
+                "weight": 2,
+                "when": "any_port_in_public_list",
+                "evidence": "Common public-service port observed (+2)"
+            },
+            {
+                "id": "web_ports",
+                "enabled": true,
+                "tag": "public_service_ports",
+                "weight": 2,
+                "when": "port_in:[80,443,8080,8443]",
+                "evidence": "Web service port observed (+2)"
+            },
+            {
+                "id": "remote_admin_ports",
+                "enabled": true,
+                "tag": "externally_facing",
+                "weight": 2,
+                "when": "port_in:[22,3389,5900]",
+                "evidence": "Remote administration port observed (+2)"
+            },
+            {
+                "id": "edge_hostname_hint",
+                "enabled": true,
+                "tag": "externally_facing",
+                "weight": 1,
+                "when": "hostname_contains_any:[dmz,edge,gw,gateway,bastion,vpn,proxy,lb,loadbalancer,public]",
+                "evidence": "Hostname hint suggests edge exposure (+1)"
+            }
+        ]
+    }
+}

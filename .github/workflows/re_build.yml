@@ -67,7 +67,7 @@ jobs:
 
             - name: Build Single File Binary
               run: |
-                pyinstaller --name vpp --onefile src/vulnparse_pin/__main__.py
+                pyinstaller --name vpp --onefile --collect-data vulnparse_pin src/vulnparse_pin/main.py
 
             - name: Rename binary with OS/ARCH (Linux)
               if: runner.os != 'Windows'
@@ -89,3 +89,4 @@ jobs:
               with:
                 name: binary-${{ matrix.os }}
                 path: 'dist/*'
+                if-no-files-found: error

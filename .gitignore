@@ -22,3 +22,5 @@ logs/
 !.github/workflows/*.yml
 !.github/workflows/*.yaml
 !sbom*
+!src/vulnparse_pin/resources/*
+!src/vulnparse_pin/core/schemas/*

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnparse-pin.local/schemas/scanResult.schema.json",
+  "title": "VulnParse-Pin ScanResult",
+  "type": "object",
+  "required": ["scan_metadata", "assets", "derived"],
+  "additionalProperties": false,
+  "properties": {
+    "scan_metadata": {
+      "type": "object",
+      "required": ["source", "scan_date", "asset_count", "vulnerability_count"],
+      "additionalProperties": true,
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "scan_date": {"type": ["string", "number"]},
+        "asset_count": {"type": "integer", "minimum": 0},
+        "vulnerability_count": {"type": "integer", "minimum": 0},
+        "parsed_at": {"type": ["string", "null"]},
+        "source_file": {"type": ["string", "null"]},
+        "scan_name": {"type": ["string", "null"]}
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hostname", "ip_address", "findings"],
+        "additionalProperties": true,
+        "properties": {
+          "asset_id": {"type": ["string", "null"]},
+          "hostname": {"type": "string", "minLength": 1},
+          "ip_address": {"type": "string"},
+          "criticality": {"type": ["string", "null"]},
+          "avg_risk_score": {"type": ["number", "null"]},
+          "os": {"type": ["string", "null"]},
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["finding_id", "vuln_id", "title", "description", "severity", "cves"],
+              "additionalProperties": true,
+              "properties": {
+                "finding_id": {"type": "string", "minLength": 1},
+                "vuln_id": {"type": "string", "minLength": 1},
+                "title": {"type": "string", "minLength": 1},
+                "description": {"type": "string"},
+                "severity": {"type": "string"},
+                "cves": {
+                  "type": "array",
+                  "items": {"type": "string"}
+                },
+                "cvss_score": {"type": ["number", "null"]},
+                "epss_score": {"type": ["number", "null"]},
+                "cisa_kev": {"type": ["boolean", "null"]},
+                "cvss_vector": {"type": ["string", "null"]},
+                "exploit_available": {"type": ["boolean", "null"]},
+                "affected_port": {"type": ["integer", "null"]},
+                "protocol": {"type": ["string", "null"]},
+                "detection_plugin": {"type": ["string", "null"]},
+                "plugin_output": {"type": ["string", "null"]},
+                "solution": {"type": ["string", "null"]},
+                "references": {"type": ["array", "null"]},
+                "triage_priority": {"type": ["string", "null"]},
+                "enriched": {"type": ["boolean", "null"]},
+                "asset_id": {"type": ["string", "null"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "derived": {
+      "type": "object",
+      "required": ["passes"],
+      "additionalProperties": true,
+      "properties": {
+        "passes": {"type": "object"}
+      }
+    }
+  }
+}

@@ -66,8 +66,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM from Python reqs
         run: |
-          mkdir -p dist/sbom
-          cyclonedx-py environment > dist/sbom/vulnparse-pin-sbom.json
+          cyclonedx-py environment > dist/vulnparse-pin-sbom.json
 
       - name: Install GPG
         run: |
@@ -103,7 +102,6 @@ jobs:
           make_latest: "true"
           files: |
             dist/*
-            dist/sbom/vulnparse-pin-sbom.json
         
   publish-pypi:
     name: Publish python distributions to pypi

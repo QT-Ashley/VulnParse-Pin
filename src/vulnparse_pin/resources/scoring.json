@@ -1,0 +1,31 @@
+{
+    "version": "v1",
+    "epss": {
+        "scale": 10.0,
+        "min": 0.0,
+        "max": 1.0
+    },
+    "evidence_points": {
+        "kev": 2.5,
+        "exploit": 5.0
+    },
+    "bands": {
+        "critical": 13.35,
+        "high": 10.5,
+        "medium": 7.0,
+        "low": 4.0
+    },
+    "aggregation": {
+        "asset_score": "max"
+    },
+    "weights": {
+        "epss_high": 0.6,
+        "epss_medium": 0.4,
+        "kev": 1.0,
+        "exploit": 1.0
+    },
+    "risk_ceiling": {
+        "max_raw_risk": 15.0,
+        "max_operational_risk": 10.0
+    }
+}
