@@ -7,7 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [1.0.0-rc4] - 2026-03-15
+
+### RC4 Added
+
+- GitHub Pages documentation deployment workflow.
+- GitHub Pages documentation updates and project favicon.
+
+### RC4 Changed
+
+- CLI argument wording and UX polish for clarity.
+
+## [1.0.0-rc3] - 2026-03-13
+
+### RC3 Fixed
+
+- Packaging resource inclusion for release distributions.
+
+## [1.0.0-rc2] - 2026-03-13
+
+### RC2 Changed
+
+- Release workflow and CI configuration fixes for RC publishing.
+- Versioning/release metadata updates for the RC pipeline.
+
+## [1.0.0-rc1] - 2026-03-11
+
+### RC1 Added
+
 - JSON Schema validation support for normalized `ScanResult` data.
 - Canonical `asset_id` support on `Asset` objects.
 - Post-normalization default schema validation.
@@ -16,27 +43,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Packaging metadata improvements in `pyproject.toml`.
 - `CHANGELOG.md` for release tracking.
 
-### Changed
+### RC1 Changed
+
 - Refactored application startup and orchestration into focused modules under `vulnparse_pin.app`.
 - Refactored CLI argument handling into `vulnparse_pin.cli.args`.
 - Refactored TopN worker logic into a dedicated module without changing public contracts.
 - Updated downstream processing to treat `Asset.asset_id` as the canonical source of truth.
 - Improved parser-selection tie-breaking in `SchemaDetector` to honor confidence, priority, then parser name.
 
-### Fixed
+### RC1 Fixed
+
 - Corrected XML parser exception handling to use the proper XML `ParseError`.
 - Removed unintended dependency path caused by incorrect parse exception usage.
 - Fixed asset-to-finding ID consistency issues in parser outputs.
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-## [1.0.0rc1] - 2026-03-11
-
-### Added
-- Initial release candidate for `VulnParse-Pin`.
-- Support for parsing Nessus and OpenVAS scan formats.
-- Enrichment support for NVD, KEV, EPSS, and exploit intelligence inputs.
-- Scoring, TopN triage, summary generation, CSV/JSON/Markdown reporting, and schema-driven output support.
-
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.0rc1...HEAD
-[1.0.0rc1]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0rc1
+[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.0-rc4...HEAD
+[1.0.0-rc4]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc4
+[1.0.0-rc3]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc3
+[1.0.0-rc2]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc2
+[1.0.0-rc1]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc1
