@@ -1,5 +1,5 @@
 site_name: VulnParse-Pin Documentation
-site_url: https://docs.vulnparse-pin.com/
+site_url: https://qt-ashley.github.io/VulnParse-Pin/
 docs_dir: .
 site_dir: ../site
 watch:
