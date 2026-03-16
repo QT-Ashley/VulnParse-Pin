@@ -35,9 +35,32 @@ Normalize • Enrich • Prioritize • Decide
 
 # Introduction
 
-VulnParse-Pin converts noisy scanner output into a prioritized, context-rich vulnerability pipeline focused on real-world risk.
+VulnParse-Pin transforms vulnerability scanner exports into an
+exploit-focused remediation queue.
 
-By enriching findings with authoritative enrichment sources, and applying a configurable scoring model that emphasizes known-exploited vulnerabilities, VulnParse-Pin helps security teams cut through the noise and focus on what matters most.
+Instead of sorting thousands of findings by severity alone,
+VulnParse-Pin enriches results with KEV, EPSS, exploit intelligence,
+and configurable scoring policies to prioritize vulnerabilities
+that are most likely to be exploited in the real world.
+
+
+
+## Try It In 60 Seconds
+
+```bash
+pip install vulnparse-pin
+vpp -f [scan_file] -kev -epss -o prioritized_findings.json
+```
+
+What you get:
+
+- Enriched findings with exploit context and scoring metadata
+- Prioritized outputs for technical and executive review
+- JSON, CSV, and Markdown reporting options
+
+![Results Snippet](docs/img/results_snippet.JPG)
+
+See the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes.md) guide for more details and options.
 
 ## Why Use VulnParse-Pin?
 
@@ -58,24 +81,6 @@ By enriching findings with authoritative enrichment sources, and applying a conf
 | Analysts spend cycles justifying triage order | Explainable scoring artifacts support transparent decisions |
 | Fragmented outputs across tools | Consistent JSON, CSV, and Markdown outputs for technical and executive audiences |
 
-## Try It In 60 Seconds
-
-```bash
-pip install vulnparse-pin
-vpp -f [scan_file] -kev -epss -o prioritized_findings.json
-```
-
-What you get:
-
-- Enriched findings with exploit context and scoring metadata
-- Prioritized outputs for technical and executive review
-- JSON, CSV, and Markdown reporting options
-
-![Results Snippet](docs/img/results_snippet.JPG)
-
-See the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes.md) guide for more details and options.
-
-
 ## Why VulnParse-Pin Exists
 
 VulnParse-Pin was created to address the challenges of managing and prioritizing vulnerabilities in complex environments. The problem of vulnerability overload is well-known: organizations are inundated with thousands of findings from various scanners and feeds, making it difficult to identify which vulnerabilities pose the greatest risk and require immediate attention.
@@ -87,8 +92,6 @@ Research from FIRST EPSS and CISA KEV consistently shows that a **small** percen
 See [Why VulnParse-Pin Exists](docs/Why%20VulnParse-Pin%20Exists.md) for a deeper dive into the motivation and design principles behind VulnParse-Pin.
 
 ## Philosophy and Principles
-
-- **Scanner-Agnostic**: VulnParse-Pin is designed to work with any vulnerability scanner or feed, allowing organizations to leverage their existing tools without being locked into a specific ecosystem.
 
 - **Context-Driven Prioritization**: Prioritization is based on a comprehensive understanding of the vulnerability landscape, including exploitability, impact, and organizational relevance. This is determined by user-configurable policies that can be tuned to align with the organization's risk tolerance and priorities.
 
@@ -126,11 +129,7 @@ See the [Overview](docs/Overview.md) documentation for more details on use cases
 
 - **Pass Phase Pipelines**: Modular processing stages for enrichment, scoring, and prioritization that can be customized or extended.
 
-- **Robust Security Posture**: Developed with SSDLC principles and security best practices, including regular audits, robust logging, I/O file handling, feed tamper detection, and an included SBOM for supply chain transparency.
-
 - **Executive and Technical Reporting**: Provides both high-level summaries for executives and detailed insights for technical teams, with explainable scoring and prioritization artifacts.
-
-- **Streaming Processing**: Capable of handling large volumes of vulnerability data efficiently through streaming and batch processing modes.
 
 - **Offline Mode and Local Feeds**: Supports offline operation and local feed management for environments with limited connectivity or strict data handling requirements.
 
@@ -218,6 +217,9 @@ For more detailed information on how to use, configure, and extend VulnParse-Pin
 - [Configs](docs/Configs.md)
 - [Benchmarks](docs/Benchmarks.md)
 - [Licensing](docs/Licensing.md)
+- [VulnParse-Pin Wiki Docs](https://qt-ashley.github.io/VulnParse-Pin/)
+
+Check out the [CHANGELOG](CHANGELOG.md) for a detailed history of changes and updates.
 
 ## License
 
