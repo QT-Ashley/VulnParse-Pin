@@ -162,7 +162,7 @@ or
 install from source:
 
 ```bash
-git clone https://github.com/VulnParse-Pin/VulnParse-Pin.git
+git clone https://github.com/QT-Ashley/VulnParse-Pin.git
 cd VulnParse-Pin
 pip install -e .
 ```
