@@ -172,3 +172,27 @@ def test_csv_export_handles_none_scores_gracefully(tmp_path):
     # verify sentinel values are used (fallback -1.0 for None scores)
     lines = text.split("\n")
     assert len(lines) > 1, "CSV should have header and data rows"
+
+    # parse header and data row for F_NOCVE
+    header = lines[0].split(",")
+    # find the first non-empty data line that corresponds to F_NOCVE
+    data_lines = [line for line in lines[1:] if line.strip()]
+    fnocve_line = next((line for line in data_lines if "F_NOCVE" in line), None)
+    assert fnocve_line is not None, "Data row for F_NOCVE should exist"
+    fnocve_cols = fnocve_line.split(",")
+
+    # identify numeric score/risk-related columns by header name
+    score_indices = [
+        idx
+        for idx, col_name in enumerate(header)
+        if any(token in col_name.lower() for token in ("score", "risk", "epss", "kev", "exploit"))
+    ]
+    # ensure we actually detected some score-related columns
+    assert score_indices, "Expected at least one score/risk column in CSV header"
+
+    # all relevant numeric columns for F_NOCVE (which has no scores) should use the sentinel -1.0
+    for idx in score_indices:
+        assert fnocve_cols[idx] == "-1.0", (
+            f"Expected sentinel -1.0 for column '{header[idx]}' "
+            f"when scores are missing for F_NOCVE, got {fnocve_cols[idx]!r}"
+        )
