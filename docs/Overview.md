@@ -22,6 +22,24 @@ Security teams often face:
 
 VulnParse-Pin addresses this by standardizing data, centralizing enrichment, and producing reproducible risk outputs with clear provenance.
 
+## Philosophy and Principles
+
+- **Context-Driven Prioritization**: Prioritization is based on a comprehensive understanding of the vulnerability landscape, including exploitability, impact, and organizational relevance. This is determined by user-configurable policies that can be tuned to align with the organization's risk tolerance and priorities.
+
+- **Explainability**: VulnParse-Pin generates explainable artifacts that detail the factors contributing to each vulnerability's score and priority, enabling analysts to understand and trust the results.
+
+- **Open Source**: VulnParse-Pin is fully open source under the AGPLv3+ license, fostering transparency and community collaboration.
+
+- **SSDLC Development**: VulnParse-Pin is developed with security best practices in mind and focuses on Secure-By-Design principles first and foremost.
+
+- **Extensibility**: The architecture is designed to be modular and extensible, allowing for easy integration with existing tools and workflows, as well as customization to meet specific organizational needs.
+
+- **Centralized Run-Context**: All processing stages have access to a shared context that allows for dynamic decision-making and cross-pass communication, enabling more sophisticated prioritization logic.
+
+- **Stable Contracts and APIs**: VulnParse-Pin maintains stable input/output contracts and APIs to ensure that integrations and customizations remain functional across updates, fostering long-term adoption and community contributions.
+
+- **Comprehensive Documentation**: Clear and detailed documentation is provided to help users understand how to use, configure, and extend VulnParse-Pin effectively, as well as to encourage community contributions and collaboration.
+
 ## Who it is for
 
 - SOC analysts and vulnerability management teams

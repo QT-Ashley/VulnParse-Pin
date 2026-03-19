@@ -27,10 +27,10 @@ Then from your Python environment:
 pip install -e .
 ```
 
-Or install dependencies directly if you are running from source:
+Or install from wheel if downloading a release artifact:
 
 ```bash
-pip install -r requirements.txt
+pip install vulnparse_pin-1.0.0-py3-none-any.whl
 ```
 
 ## 2) Run your first scan parse

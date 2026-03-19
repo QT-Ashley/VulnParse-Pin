@@ -22,6 +22,8 @@ _DANGEROUS_PREFIXES = ("=", "-", "+", "@")
 
 _LEADING_STRIP_RE = re.compile(r"^[\s\u00A0\u2000-\u200B\u202F\u205F\u3000]+")
 
+SENTINEL_SCORE = -1.0
+
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0B\x0E-\x1F\x7F]")
 
 def _flatten_exploits(exploit_refs: dict[str, list[dict]]) -> tuple[str, str, str]:
@@ -226,14 +228,18 @@ def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_findin
         inf = {}
 
     # Scoring Overlay
-    raw_score = round(srec.get("raw_score") if isinstance(srec, dict) else -0.0, 4)
-    operational_score = round(srec.get("operational_score") if isinstance(srec, dict) else -0.0, 4)
+    # Coerce None to SENTINEL_SCORE before rounding to prevent TypeError
+    raw_score_val = srec.get("raw_score") if isinstance(srec, dict) else SENTINEL_SCORE
+    raw_score = round(raw_score_val if raw_score_val is not None else SENTINEL_SCORE, 4)
+    operational_score_val = srec.get("operational_score") if isinstance(srec, dict) else SENTINEL_SCORE
+    operational_score = round(operational_score_val if operational_score_val is not None else SENTINEL_SCORE, 4)
     risk_band = srec.get("risk_band") if isinstance(srec, dict) else ""
     score_reason = srec.get("reason") if isinstance(srec, dict) else ""
 
     # TopN Overlay
     topn_asset_rank_v = topn_arec.get("rank") if isinstance(topn_arec, dict) else None
-    topn_asset_score = round(topn_arec.get("score") if isinstance(topn_arec, dict) else -0.0, 4)
+    topn_asset_score_val = topn_arec.get("score") if isinstance(topn_arec, dict) else SENTINEL_SCORE
+    topn_asset_score = round(topn_asset_score_val if topn_asset_score_val is not None else SENTINEL_SCORE, 4)
     topn_finding_rank_v = topn_frec.get("rank") if isinstance(topn_frec, dict) else None
     topn_global_rank_v = global_rank.get(fid) if fid else None
     topn_exposure_score = inf.get("exposure_score")

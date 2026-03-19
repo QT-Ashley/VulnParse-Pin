@@ -49,7 +49,7 @@ that are most likely to be exploited in the real world.
 
 ```bash
 pip install vulnparse-pin
-vpp -f [scan_file] -kev -epss -o prioritized_findings.json
+vpp -f [scan_file] -o <output>.json -oC <output>.csv -oMT <report>.md
 ```
 
 What you get:
@@ -85,29 +85,11 @@ See the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes
 
 VulnParse-Pin was created to address the challenges of managing and prioritizing vulnerabilities in complex environments. The problem of vulnerability overload is well-known: organizations are inundated with thousands of findings from various scanners and feeds, making it difficult to identify which vulnerabilities pose the greatest risk and require immediate attention.
 
-In comes VulnParse-Pin, designed to be a flexible, extensible, and open source solution that can adapt to the unique needs of different organizations. By normalizing and enriching vulnerability data, applying customizable scoring, and providing clear prioritization with explainable artifacts, VulnParse-Pin helps security teams focus their efforts on the most critical issues, ultimately improving their overall security posture.
+VulnParse-Pin is designed to be a flexible, extensible, and open source solution that can adapt to the unique needs of different organizations. By normalizing and enriching vulnerability data, applying customizable scoring, and providing clear prioritization with explainable artifacts, VulnParse-Pin helps security teams focus their efforts on the most critical issues, ultimately improving their overall security posture.
 
-Research from FIRST EPSS and CISA KEV consistently shows that a **small** percentage of vulnerabilities are responsible for the majority of real-world exploitation. VulnParse-Pin's scoring and prioritization engine by default, is built around this insight, ensuring that known-exploited vulnerabilities are given the attention they deserve while ***reducing*** noise from less critical findings.
+- Research from FIRST EPSS and CISA KEV consistently shows that a **small** percentage of vulnerabilities are responsible for the majority of real-world exploitation. VulnParse-Pin's scoring and prioritization engine by default, is built around this insight, ensuring that known-exploited vulnerabilities are given the attention they deserve while ***reducing*** noise from less critical findings.
 
 See [Why VulnParse-Pin Exists](docs/Why%20VulnParse-Pin%20Exists.md) for a deeper dive into the motivation and design principles behind VulnParse-Pin.
-
-## Philosophy and Principles
-
-- **Context-Driven Prioritization**: Prioritization is based on a comprehensive understanding of the vulnerability landscape, including exploitability, impact, and organizational relevance. This is determined by user-configurable policies that can be tuned to align with the organization's risk tolerance and priorities.
-
-- **Explainability**: VulnParse-Pin generates explainable artifacts that detail the factors contributing to each vulnerability's score and priority, enabling analysts to understand and trust the results.
-
-- **Open Source**: VulnParse-Pin is fully open source under the AGPLv3+ license, fostering transparency and community collaboration.
-
-- **SSDLC Development**: VulnParse-Pin is developed with security best practices in mind and focuses on Secure-By-Design principles first and foremost.
-
-- **Extensibility**: The architecture is designed to be modular and extensible, allowing for easy integration with existing tools and workflows, as well as customization to meet specific organizational needs.
-
-- **Centralized Run-Context**: All processing stages have access to a shared context that allows for dynamic decision-making and cross-pass communication, enabling more sophisticated prioritization logic.
-
-- **Stable Contracts and APIs**: VulnParse-Pin maintains stable input/output contracts and APIs to ensure that integrations and customizations remain functional across updates, fostering long-term adoption and community contributions.
-
-- **Comprehensive Documentation**: Clear and detailed documentation is provided to help users understand how to use, configure, and extend VulnParse-Pin effectively, as well as to encourage community contributions and collaboration.
 
 ## Who Is VulnParse-Pin For?
 
@@ -180,10 +162,18 @@ or
 install from source:
 
 ```bash
-git clone https://github.com/VulnParse-Pin/VulnParse-Pin.git
+git clone https://github.com/QT-Ashley/VulnParse-Pin.git
 cd VulnParse-Pin
-pip install -r requirements.txt
+pip install -e .
 ```
+
+Standalone executables with release artifacts are also available on PyPI and GitHub Releases, which include pre-built wheels for easy installation:
+
+```bash
+pip install vulnparse_pin-1.0.0-py3-none-any.whl
+```
+
+Check out [Releases](https://github.com/QT-Ashley/VulnParse-Pin/releases) for the latest release artifacts.
 
 A list of all available command-line options can be found in the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes.md) guide.
 

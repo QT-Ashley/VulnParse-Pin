@@ -1,3 +1,12 @@
+# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
+# Copyright (C) 2026 Quashawn Ashley
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# any later version.
+# See the LICENSE file for full terms.
+
 from __future__ import annotations
 
 import argparse
@@ -79,15 +88,15 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     enrich_group.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.", default=True)
     enrich_group.add_argument("--mode", "-m", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
     enrich_group.add_argument("--refresh-cache", action="store_true", help="Forces cache refesh for feeds.")
-    enrich_group.add_argument("--allow_regen", action="store_true", help="Allows regeneration of cache meta and checksum if missing using 'best-effort'. Default: False", default=False)
+    enrich_group.add_argument("--allow_regen", action="store_true", help="Allows regeneration of cache meta and checksum if missing using 'best-effort'.", default=False)
     enrich_group.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
     output_group.add_argument("--output-csv", "-oC", type=str, metavar="PATH", help="Path to save enriched results in CSV format (optional)")
     output_group.add_argument("--output-md", "-oM", type=str, metavar="PATH", help="Generate executive summary Markdown report")
     output_group.add_argument("--output-md-technical", "-oMT", type=str, metavar="PATH", help="Generate detailed technical Markdown report")
     gen_group.add_argument("--allow-large", "-al", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests. Default: False")
     output_group.add_argument("--no-csv-sanitize", "-noC", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools). Default: Off")
-    file_group.add_argument("--forbid-symlinks-read", "-Sr", action="store_true", default=False, help="Disables following symlinks when resolving paths during read operations.")
-    file_group.add_argument("--forbid-symlinks-write", "-Sw", action="store_true", default=True, help="Disables following symlinks when resolving paths during write operations.")
+    file_group.add_argument("--forbid-symlinks-read", "--forbid-symlinks_read", "-Sr", action="store_true", default=False, help="Disables following symlinks when resolving paths during read operations.")
+    file_group.add_argument("--forbid-symlinks-write", "--forbid-symlinks_write", "-Sw", action="store_true", default=True, help="Disables following symlinks when resolving paths during write operations.")
     file_group.add_argument("--enforce-root-read", "-err", action="store_true", help="Enforces read operations only on files located within the list of acceptable roots.")
     file_group.add_argument("--enforce-root-write", "-erw", action="store_true", default=True, help="Enforces write operations only on files located within the list of acceptable roots.")
     file_group.add_argument("--file-mode", "-fm", type=parse_mode, default=0o700, metavar="0o700", help="POSIX ONLY - Enables file-level chmod permissions on file write operations (octal). Default 0700")
@@ -97,7 +106,7 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     output_group.add_argument("--presentation", action="store_true", help = "Export a presentation-friendly JSON view by overlaying derived pass output onto findings. (Does not change provenence of artifacts in memory)")
     output_group.add_argument("--overlay-mode", choices=["flatten", "namespace"], default="flatten", help="Overlay mode used with --presentation. "
                               "'flatten' injects scoring fields at finding root; "
-                              "'namespace' stores scoring under finding.derived. Default: flatten")
+                              "'namespace' stores scoring under finding.derived.")
 
     args = parser.parse_args(argv)
 

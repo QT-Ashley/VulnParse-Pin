@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Natural Language :: English",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Topic :: Security",
@@ -37,10 +37,10 @@ dev = ["pytest>=9.0.2"]
 sbom = ["cyclonedx-bom>=7.2.2"]
 
 [project.urls]
-Homepage = "https://github.com/VulnParse-Pin/VulnParse-Pin"
-Repository = "https://github.com/VulnParse-Pin/VulnParse-Pin"
-Issues = "https://github.com/VulnParse-Pin/VulnParse-Pin/issues"
-Documentation = "https://github.com/VulnParse-Pin/VulnParse-Pin/blob/main/README.md"
+Homepage = "https://github.com/QT-Ashley/VulnParse-Pin"
+Repository = "https://github.com/QT-Ashley/VulnParse-Pin"
+Issues = "https://github.com/QT-Ashley/VulnParse-Pin/issues"
+Documentation = "https://github.com/QT-Ashley/VulnParse-Pin/blob/main/README.md"
 
 [tool.setuptools]
 license-files = ["LICENSE"]

@@ -119,13 +119,7 @@ class TestNessusXMLRealWorld:
         scan = _run_full_pipeline(scan, ctx)
 
         csv_out = tmp_path / "real_nessus_output.csv"
-        try:
-            export_to_csv(ctx, scan, csv_path=csv_out)
-        except TypeError as e:
-            # skip known None-rounding issue
-            if "round" in str(e):
-                pytest.skip("CSV exporter has known None-rounding issue")
-            raise
+        export_to_csv(ctx, scan, csv_path=csv_out)
 
         if csv_out.exists():
             text = csv_out.read_text(encoding="utf-8")
@@ -181,12 +175,7 @@ class TestOpenVASXMLRealWorld:
         scan = _run_full_pipeline(scan, ctx)
 
         csv_out = tmp_path / "real_openvas_output.csv"
-        try:
-            export_to_csv(ctx, scan, csv_path=csv_out)
-        except TypeError as e:
-            if "round" in str(e):
-                pytest.skip("CSV exporter has known None-rounding issue")
-            raise
+        export_to_csv(ctx, scan, csv_path=csv_out)
 
         if csv_out.exists():
             text = csv_out.read_text(encoding="utf-8")
@@ -315,13 +304,7 @@ class TestEdgeCases:
 
         # export to CSV (should not crash even on large data)
         csv_out = tmp_path / "large_export.csv"
-        try:
-            export_to_csv(ctx, scan, csv_path=csv_out)
-        except TypeError as e:
-            # known issue: CSV exporter can fail on None scores; skip for now
-            if "round" in str(e):
-                pytest.skip("CSV exporter has known None-rounding issue")
-            raise
+        export_to_csv(ctx, scan, csv_path=csv_out)
 
         if csv_out.exists():
             lines = csv_out.read_text(encoding="utf-8").split("\n")
@@ -335,13 +318,7 @@ class TestEdgeCases:
         scan = _run_full_pipeline(scan, ctx)
 
         csv_out = tmp_path / "sanitized.csv"
-        try:
-            export_to_csv(ctx, scan, csv_path=csv_out, csv_sanitization=True)
-        except TypeError as e:
-            # skip if known issue
-            if "round" in str(e):
-                pytest.skip("CSV exporter has known None-rounding issue")
-            raise
+        export_to_csv(ctx, scan, csv_path=csv_out, csv_sanitization=True)
 
         if csv_out.exists():
             text = csv_out.read_text(encoding="utf-8")
