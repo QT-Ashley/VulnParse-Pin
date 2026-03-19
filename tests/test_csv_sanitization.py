@@ -119,3 +119,56 @@ def test_csv_export_includes_derived_fields_when_present(tmp_path):
     text = csvfile.read_text(encoding="utf-8")
     assert "topn_asset_rank" in text
     assert "topn_finding_rank" in text
+
+
+def test_csv_export_handles_none_scores_gracefully(tmp_path):
+    """CSV exporter should not crash with TypeError when findings have None/missing scores."""
+    from vulnparse_pin.utils.csv_exporter import export_to_csv
+    from datetime import datetime
+    from vulnparse_pin.core.classes.dataclass import ScanResult, ScanMetaData, Asset, Finding, RunContext, AppPaths
+    from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+    from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
+    from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
+    from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
+    from vulnparse_pin.core.classes.pass_classes import PassRunner
+    from vulnparse_pin.utils.logger import LoggerWrapper
+    from vulnparse_pin.io.pfhandler import PermFileHandler
+
+    # build context with a finding that will have no scores after enrichment
+    logger = LoggerWrapper(log_file=str(tmp_path / "test.log"))
+    pfh = PermFileHandler(logger, root_dir=tmp_path, allowed_roots=[tmp_path])
+    ctx = RunContext(paths=AppPaths.resolve(portable=True), pfh=pfh, logger=logger)
+    meta = ScanMetaData(source="unit", scan_date=datetime.now(), asset_count=0, vulnerability_count=0)
+    
+    # finding with no CVE (will have no score)
+    no_cve_finding = Finding(
+        finding_id="F_NOCVE", vuln_id="V_NOCVE", title="No CVE", 
+        description="Finding without CVE", severity="Low", cves=[], asset_id="A"
+    )
+    asset = Asset(hostname="A", ip_address="1.2.3.4", findings=[no_cve_finding])
+    scan = ScanResult(scan_metadata=meta, assets=[asset])
+
+    # run passes; finding may have None score if enrichment doesn't cover it
+    policy = ScoringPolicyV1(
+        epss_scale=1, epss_min=0, epss_max=1,
+        kev_evd=1, exploit_evd=1,
+        band_critical=10, band_high=7, band_medium=4, band_low=1,
+        asset_aggregation="max", w_epss_high=1, w_epss_medium=1, w_kev=1, w_exploit=1,
+        max_raw_risk=10, max_op_risk=10,
+    )
+    scoring = ScoringPass(policy)
+    topn = TopNPass(_safe_fallback_config())
+    runner = PassRunner([scoring, topn])
+    scan = runner.run_all(ctx, scan)
+
+    # export; should NOT raise TypeError even if scores are None
+    csvfile = tmp_path / "out_with_none_scores.csv"
+    export_to_csv(ctx, scan, csv_path=csvfile)
+
+    # verify export succeeded and contains data
+    assert csvfile.exists()
+    text = csvfile.read_text(encoding="utf-8")
+    assert "F_NOCVE" in text, "Finding ID should be in CSV even with None scores"
+    # verify sentinel values are used (fallback -1.0 for None scores)
+    lines = text.split("\n")
+    assert len(lines) > 1, "CSV should have header and data rows"

@@ -17,17 +17,19 @@ Registered parser specs are defined in `src/vulnparse_pin/parsers/__init__.py`.
 
 ## Supported parser classes
 
-### Production-ready
+### Production-ready (v1.0 stable)
 
-- `NessusXMLParser` (`src/vulnparse_pin/parsers/nessusXML_parser.py`)
-- `OpenVASXMLParser` (`src/vulnparse_pin/parsers/openvasXML_parser.py`)
+- `NessusXMLParser` (`src/vulnparse_pin/parsers/nessusXML_parser.py`) — Full v1.0 API contract
+- `OpenVASXMLParser` (`src/vulnparse_pin/parsers/openvasXML_parser.py`) — Full v1.0 API contract
 
-### Experimental
+These parsers have been tested extensively with real-world fixtures and are recommended for production workflows. Their input/output contracts are stable and will not change without a major version bump.
 
-- `NessusParser` JSON (`src/vulnparse_pin/parsers/nessus_parser.py`)
-- `OpenVASParser` JSON (`src/vulnparse_pin/parsers/openvas_parser.py`)
+### Experimental (subject to change)
 
-The JSON parsers are marked experimental and are not the default path for production workflows.
+- `NessusParser` JSON (`src/vulnparse_pin/parsers/nessus_parser.py`) — Fallback path, not default
+- `OpenVASParser` JSON (`src/vulnparse_pin/parsers/openvas_parser.py`) — Fallback path, not default
+
+The JSON parsers are marked experimental and are not the default path for production workflows. Their behavior and output format may evolve in future releases, and should not be relied upon for long-term integrations. Use XML formats where possible for v1.0.
 
 ## Base parser utilities
 
@@ -75,7 +77,9 @@ You may see sentinel values such as:
 - `SENTINEL:Vector_Unavailable`
 
 These are intentional provenance markers and help downstream tooling distinguish “missing” from empty values.
+### CSV export robustness (v1.0)
 
+When findings lack numeric scores (e.g., findings without CVEs or in offline mode with limited enrichment), the CSV exporter uses a sentinel value (-1.0) to represent missing scores. This ensures exports complete successfully even with incomplete enrichment. See [Known Limitations](Known%20Limitations.md) for details on enrichment coverage.
 ## Edge-case resilience
 
 Tests cover malformed or sparse scanner output, including:

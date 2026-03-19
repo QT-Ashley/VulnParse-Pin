@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `ROADMAP.md` with planned milestones for v1.1.0, v1.2.0, and v1.3.0-1.5.0+.
+
+### Planned
+
+- v1.1.0 focus: output schema validation hardening, execution verification, demo dataset UX, scoring/inference optimization, report polish, and docs improvements.
+- v1.2.0 focus: decision ledger and explainability artifacts, expanded scanner/intelligence coverage, aggregated CVE scoring, and integrations.
+- v1.3.0-1.5.0+ focus: SQLite-backed historical tracking and additional post-1.2 capabilities.
+
+## [1.0.0] - 2026-03-18
+
+### Added
+
+- CSV export sentinel value (`-1.0`) for findings with no numeric enrichment score, preventing `TypeError` on `round(None)`.
+- Five TopN pass contract tests covering asset exhaustiveness, finding completeness, no cross-asset leakage, deterministic index sorting, and score-rank consistency.
+- CLI aliases for `--forbid-symlinks_read` and `--forbid-symlinks_write` (underscore variants) alongside the canonical hyphenated forms.
+- Stability tier documentation in `docs/Detection and Parsing.md` (XML paths stable, JSON paths experimental).
+- Expanded deferred-scope list in `docs/Known Limitations.md` (Shodan enrichment, CVSS v2, extended enrichment, strict schema validation, JSON parser parity).
+
+### Fixed
+
+- CSV exporter no longer raises `TypeError` when exporting findings that have no CVE and therefore no numeric enrichment scores.
+- Editable install no longer shadowed by stale `rc1` physical package copy in site-packages.
+
+### Changed
+
+- Removed two `TODO: VERIFY` uncertainty markers from `topn_pass.py` after contract tests confirmed correct behavior.
+- `pyproject.toml` classifier updated from `Development Status :: 4 - Beta` to `Development Status :: 5 - Production/Stable`.
+
 ## [1.0.0-rc4] - 2026-03-15
 
 ### RC4 Added
@@ -59,7 +89,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.0-rc4...HEAD
+[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0
 [1.0.0-rc4]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc4
 [1.0.0-rc3]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc3
 [1.0.0-rc2]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc2

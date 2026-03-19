@@ -97,7 +97,7 @@ class TopNPass(Pass):
         else:
             # 2 Compute inference per asset
             inference_by_asset: Dict[str, ExposureInference] = {}
-            for asset_id, _ in asset_to_findings.items(): #TODO: VERIFY
+            for asset_id, _ in asset_to_findings.items():
                 obs = self._collect_asset_observation(scan, asset_id, finding_ids=asset_to_findings[asset_id])
                 if obs is None:
                     continue
@@ -415,7 +415,7 @@ class TopNPass(Pass):
             for finding in asset.findings:
                 maps.setdefault(aid, []).append(finding.finding_id)
 
-        for aid, _ in maps.items(): # TODO:VERIFY
+        for aid, _ in maps.items():
             maps[aid].sort()
         return maps
 

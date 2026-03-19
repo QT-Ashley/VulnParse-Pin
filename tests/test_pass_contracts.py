@@ -228,3 +228,140 @@ def test_downstream_uses_asset_level_asset_id(tmp_path):
     assert "ASSET-LEGACY" not in scoring.get("asset_scores", {})
     assert "ASSET-CANONICAL" in topn.get("findings_by_asset", {})
     assert "ASSET-LEGACY" not in topn.get("findings_by_asset", {})
+
+
+# ---------- TopN mapping contract tests (Phase 2 verification) ----------
+
+def test_topn_asset_exhaustiveness(tmp_path):
+    """All input assets must appear in TopN output."""
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+    
+    # ensure asset_id is set on the sample asset
+    scan.assets[0].asset_id = "A1"
+    
+    # create multi-asset dataset
+    f3 = Finding(
+        finding_id="F3",
+        vuln_id="V3",
+        title="T3",
+        description="D3",
+        severity="Medium",
+        cves=[],
+        cvss_score=6.0,
+        epss_score=0.5,
+        asset_id="A2",
+    )
+    asset2 = Asset(hostname="A2", ip_address="2.2.2.2", findings=[f3])
+    asset2.asset_id = "A2"
+    scan.assets.append(asset2)
+    
+    scan = _run_full_pipeline(ctx, scan)
+    
+    input_asset_ids = {a.asset_id for a in scan.assets if a.asset_id}
+    output_findings_by_asset = scan.derived.passes["TopN@1.0"].data.get("findings_by_asset", {})
+    output_asset_ids = set(output_findings_by_asset.keys())
+    
+    assert input_asset_ids == output_asset_ids, "All input assets must be in TopN output"
+
+
+def test_topn_finding_completeness_single_asset(tmp_path):
+    """All findings for an asset must be accounted for in TopN output."""
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+    
+    # ensure asset_id is set
+    scan.assets[0].asset_id = "A1"
+    
+    scan = _run_full_pipeline(ctx, scan)
+    
+    input_findings_f1 = {f.finding_id for f in scan.assets[0].findings}
+    output_findings = scan.derived.passes["TopN@1.0"].data.get("findings_by_asset", {}).get("A1", [])
+    output_findings_ids = {f.get("finding_id") for f in output_findings}
+    
+    assert input_findings_f1 == output_findings_ids, "All findings must appear in TopN output"
+
+
+def test_topn_no_cross_asset_leakage(tmp_path):
+    """Findings from one asset must never appear under another asset's TopN list."""
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+    
+    # ensure asset_id is set on the sample asset
+    scan.assets[0].asset_id = "A1"
+    
+    # add second asset
+    f3 = Finding(
+        finding_id="F3",
+        vuln_id="V3",
+        title="T3",
+        description="D3",
+        severity="Medium",
+        cves=[],
+        cvss_score=6.0,
+        epss_score=0.5,
+        asset_id="A2",
+    )
+    asset2 = Asset(hostname="A2", ip_address="2.2.2.2", findings=[f3])
+    asset2.asset_id = "A2"
+    scan.assets.append(asset2)
+    
+    scan = _run_full_pipeline(ctx, scan)
+    
+    truth_by_asset = {a.asset_id: {f.finding_id for f in a.findings} for a in scan.assets if a.asset_id}
+    output_findings_by_asset = scan.derived.passes["TopN@1.0"].data.get("findings_by_asset", {})
+    
+    for asset_id, output_findings in output_findings_by_asset.items():
+        output_fids = {f.get("finding_id") for f in output_findings}
+        expected_fids = truth_by_asset.get(asset_id, set())
+        
+        assert output_fids == expected_fids, f"Asset {asset_id} has finding leakage or missing findings"
+
+
+def test_topn_index_sorting_determinism(tmp_path):
+    """Finding indices must sort consistently across runs."""
+    ctx = make_ctx(tmp_path)
+    base_scan = make_sample_scan()
+    
+    # ensure asset_id is set
+    base_scan.assets[0].asset_id = "A1"
+    
+    scoring = ScoringPass(get_policy())
+    topn = TopNPass(_safe_fallback_config())
+    runner = PassRunner([scoring, topn])
+    
+    scan1 = copy.deepcopy(base_scan)
+    scan2 = copy.deepcopy(base_scan)
+    
+    out1 = runner.run_all(ctx, scan1)
+    out2 = runner.run_all(ctx, scan2)
+    
+    data1 = out1.derived.passes["TopN@1.0"].data.get("findings_by_asset", {})
+    data2 = out2.derived.passes["TopN@1.0"].data.get("findings_by_asset", {})
+    
+    # check that the same asset ranks are preserved
+    for asset_id in data1.keys():
+        list1_ids = [f.get("finding_id") for f in data1[asset_id]]
+        list2_ids = [f.get("finding_id") for f in data2[asset_id]]
+        assert list1_ids == list2_ids, f"Asset {asset_id} finding order must be deterministic"
+
+
+def test_topn_score_rank_consistency(tmp_path):
+    """Higher scores should correlate with lower ranks (rank 1 = highest priority)."""
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+    
+    # ensure asset_id is set
+    scan.assets[0].asset_id = "A1"
+    
+    scan = _run_full_pipeline(ctx, scan)
+    
+    output_findings = scan.derived.passes["TopN@1.0"].data.get("findings_by_asset", {}).get("A1", [])
+    
+    # since F2 has higher EPSS/CVSS than F1, it should rank higher (lower rank number)
+    f1_rec = next((f for f in output_findings if f.get("finding_id") == "F1"), None)
+    f2_rec = next((f for f in output_findings if f.get("finding_id") == "F2"), None)
+    
+    assert f1_rec and f2_rec, "Both findings should appear in output"
+    assert f2_rec.get("rank", float('inf')) < f1_rec.get("rank", float('inf')), \
+        "Finding with higher EPSS/CVSS should have lower (better) rank"

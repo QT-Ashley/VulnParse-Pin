@@ -226,14 +226,18 @@ def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_findin
         inf = {}
 
     # Scoring Overlay
-    raw_score = round(srec.get("raw_score") if isinstance(srec, dict) else -0.0, 4)
-    operational_score = round(srec.get("operational_score") if isinstance(srec, dict) else -0.0, 4)
+    # Coerce None to -1.0 (sentinel) before rounding to prevent TypeError
+    raw_score_val = srec.get("raw_score") if isinstance(srec, dict) else -0.0
+    raw_score = round(raw_score_val if raw_score_val is not None else -1.0, 4)
+    operational_score_val = srec.get("operational_score") if isinstance(srec, dict) else -0.0
+    operational_score = round(operational_score_val if operational_score_val is not None else -1.0, 4)
     risk_band = srec.get("risk_band") if isinstance(srec, dict) else ""
     score_reason = srec.get("reason") if isinstance(srec, dict) else ""
 
     # TopN Overlay
     topn_asset_rank_v = topn_arec.get("rank") if isinstance(topn_arec, dict) else None
-    topn_asset_score = round(topn_arec.get("score") if isinstance(topn_arec, dict) else -0.0, 4)
+    topn_asset_score_val = topn_arec.get("score") if isinstance(topn_arec, dict) else -0.0
+    topn_asset_score = round(topn_asset_score_val if topn_asset_score_val is not None else -1.0, 4)
     topn_finding_rank_v = topn_frec.get("rank") if isinstance(topn_frec, dict) else None
     topn_global_rank_v = global_rank.get(fid) if fid else None
     topn_exposure_score = inf.get("exposure_score")
