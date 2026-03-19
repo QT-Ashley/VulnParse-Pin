@@ -306,7 +306,7 @@ def test_topn_no_cross_asset_leakage(tmp_path):
     asset2.asset_id = "A2"
     scan.assets.append(asset2)
     
-    scan = _run_full_pipeline(ctx, scan)
+    scan = _run_full_pipeline(scan, ctx)
     
     truth_by_asset = {a.asset_id: {f.finding_id for f in a.findings} for a in scan.assets if a.asset_id}
     output_findings_by_asset = scan.derived.passes["TopN@1.0"].data.get("findings_by_asset", {})
