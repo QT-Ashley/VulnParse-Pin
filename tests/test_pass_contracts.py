@@ -256,7 +256,7 @@ def test_topn_asset_exhaustiveness(tmp_path):
     asset2.asset_id = "A2"
     scan.assets.append(asset2)
     
-    scan = _run_full_pipeline(ctx, scan)
+    scan = _run_full_pipeline(scan, ctx)
     
     input_asset_ids = {a.asset_id for a in scan.assets if a.asset_id}
     output_findings_by_asset = scan.derived.passes["TopN@1.0"].data.get("findings_by_asset", {})
@@ -273,7 +273,7 @@ def test_topn_finding_completeness_single_asset(tmp_path):
     # ensure asset_id is set
     scan.assets[0].asset_id = "A1"
     
-    scan = _run_full_pipeline(ctx, scan)
+    scan = _run_full_pipeline(scan, ctx)
     
     input_findings_f1 = {f.finding_id for f in scan.assets[0].findings}
     output_findings = scan.derived.passes["TopN@1.0"].data.get("findings_by_asset", {}).get("A1", [])
