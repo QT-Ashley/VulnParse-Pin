@@ -83,7 +83,7 @@ See the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes
 
 ## Why VulnParse-Pin Exists
 
-VulnParse-Pin was created to address the challenges of managing and prioritizing vulnerabilities in complex environments. The problem of vulnerability overload is well-known: `organizations are inundated with thousands of findings from various scanners and feeds, making it difficult to identify which vulnerabilities pose the greatest risk and require immediate attention.`
+VulnParse-Pin was created to address the challenges of managing and prioritizing vulnerabilities in complex environments. The problem of vulnerability overload is well-known: organizations are inundated with thousands of findings from various scanners and feeds, making it difficult to identify which vulnerabilities pose the greatest risk and require immediate attention.
 
 VulnParse-Pin is designed to be a flexible, extensible, and open source solution that can adapt to the unique needs of different organizations. By normalizing and enriching vulnerability data, applying customizable scoring, and providing clear prioritization with explainable artifacts, VulnParse-Pin helps security teams focus their efforts on the most critical issues, ultimately improving their overall security posture.
 
