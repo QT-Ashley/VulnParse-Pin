@@ -29,7 +29,7 @@ This document tracks current boundaries and non-goals for VulnParse-Pin v1.0.0.
 
 Current codebase TODO markers include areas such as:
 
-- **Shodan enrichment** (deferred to post-1.0) — placeholder at [src/vulnparse_pin/utils/enricher.py](../src/vulnparse_pin/utils/enricher.py#L33); full implementation planned for v1.1+
+- **Shodan enrichment** (deferred to post-1.0) — placeholder at [src/vulnparse_pin/utils/enricher.py](../src/vulnparse_pin/utils/enricher.py); full implementation planned for v1.1+
 - **Extended enrichment features** — additional threat intel integrations and vendor-specific enrichment modes
 - **Additional strict schema/policy validation pathways** — full contract validation will be tightened in future releases
 - **Further parser parity for non-XML formats** — JSON parsers are experimental; post-1.0 parity improvements planned
