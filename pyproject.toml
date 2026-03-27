@@ -53,6 +53,7 @@ where = ["src"]
 vulnparse_pin = [
     "resources/*.yaml",
     "resources/*.json",
+    "resources/*.nessus",
     "core/schemas/*.json",
 ]
 

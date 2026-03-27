@@ -1,0 +1,35 @@
+site_name: VulnParse-Pin Documentation
+site_url: https://qt-ashley.github.io/VulnParse-Pin/
+docs_dir: ./docs
+site_dir: ../site
+watch:
+  - .
+  - mkdocs.yml
+nav:
+  - VulnParse-Pin: 
+    - Home: docs/index.md
+    - About: docs/Overview.md
+    - Why VulnParse-Pin Exists: docs/Why VulnParse-Pin Exists.md
+    - Mission Statement: docs/Mission Statement.md
+    - How Does it Bring Value: docs/Value_Proof_Analysis.md
+    - Known Limitations: docs/Known Limitations.md
+    - Threat Model: docs/Threat Model.md
+    - Licensing: docs/Licensing.md
+  - Installation and Usage:
+    - Getting Started in 5 Minutes: docs/Getting Started In 5 Minutes.md
+    - Installation: docs/Installation.md
+    - Usage: docs/Usage.md
+  - Architecture:
+    - Overview: docs/Architecture.md
+    - Features: docs/Features.md
+    - Security: docs/Security Features.md
+    - Detection and Parsing: docs/Detection and Parsing.md
+    - Identity Contract: docs/Identity Contract.md
+    - Pass Phases: docs/Pass Phases.md
+    - Pipeline System: docs/Pipeline System.md
+    - Configs: docs/Configs.md
+    - Presentation Overlays: docs/Presentation Overlays.md
+  - Performance:
+    - Benchmarks: docs/Benchmarks.md
+    - Performance Optimizations: docs/Performance Optimizations.md
+theme: material

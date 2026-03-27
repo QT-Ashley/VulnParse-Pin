@@ -7,15 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- See the [ROADMAP](ROADMAP.md) for planned features and improvements in upcoming releases.
+
+## [1.0.2] - 2026-03-25
+
+### Added
+
+- Added `--demo` CLI flag for a one-command end-to-end run using a bundled Nessus sample.
+- Added automatic demo behavior that forces online enrichment mode and enables all four output artifacts (JSON, CSV, executive Markdown, technical Markdown).
+- Added packaged Nessus demo resource support (`resources/*.nessus`) so the demo sample resolves reliably in installed environments.
+- Added generated 5k synthetic Nessus benchmark dataset support and tooling (`tests/generate_5k_nessus.py`) with reproducible 10-asset, 5,000-finding coverage.
+- Added new value and scoring documentation artifacts: `docs/Value_Proof_Analysis.md`, `docs/CVSS_vs_VulnParse_Scoring_Comparison.md`, and `docs/Value_Proposition_One_Pager.md`.
+- Added `--demo` usage instructions to `README.md` and `docs/Usage.md`.
+
+### Fixed
+
+- Fixed CLI summary banner output location rendering to display clean output filenames.
+
+### Changed
+
+- Updated Markdown report templates to clearly separate scanner severity from VulnParse-Pin derived risk bands.
+- Updated executive and technical report risk tables with explicit "Primary Drivers" context (KEV, public exploit, EPSS threshold signals).
+- Updated benchmark and performance documentation with the 5k demo-derived dataset and measured throughput/runtime snapshot.
+- Updated `README.md`, `ROADMAP.md`, and overview docs to reflect demo workflow, prioritization messaging, and current documentation structure.
+
+## [1.0.1] - 2026-03-22
+
 ### Added
 
 - Added `ROADMAP.md` with planned milestones for v1.1.0, v1.2.0, and v1.3.0-1.5.0+.
 
-### Planned
+### Fixed
 
-- v1.1.0 focus: output schema validation hardening, execution verification, demo dataset UX, scoring/inference optimization, report polish, and docs improvements.
-- v1.2.0 focus: decision ledger and explainability artifacts, expanded scanner/intelligence coverage, aggregated CVE scoring, and integrations.
-- v1.3.0-1.5.0+ focus: SQLite-backed historical tracking and additional post-1.2 capabilities.
+- Fixed a minor documentation typo in `docs/Getting Started In 5 Minutes.md`.
+
+### Changed
+
+- Updated `CHANGELOG.md` with the new roadmap section and minor formatting adjustments.
 
 ## [1.0.0] - 2026-03-18
 
@@ -89,7 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.2
+[1.0.1]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.1
 [1.0.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0
 [1.0.0-rc4]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc4
 [1.0.0-rc3]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0-rc3

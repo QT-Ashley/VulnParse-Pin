@@ -18,6 +18,26 @@ from vulnparse_pin import __version__
 
 PathLikeSimple = Union[str, Path]
 
+_DEMO_SAMPLE_NAME = "Lab_test_scaled_5k.nessus"
+
+def _resolve_demo_sample() -> Optional[Path]:
+    """Return the absolute path to the bundled demo sample, or None if not found.
+
+    Uses importlib.resources so the file is correctly located whether the package
+    is installed via pip (as a wheel/egg) or run directly from source.
+    """
+    from importlib import resources
+    try:
+        # Python 3.9+ path — returns a traversable that survives zip/wheel installs.
+        ref = resources.files("vulnparse_pin.resources").joinpath(_DEMO_SAMPLE_NAME)
+        if ref.is_file():
+            # Materialize to a real filesystem path (works with zipimport too).
+            with resources.as_file(ref) as p:
+                return p.resolve()
+    except (TypeError, FileNotFoundError, ModuleNotFoundError):
+        pass
+    return None
+
 
 def parse_mode(value: str) -> int:
     """
@@ -75,7 +95,8 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     file_group = parser.add_argument_group("Filesystem Options", "[Security Warning] Filesystem I/O and permissions flags. Take caution and read documentation on potential effects of flags.")
     port_group = parser.add_argument_group("Portability", "Options to run VulnParse in a portable setting.")
     output_group = parser.add_argument_group("Output Options", "Flags that deal with output such as output location or presentation modes.")
-    gen_group.add_argument("--file", "-f", help="Path to vulnerability scan file", required=True, type=valid_input_file)
+    gen_group.add_argument("--file", "-f", help="Path to vulnerability scan file", required=False, default=None, type=valid_input_file)
+    gen_group.add_argument("--demo", action="store_true", default=False, help="Run a full end-to-end pipeline demo using the bundled Lab_test.nessus sample. Takes no additional input.")
     enrich_group.add_argument("--enrich-kev", "-kev", nargs="?", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
     enrich_group.add_argument("--enrich-epss", "-epss", nargs="?", help="Path/URL to EPSS .csv or CSV.gz file. If omitted, use official EPSS feed.")
     output_group.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Output is in JSON")
@@ -109,6 +130,41 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                               "'namespace' stores scoring under finding.derived.")
 
     args = parser.parse_args(argv)
+
+    # --demo: inject hardcoded sample path — takes no user input.
+    if args.demo:
+        demo_path = _resolve_demo_sample()
+        if demo_path is None:
+            parser.error(
+                "--demo: sample file not found. Expected at "
+                "'samples/nessus/Lab_test.nessus' relative to the project root or CWD."
+            )
+        if not os.access(demo_path, os.R_OK):
+            parser.error(f"--demo: sample file is not readable: {demo_path}")
+        args.file = demo_path
+        # Demo mode is always online and runs a full end-to-end artifact set.
+        args.mode = "online"
+        args.exploit_source = "online"
+        args.no_nvd = False
+        if not args.pretty_print:
+            args.pretty_print = True
+        if not args.output:
+            args.output = "demo_output.json"
+        if not args.output_csv:
+            args.output_csv = "demo_output.csv"
+        if not args.output_md:
+            args.output_md = "demo_summary.md"
+        if not args.output_md_technical:
+            args.output_md_technical = "demo_technical.md"
+        print(
+            "\n[DEMO MODE] Running full pipeline on bundled sample: "
+            f"{demo_path}\n"
+            "Mode forced: online (NVD enabled, exploit source online).\n"
+            "Artifacts enabled: JSON, CSV, executive Markdown, technical Markdown.\n"
+            "Output will be written to the configured output directory.\n"
+        )
+    elif args.file is None:
+        parser.error("the following arguments are required: --file/-f (or use --demo to run on the bundled sample)")
 
     if args.output:
         output_dir = os.path.dirname(os.path.abspath(args.output)) or '.'

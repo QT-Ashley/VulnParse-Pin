@@ -82,6 +82,17 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
     risk_dist = summary.risk_distribution
     top_risks = summary.top_risks
     remediation = summary.remediation_priorities
+
+    def _risk_drivers(risk: Any) -> str:
+        drivers: list[str] = []
+        if risk.get('kev_listed'):
+            drivers.append('KEV')
+        if risk.get('exploit_available'):
+            drivers.append('Public Exploit')
+        epss_val = risk.get('epss_score')
+        if isinstance(epss_val, (int, float)) and epss_val >= 0.50:
+            drivers.append('EPSS>=0.50')
+        return ", ".join(drivers) if drivers else "Risk Score Driven"
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -105,6 +116,8 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
 ---
 
 ## 📊 Risk Distribution
+
+Derived risk bands below are calculated by VulnParse-Pin scoring and should be used for remediation prioritization.
 
 | Risk Band | Count |
 |-----------|-------|
@@ -133,10 +146,10 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
 
 ---
 
-## 📈 Top {len(top_risks)} Highest Risk CVEs (De-duplicated)
+## 📈 Top {len(top_risks)} Highest Risk CVEs (De-duplicated, Derived Risk)
 
-| CVE | Finding Risk (Raw) | Band | Exploit? | KEV? | CVSS | Occurrences |
-|-----|---------------------|------|----------|------|------|-------------|
+| CVE | Finding Risk (Raw) | Band | Exploit? | KEV? | CVSS | Occurrences | Primary Drivers |
+|-----|---------------------|------|----------|------|------|-------------|-----------------|
 """
     
     for risk in top_risks:
@@ -145,7 +158,10 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
         cvss = risk.get('cvss_base_score', 'N/A')
         occurrences = risk.get('occurrence_count', 1)
         
-        md += f"| {risk['cve']} | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | {exploit_icon} | {kev_icon} | {cvss} | {occurrences:,} |\n"
+        md += (
+            f"| {risk['cve']} | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
+            f"{exploit_icon} | {kev_icon} | {cvss} | {occurrences:,} | {_risk_drivers(risk)} |\n"
+        )
     
     md += f"""
 
@@ -167,6 +183,7 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
 2. **Asset Prioritization:** Focus on the highest risk assets identified in the technical report
 3. **Patch Management:** Implement a regular patching cycle for the {remediation['high_priority']} high-priority findings
 4. **Monitoring:** Deploy detection rules for CVEs listed in CISA KEV catalog
+5. **Interpretation Note:** Treat scanner severity as input signal; use derived risk band and raw score to break ties within large critical buckets
 
 ---
 
@@ -189,8 +206,20 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
     overview = summary.overview
     asset_summary = summary.asset_summary
     finding_summary = summary.finding_summary
+    risk_dist = summary.risk_distribution
     top_risks = summary.top_risks
     enrichment = summary.enrichment_metrics
+
+    def _risk_drivers(risk: Any) -> str:
+        drivers: list[str] = []
+        if risk.get('kev_listed'):
+            drivers.append('KEV')
+        if risk.get('exploit_available'):
+            drivers.append('Public Exploit')
+        epss_val = risk.get('epss_score')
+        if isinstance(epss_val, (int, float)) and epss_val >= 0.50:
+            drivers.append('EPSS>=0.50')
+        return ", ".join(drivers) if drivers else "Risk Score Driven"
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -206,9 +235,10 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 
 1. [Scan Overview](#scan-overview)
 2. [Asset Analysis](#asset-analysis)
-3. [Vulnerability Breakdown](#vulnerability-breakdown)
-4. [Top Risk Findings](#top-risk-findings)
-5. [Enrichment Coverage](#enrichment-coverage)
+3. [Scanner Severity Breakdown](#scanner-severity-breakdown)
+4. [Derived Risk Breakdown](#derived-risk-breakdown)
+5. [Top Risk Findings](#top-risk-findings)
+6. [Enrichment Coverage](#enrichment-coverage)
 
 ---
 
@@ -242,9 +272,11 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 
 ---
 
-## 🐛 Vulnerability Breakdown
+## 🐛 Scanner Severity Breakdown
 
-### By Severity (Scanner Classification)
+### By Severity (Scanner Classification, Unadjusted)
+
+Scanner severity is the source tool's native rating and can overstate operational priority at scale.
 
 | Severity | Count |
 |----------|-------|
@@ -258,12 +290,30 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 
 ---
 
+## 🎯 Derived Risk Breakdown
+
+### By Risk Band (Scoring Output)
+
+Use this distribution for remediation prioritization and queue ordering.
+
+| Risk Band | Count |
+|-----------|-------|
+| Critical | {risk_dist['by_risk_band']['Critical']:,} |
+| High | {risk_dist['by_risk_band']['High']:,} |
+| Medium | {risk_dist['by_risk_band']['Medium']:,} |
+| Low | {risk_dist['by_risk_band']['Low']:,} |
+| Informational | {risk_dist['by_risk_band']['Informational']:,} |
+
+**Total Scored:** {risk_dist['total_scored']:,} findings
+
+---
+
 ## ⚠️ Top Risk Findings (Detailed)
 
-### Top {len(top_risks)} CVEs by Finding Risk Score (Raw)
+### Top {len(top_risks)} CVEs by Finding Risk Score (Raw, Derived)
 
-| # | CVE | Finding Risk (Raw) | Band | CVSS | EPSS | Exploit | KEV | Occurrences |
-|---|-----|---------------------|------|------|------|---------|-----|-------------|
+| # | CVE | Finding Risk (Raw) | Band | CVSS | EPSS | Exploit | KEV | Occurrences | Primary Drivers |
+|---|-----|---------------------|------|------|------|---------|-----|-------------|-----------------|
 """
     
     for i, risk in enumerate(top_risks, 1):
@@ -273,7 +323,10 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
         cvss = risk.get('cvss_base_score', 'N/A')
         occurrences = risk.get('occurrence_count', 1)
         
-        md += f"| {i} | `{risk['cve']}` | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | {cvss} | {epss} | {exploit} | {kev} | {occurrences:,} |\n"
+        md += (
+            f"| {i} | `{risk['cve']}` | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
+            f"{cvss} | {epss} | {exploit} | {kev} | {occurrences:,} | {_risk_drivers(risk)} |\n"
+        )
     
     md += f"""
 
@@ -302,6 +355,7 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 - "Finding Risk (Raw)" is the highest per-finding score observed for that CVE (not an asset aggregate score)
 - Risk scores are calculated using CVSS base scores, EPSS probability, and evidence-based factors (KEV listing, exploit availability)
 - Asset risk is aggregated from individual finding scores using configured policy
+- Scanner severity and derived risk band are intentionally shown separately to reduce prioritization ambiguity
 - Findings with CVSS v3.1 scores are prioritized; v2.0 used as fallback
 - Exploit availability indicates public proof-of-concept code exists
 
