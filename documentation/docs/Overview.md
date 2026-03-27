@@ -87,29 +87,14 @@ graph TD
     F --> G[Output: Prioritized Vulnerabilities and Reports JSON/CSV/MD]
 ```
 
-<<<<<<< HEAD
 See the [Architecture](Architecture.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
-=======
-<<<<<<< HEAD:documentation/docs/Overview.md
-See the [Architecture](Architecture.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
-=======
-See the [Architecture](docs/Architecture.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
->>>>>>> main:docs/Overview.md
->>>>>>> main
 
 ## Performance
 
 VulnParse-Pin is designed to handle large volumes of vulnerability data efficiently. Performance benchmarks indicate that VulnParse-Pin can process thousands of vulnerabilities per minute, depending on the complexity of the enrichment and scoring policies applied. The architecture supports both streaming and batch processing modes, allowing it to scale effectively in different environments.  
 
-<<<<<<< HEAD
+
 Latest benchmarks and performance metrics can be found in the [Benchmarks](Benchmarks.md) documentation.
-=======
-<<<<<<< HEAD:documentation/docs/Overview.md
-Latest benchmarks and performance metrics can be found in the [Benchmarks](Benchmarks.md) documentation.
-=======
-Latest benchmarks and performance metrics can be found in the [Benchmarks](docs/Benchmarks.md) documentation.
->>>>>>> main:docs/Overview.md
->>>>>>> main
 
 ## How It Works
 
@@ -125,15 +110,7 @@ Latest benchmarks and performance metrics can be found in the [Benchmarks](docs/
 
 6. **Output Generation**: The final output includes a prioritized list of vulnerabilities along with detailed reports in JSON, CSV, and Markdown formats for both technical and executive audiences.
 
-<<<<<<< HEAD
 See the [Architecture](Architecture.md) and [Pipeline System](Pipeline%20System.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
-=======
-<<<<<<< HEAD:documentation/docs/Overview.md
-See the [Architecture](Architecture.md) and [Pipeline System](Pipeline%20System.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
-=======
-See the [Architecture](docs/Architecture.md) and [Pipeline System](docs/Pipeline%20System.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
->>>>>>> main:docs/Overview.md
->>>>>>> main
 
 ## Licensing overview
 
