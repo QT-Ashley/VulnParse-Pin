@@ -4,6 +4,12 @@ Vulnerability programs rarely fail from lack of data. They fail from lack of usa
 
 VulnParse-Pin exists to make vulnerability triage deterministic, explainable, and scalable.
 
+VulnParse-Pin was created to address the challenges of managing and prioritizing vulnerabilities in complex environments. The problem of vulnerability overload is well-known: organizations are inundated with thousands of findings from various scanners and feeds, making it difficult to identify which vulnerabilities pose the greatest risk and require immediate attention.
+
+VulnParse-Pin is designed to be a flexible, extensible, and open source solution that can adapt to the unique needs of different organizations. By normalizing and enriching vulnerability data, applying customizable scoring, and providing clear prioritization with explainable artifacts, VulnParse-Pin helps security teams focus their efforts on the most critical issues, ultimately improving their overall security posture.
+
+- Research from FIRST EPSS and CISA KEV consistently shows that a **small** percentage of vulnerabilities are responsible for the majority of real-world exploitation. VulnParse-Pin's scoring and prioritization engine by default, is built around this insight, ensuring that known-exploited vulnerabilities are given the attention they deserve while ***reducing*** noise from less critical findings.
+
 ## The core gap
 
 Scanner output is valuable but fragmented:
@@ -56,3 +62,4 @@ For contributors and researchers, this means:
 VulnParse-Pin exists because vulnerability management needs a bridge between raw findings and operational decisions.
 
 That bridge must be open, testable, secure, and fast enough for real-world scale.
+

@@ -135,7 +135,7 @@ def print_summary_banner(ctx: "RunContext", scan_result, output_file: Path = Non
     print("-" * 60)
     print(f"📊 Enriched Findings              : {enriched_findings:,}")
     if output_file:
-        print(f"📁 Output Location                : {ctx.pfh.format_for_log(output_file)}")
+        print(f"📁 Output Location                : {output_file.name}")
 
 
     # Enrichment source status

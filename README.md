@@ -33,68 +33,150 @@ Normalize • Enrich • Prioritize • Decide
 
 ---
 
-# Introduction
+VulnParse-Pin turns vulnerability scanner outputs into actionable, prioritized insights with rich context from KEV, EPSS, ExploitDB, and NVD. It helps security teams focus on what matters most by applying configurable scoring policies that emphasize real-world risk.
 
-VulnParse-Pin transforms vulnerability scanner exports into an
-exploit-focused remediation queue.
+Input: `Thousands of findings from Nessus/OpenVAS reports with CVSS only scoring.`
 
-Instead of sorting thousands of findings by severity alone,
-VulnParse-Pin enriches results with KEV, EPSS, exploit intelligence,
-and configurable scoring policies to prioritize vulnerabilities
-that are most likely to be exploited in the real world.
+Output: `A focused, ranked list of vulnerabilities enriched with exploit context and explainable scoring artifacts, ready for triage and remediation.`
 
+**Stop sorting by severity alone. Start prioritizing by real-world risk.**
 
+> In a sample dataset of 1,250 findings, VulnParse-Pin reduced triage scope to 72 high-priority items while surfacing all KEV-listed vulnerabilities at the top.
+>
+> This resulted in a **~94% reduction** in triage volume without losing known-exploited risk signals.
 
 ## Try It In 60 Seconds
 
 ```bash
 pip install vulnparse-pin
-vpp -f [scan_file] -o <output>.json -oC <output>.csv -oMT <report>.md
+vpp --demo
 ```
 
-What you get:
+> Results are saved automatically to user's local app data and path shown in the terminal.
 
-- Enriched findings with exploit context and scoring metadata
-- Prioritized outputs for technical and executive review
-- JSON, CSV, and Markdown reporting options
+
+
+### What Happens?
+
+VulnParse-Pin analyzed your report and prioritized vulnerabilities based on:
+- **KEV** known-exploited status
+- **EPSS** exploitation probability
+- **ExploitDB** presence and recency
+- **CVSS** metrics 
+- Most recent **NVD** context
+- **Asset context** (internal vs. external, public_ip vs private_ip, etc.)
+
+### What This Means For You:
+
+#### Instead of 12,000 findings with:
+
+- CVSS-only scoring
+- No exploit context
+- No clear prioritization
+
+#### You Now Have:
+
+- **Ranked** enriched findings with exploit context and scoring metadata
+- **Auditable**, prioritized outputs for technical and executive review
+- **JSON, CSV, and Markdown reporting options** for downstream workflows and presentations
+
+This is your vulnerability data, but now it's actionable and focused on what matters most. You can review the top-ranked vulnerabilities with confidence, knowing that the prioritization is based on real-world risk signals and enriched context.
+
+***You now have a clear starting point for remediation.***
 
 ![Results Snippet](docs/img/results_snippet.JPG)
 
-See the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes.md) guide for more details and options.
+Example JSON Output:
+
+```JSON
+{
+  "assets": [
+              {
+                  "asset_id": "aid_v1_413d17ffd0d4b5ea",
+                  "rank": 1,
+                  "score_basis": "raw",
+                  "score": 59.349,
+                  "top_scores": [
+                      22.944,
+                      21.639,
+                      20.985,
+                      18.691,
+                      16.895
+                  ],
+                  "scored_findings": 500,
+                  "inference": {
+                      "exposure_score": 2,
+                      "confidence": "low",
+                      "externally_facing_inferred": false,
+                      "public_service_ports_inferred": true,
+                      "evidence": [
+                          "Common public-service port observed (+2)",
+                          "RFC1918/private IP observed (-4)",
+                          "Remote administration port observed (+2)",
+                          "Web service port observed (+2)"
+                      ]
+                  }
+              },
+          ...
+}
+```
+
+See the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes.md) or [Installation](docs/Installation.md) guide for more details and options.
 
 ## Why Use VulnParse-Pin?
 
-- Turns large scanner exports into an exploit-focused remediation queue you can act on immediately.
+### VulnParse-Pin is the missing layer between vulnerability scanners and actionable remediation. 
 
-- Prioritizes known-exploited risk first (KEV plus public exploit signals) to reduce triage noise (`user-configurable`).
+Scanners:
 
-- Produces explainable scoring artifacts so analysts can defend remediation decisions.
+- Find vulnerabilities and assign CVSS scores based on technical characteristics.
+- Do not account for real-world exploitability, asset context, or organizational risk tolerance.
+
+VulnParse-Pin:
+
+- Turns scanner exports into an exploit-focused remediation queue you can act on immediately with inferred asset context. ***(Internal Asset with exploit ranks lower than External Asset with exploit, even if CVSS is higher for the internal asset finding.)*** [Context-aware prioritization](https://redjack.com/resources/asset-inventory-vulnerability-prioritization#:~:text=Understanding%20these%20dependencies%20allows%20you,the%20risk%20of%20significant%20disruptions.&text=An%20asset%20inventory%20provides%20the,based%20approach%20to%20vulnerability%20prioritization.&text=Asset%20inventories%20help%20you%20identify,may%20follow%20a%20phased%20approach.) is critical for effective vulnerability management.
+
+- Prioritizes known-exploited risk first (KEV plus public exploit signals) to reduce triage noise **(user-configurable)**. [Threat Intelligence-driven prioritization](https://www.cisa.gov/known-exploited-vulnerabilities) is the most effective way to focus on what matters.
+
+- Produces explainable scoring artifacts so analysts can **defend** remediation decisions.
 
 - Works with existing scanner workflows (currently Nessus and OpenVAS), no platform lock-in.
 
-## Before vs After Prioritization
+- Secure-by-design:
+  - No shell execution or unsafe deserialization
+  - Strict input validation and sanitization
+  - Least privilege principles in code and dependencies
+  - Strict path enforcement for I/O operations
+  - Offline mode and local feed management for sensitive environments
+  - Safe parsing and enrichment with error handling and fallback mechanisms
+  - No evaluation of untrusted code or data
+
+- Configure scoring and prioritization policies to fit your organization's risk tolerance and priorities.
+
+### Before vs. After Prioritization
 
 | Raw scanner workflow | VulnParse-Pin workflow |
 | --- | --- |
-| Thousands of findings with limited exploit context | Unified findings enriched with KEV, EPSS, ExploitDB, and NVD context |
-| Severity-only sorting inflates urgent queues | Exploit-first scoring emphasizes likely real-world risk |
-| Analysts spend cycles justifying triage order | Explainable scoring artifacts support transparent decisions |
+| 12,000 findings | Top 10-50 prioritized vulnerabilities (configurable) |
+| Severity-only sorting inflates urgent queues | Ranked by real-world exploit risk |
+| Spend hours justifying triage order | Explainable scoring artifacts support transparent decisions |
 | Fragmented outputs across tools | Consistent JSON, CSV, and Markdown outputs for technical and executive audiences |
 
-## Why VulnParse-Pin Exists
+## Where It Fits
 
-VulnParse-Pin was created to address the challenges of managing and prioritizing vulnerabilities in complex environments. The problem of vulnerability overload is well-known: organizations are inundated with thousands of findings from various scanners and feeds, making it difficult to identify which vulnerabilities pose the greatest risk and require immediate attention.
+1. Run vulnerability scans as usual with your existing tools (Nessus/OpenVAS supported currently, more coming).
+2. **Export** results in supported formats.
+3. Use VulnParse-Pin to ***ingest, enrich, and prioritize*** findings based on real-world risk signals and configurable policies.
+4. **Review** the prioritized outputs for triage and remediation planning.
+5. ***Patch, mitigate, or accept*** risk based on the enriched context and explainable scoring artifacts provided by VulnParse-Pin.
 
-VulnParse-Pin is designed to be a flexible, extensible, and open source solution that can adapt to the unique needs of different organizations. By normalizing and enriching vulnerability data, applying customizable scoring, and providing clear prioritization with explainable artifacts, VulnParse-Pin helps security teams focus their efforts on the most critical issues, ultimately improving their overall security posture.
-
-- Research from FIRST EPSS and CISA KEV consistently shows that a **small** percentage of vulnerabilities are responsible for the majority of real-world exploitation. VulnParse-Pin's scoring and prioritization engine by default, is built around this insight, ensuring that known-exploited vulnerabilities are given the attention they deserve while ***reducing*** noise from less critical findings.
-
-See [Why VulnParse-Pin Exists](docs/Why%20VulnParse-Pin%20Exists.md) for a deeper dive into the motivation and design principles behind VulnParse-Pin.
+`You decide what to prioritize, but VulnParse-Pin helps you make informed decisions and defend them with data.`
 
 ## Who Is VulnParse-Pin For?
 
 VulnParse-Pin is for teams that need to triage high volumes of vulnerability findings without losing focus on what is most actionable.
 
+- **CI/CD Workflows**: DevSecOps teams integrating vulnerability management into CI/CD pipelines for faster feedback and remediation.
 - **Practitioners**: Security analysts, security engineers, SOC teams, red teams, and penetration testers.
 - **Program and risk owners**: Vulnerability program managers, risk assessors, and security leadership.
 - **Service providers and builders**: Consultants, MSSPs, researchers, and developers integrating or extending workflows.
@@ -105,9 +187,15 @@ See the [Overview](docs/Overview.md) documentation for more details on use cases
 
 - **Scanner-Agnostic Normalization**: Ingests and standardizes output from any vulnerability scanner or feed (Currently Nessus/OpenVAS).
 
+- **Powerful Optimizations**: Designed for both small and high-volume workloads with dynamic execution strategies, caching, and parallel processing:
+  - Sublinear scaling with finding count
+  - Parallelized scoring and prioritization paths
+  - Optimized NVD enrichment with streaming and filtering
+  - Tested on datasets up to 700k findings with real-world CVE distributions (~1800 findings/sec in under 5 minutes).
+
 - **Multi-Source Enrichment**: Integrates with CISA KEV, ExploitDB, NVD, and more for comprehensive context.
 
-- **Configurable Scoring Engine**: Flexible, policy-driven scoring that can be tuned to organizational risk tolerance and priorities.
+- **Configurable Scoring and Prioritization Engine**: Flexible, policy-driven scoring that can be tuned to organizational risk tolerance and priorities. This includes the ability to prioritize known-exploited vulnerabilities and adjust scoring based on asset context.
 
 - **Pass Phase Pipelines**: Modular processing stages for enrichment, scoring, and prioritization that can be customized or extended.
 
@@ -116,38 +204,6 @@ See the [Overview](docs/Overview.md) documentation for more details on use cases
 - **Offline Mode and Local Feeds**: Supports offline operation and local feed management for environments with limited connectivity or strict data handling requirements.
 
 See the [Features](docs/Features.md) documentation for a comprehensive list of features and capabilities.
-
-## VulnParse-Pin Architecture
-
-VulnParse-Pin is built on a modular architecture that allows for flexibility and extensibility.
-
-```mermaid
-graph TD
-    A[Input: Scanner Reports] --> B[Normalization Module]
-    B --> C[Enrichment Module]
-    C --> D[Scoring Pass]
-    D --> E[TopN Pass]
-    E --> F[Summary Pass]
-    F --> G[Output: Prioritized Vulnerabilities and Reports JSON/CSV/MD]
-```
-
-See the [Architecture](docs/Architecture.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
-
-## How It Works
-
-1. **Report Ingestion**: VulnParse-Pin accepts vulnerability reports in various formats (currently Nessus/OpenVAS) and normalizes them into a consistent internal structure.
-
-2. **Threat-Intelligence Enrichment**: VulnParse-Pin uses authoritative sources like CISA KEV, ExploitDB, FIRST EPSS, and NVD to enrich vulnerability data with critical context such as known exploits, real-world exploitation trends, and detailed CVSS metrics.
-
-3. **Config-Driven Scoring and Prioritization**: The engine applies a configurable scoring model and prioritization logic that can be tuned to prioritize what matters most to the organization. By default, it emphasizes known-exploited vulnerabilities while reducing noise from less critical findings.
-
-4. **Explainable Artifacts**: For each vulnerability, VulnParse-Pin generates explainable artifacts that detail the factors contributing to its score and priority, enabling analysts to understand and trust the results.
-
-5. **Pass Phase Processing**: The processing pipeline is organized into distinct passes (Scoring, TopN, Summary) that can be customized or extended as needed.
-
-6. **Output Generation**: The final output includes a prioritized list of vulnerabilities along with detailed reports in JSON, CSV, and Markdown formats for both technical and executive audiences.
-
-See the [Architecture](docs/Architecture.md) and [Pipeline System](docs/Pipeline%20System.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
 
 ## Installation
 
@@ -173,15 +229,30 @@ Standalone executables with release artifacts are also available on PyPI and Git
 pip install vulnparse_pin-1.0.0-py3-none-any.whl
 ```
 
+### Run Your Own Scan
+
+After installation, you can run VulnParse-Pin with your own scanner exports:
+
+```bash
+vpp -f path/to/your_scan.[nessus|xml] -o <output_file>.json -pp -oC <output_file>.csv -oM <output_file>.md -oMT <output_file>_technical.md 
+```
+
 Check out [Releases](https://github.com/QT-Ashley/VulnParse-Pin/releases) for the latest release artifacts.
 
 A list of all available command-line options can be found in the [Getting Started In 5 Minutes](docs/Getting%20Started%20In%205%20Minutes.md) guide.
 
-## Performance
+## Feedback and Contributions
 
-VulnParse-Pin is designed to handle large volumes of vulnerability data efficiently. Performance benchmarks indicate that VulnParse-Pin can process thousands of vulnerabilities per minute, depending on the complexity of the enrichment and scoring policies applied. The architecture supports both streaming and batch processing modes, allowing it to scale effectively in different environments.  
+### Tried it out? Found a bug? Have a feature request or want to contribute?
 
-Latest benchmarks and performance metrics can be found in the [Benchmarks](docs/Benchmarks.md) documentation.
+If you tried VulnParse-Pin, even briefly, please consider leaving feedback or contributing to the project:
+
+- Did it fit your workflow?
+- What was confusing or difficult to use?
+- What features would you like to see next?
+- What other use cases do you have in mind?
+
+Anything you can share is helpful, whether it's a quick comment, a detailed issue, or a pull request with improvements.
 
 ## Roadmap and Future Enhancements
 
@@ -206,7 +277,9 @@ For more detailed information on how to use, configure, and extend VulnParse-Pin
 - [Current Scoring Profile (March 2026)](docs/Config.md)
 - [Configs](docs/Configs.md)
 - [Benchmarks](docs/Benchmarks.md)
+- [Performance Optimizations](docs/Performance%20Optimizations.md)
 - [Licensing](docs/Licensing.md)
+- [Value Proposition One Pager](docs/Value_Proposition_One_Pager.md)
 - [VulnParse-Pin Wiki Docs](https://qt-ashley.github.io/VulnParse-Pin/)
 
 Check out the [CHANGELOG](CHANGELOG.md) for a detailed history of changes and updates.
@@ -226,9 +299,7 @@ This ensures that improvements to VulnParse-Pin — including those used in host
 
 Unmodified use does **not** require source disclosure.
 
-### Commercial licensing
-
-Commercial licensing or AGPL exceptions may be available for organizations that wish to embed VulnParse-Pin into proprietary products or managed services.
+Modified use **does** require source disclosure if the modified version is used in a hosted or network-accessible service.
 
 ## Disclaimers
 

@@ -73,6 +73,44 @@ Then continue with:
 - [Pipeline System](Pipeline%20System.md)
 - [Configs](Configs.md)
 
+## Architecture
+
+VulnParse-Pin is built on a modular architecture that allows for flexibility and extensibility.
+
+```mermaid
+graph TD
+    A[Input: Scanner Reports] --> B[Normalization Module]
+    B --> C[Enrichment Module]
+    C --> D[Scoring Pass]
+    D --> E[TopN Pass]
+    E --> F[Summary Pass]
+    F --> G[Output: Prioritized Vulnerabilities and Reports JSON/CSV/MD]
+```
+
+See the [Architecture](docs/Architecture.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
+
+## Performance
+
+VulnParse-Pin is designed to handle large volumes of vulnerability data efficiently. Performance benchmarks indicate that VulnParse-Pin can process thousands of vulnerabilities per minute, depending on the complexity of the enrichment and scoring policies applied. The architecture supports both streaming and batch processing modes, allowing it to scale effectively in different environments.  
+
+Latest benchmarks and performance metrics can be found in the [Benchmarks](docs/Benchmarks.md) documentation.
+
+## How It Works
+
+1. **Report Ingestion**: VulnParse-Pin accepts vulnerability reports in various formats (currently Nessus/OpenVAS) and normalizes them into a consistent internal structure.
+
+2. **Threat-Intelligence Enrichment**: VulnParse-Pin uses authoritative sources like CISA KEV, ExploitDB, FIRST EPSS, and NVD to enrich vulnerability data with critical context such as known exploits, real-world exploitation trends, and detailed CVSS metrics.
+
+3. **Config-Driven Scoring and Prioritization**: The engine applies a configurable scoring model and prioritization logic that can be tuned to prioritize what matters most to the organization. By default, it emphasizes known-exploited vulnerabilities while reducing noise from less critical findings.
+
+4. **Explainable Artifacts**: For each vulnerability, VulnParse-Pin generates explainable artifacts that detail the factors contributing to its score and priority, enabling analysts to understand and trust the results.
+
+5. **Pass Phase Processing**: The processing pipeline is organized into distinct passes (Scoring, TopN, Summary) that can be customized or extended as needed.
+
+6. **Output Generation**: The final output includes a prioritized list of vulnerabilities along with detailed reports in JSON, CSV, and Markdown formats for both technical and executive audiences.
+
+See the [Architecture](docs/Architecture.md) and [Pipeline System](docs/Pipeline%20System.md) documentation for a deeper dive into the design and processing flow of VulnParse-Pin.
+
 ## Licensing overview
 
 VulnParse-Pin is available under AGPLv3+ for free/open usage.

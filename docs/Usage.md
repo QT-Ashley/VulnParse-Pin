@@ -24,6 +24,13 @@ VulnParse-Pin also supports additional options to customize the analysis process
 
 ### General Options
 
+#### --demo
+- `--demo`: This option runs the tool in demo mode, which uses a predefined dataset to demonstrate the capabilities of VulnParse-Pin. Use it like this:
+
+```bash
+vpp --demo
+```
+
 #### --pretty-print
 
 - `--pretty-print [-pp]`: This option formats the output in a more human-readable way. It can be used as follows:

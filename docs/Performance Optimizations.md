@@ -64,6 +64,7 @@ Useful files:
 
 - `profile_runner.py`
 - `debug_topn.py`
+- `tests/generate_5k_nessus.py`
 - `tests/generate_50k_nessus.py`
 - `tests/generate_250k_nessus.py`
 - `tests/generate_700k_nessus.py`
