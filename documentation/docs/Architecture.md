@@ -60,3 +60,6 @@ At runtime, the orchestrator does the following:
 2. [Pipeline System](Pipeline%20System.md)
 3. [Pass Phases](Pass%20Phases.md)
 4. [Performance Optimizations](Performance%20Optimizations.md)
+5. [Caching Deep Dive](Caching%20Deep%20Dive.md)
+6. [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
+7. [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)

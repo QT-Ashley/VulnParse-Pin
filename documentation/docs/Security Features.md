@@ -74,6 +74,12 @@ Relevant tests include:
 - `tests/test_adversarial_sqlite_feeds.py`
 - `tests/test_pfh.py`
 
+## Deep-dive references
+
+- [Caching Deep Dive](Caching%20Deep%20Dive.md)
+- [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
+- [Configs](Configs.md)
+
 ## Operational recommendations
 
 - Set `VP_SQLITE_HMAC_KEY` in production for cache integrity validation

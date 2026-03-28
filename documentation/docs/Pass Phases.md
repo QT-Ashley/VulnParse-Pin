@@ -119,3 +119,9 @@ Phase-level confidence comes from dedicated tests:
 - Pass contract tests (`tests/test_pass_contracts.py`)
 - Parallel scoring tests (`tests/test_parallel_scoring.py`)
 - TopN optimization tests (`tests/test_topn_optimization.py`)
+
+## Deep-dive references
+
+- [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)
+- [Caching Deep Dive](Caching%20Deep%20Dive.md)
+- [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)

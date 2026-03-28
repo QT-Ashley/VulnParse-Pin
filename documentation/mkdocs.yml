@@ -28,6 +28,9 @@ nav:
     - Pass Phases: Pass Phases.md
     - Pipeline System: Pipeline System.md
     - Configs: Configs.md
+    - Caching Deep Dive: Caching Deep Dive.md
+    - Runtime Policy Deep Dive: Runtime Policy Deep Dive.md
+    - Scoring and Prioritization Deep Dive: Scoring and Prioritization Deep Dive.md
     - Presentation Overlays: Presentation Overlays.md
   - Performance:
     - Benchmarks: Benchmarks.md

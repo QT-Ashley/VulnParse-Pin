@@ -1,122 +1,173 @@
 # Configs
 
-VulnParse-Pin configuration is split into three primary policy files.
+This page is the technical reference for configuring VulnParse-Pin policy behavior.
 
-## Configuration files
+## Configuration surfaces
+
+VulnParse-Pin behavior is driven by three policy files plus runtime flags and optional environment variables.
+
+Policy files:
 
 - `src/vulnparse_pin/resources/config.yaml`
 - `src/vulnparse_pin/resources/scoring.json`
 - `src/vulnparse_pin/resources/tn_triage.json`
 
-At runtime, defaults are copied into the active app config area if user versions are missing.
+Runtime controls:
 
-## `config.yaml`
+- CLI flags from `src/vulnparse_pin/cli/args.py`
+- env vars used by cache integrity modules
 
-Controls feed/cache and runtime data behavior.
+Defaults are materialized into user config locations during bootstrap if missing.
 
-Typical sections:
+## Config location and mode behavior
+
+Path layout is resolved by `AppPaths` (`src/vulnparse_pin/core/apppaths.py`).
+
+- System mode (default): platform app-data directories.
+- Portable mode (`--portable`): project-local data tree for config/cache/log/output.
+
+## `config.yaml` reference
+
+`config.yaml` controls feed cache policy, NVD feed policy, and summary options.
+
+### Feed TTL controls
 
 - `feed_cache.defaults.ttl_hours`
-- Per-feed TTL overrides (`kev`, `epss`, `exploit_db`, `nvd_yearly`, `nvd_modified`)
-- `feeds.nvd` options such as enablement, year range, SQLite protections
+- `feed_cache.ttl_hours.kev`
+- `feed_cache.ttl_hours.epss`
+- `feed_cache.ttl_hours.exploit_db`
+- `feed_cache.ttl_hours.nvd_yearly`
+- `feed_cache.ttl_hours.nvd_modified`
 
-Operationally important fields:
+These are consumed by `build_feed_cache_policy(...)` and `FeedCacheManager.is_fresh()`.
 
-- NVD start/end year (controls ingestion breadth)
-- SQLite row cap and max age
-- SQLite file permission policy where supported
+TTL semantics:
 
-## `scoring.json`
+- `0`: always stale.
+- `< 0`: never expires.
+- `> 0`: valid while age is within TTL hours.
 
-Defines scoring policy behavior, including:
+### NVD policy controls
 
-- EPSS scaling factor
-- Evidence points/weights (KEV, exploit, etc.)
-- Risk band thresholds
-- Operational weighting coefficients
+Canonical keys under `feed_cache.feeds.nvd`:
 
-Use this file to align risk output with your organization’s tolerance and remediation policy.
+- `enabled`
+- `start_year`
+- `end_year`
+- `ttl_yearly`
+- `ttl_modified`
+- `sqlite_enforce_permissions`
+- `sqlite_file_mode`
+- `sqlite_max_age_hours`
+- `sqlite_max_rows`
 
-### Scoring semantics (important)
+These are normalized by `nvd_policy_from_config(...)`.
 
-- `Finding Risk (Raw)` is a composite finding-level score used for ranking findings/CVEs.
-- `Asset Risk Score` is an aggregate over findings (currently max-based in policy).
-- These are not the same metric and should not be compared as if they are equivalent.
+### Summary controls
 
-Current scoring model combines:
+- `summary.top_n_findings`
 
-- CVSS contribution
-- EPSS contribution (`epss * scale`, with `epss_high` / `epss_medium` multipliers)
-- KEV evidence contribution (`kev` points * `w_kev`)
-- Exploit evidence contribution (`exploit` points * `w_exploit`)
+Used by `SummaryPass` configuration during runtime bootstrap.
 
-With default policy values, a finding can legitimately exceed 15 raw points.
-Example worst-case shape:
+## `scoring.json` reference
 
-- CVSS `7.5`
-- EPSS high contribution `0.9417 * 10 * 0.96 = 9.04`
-- KEV contribution `6 * 1.2 = 7.2`
-- Exploit contribution `7 * 1.37 = 9.59`
-- Raw total `≈ 33.33`
+`scoring.json` maps to `ScoringPolicyV1`.
 
-`max_raw_risk` is used as a normalization divisor for operational score scaling; it does not hard-cap raw score itself.
-Operational score is then clamped to `max_operational_risk`.
+Key sections:
 
-### March 2026 tuned profile rationale
+- `epss`: normalization and scaling (`scale`, `min`, `max`)
+- `evidence_points`: KEV and exploit evidence contributions
+- `bands`: risk band boundaries
+- `weights`: contribution multipliers
+- `risk_ceiling`: operational normalization bounds
+- `aggregation`: asset-level aggregation mode
 
-Validated final tuning (balanced exploit-first posture):
+Bootstrap validation enforces:
 
-- `evidence_points.kev = 2.5`
-- `bands.critical = 13.35`
-- `weights.epss_high = 0.6`
-- `weights.epss_medium = 0.4`
+- non-negative weight/evidence values
+- monotonic risk bands (`critical > high > medium > low >= 0`)
+- EPSS scaling and ordering constraints
 
-Observed behavior on representative large validation (100k OpenVAS regression sample):
+### Raw vs operational score
 
-- Reduced over-classification in upper bands (notably `High` inflation)
-- Preserved exploit/KEV prioritization and top-CVE ordering
-- Kept a narrow urgent set while moving borderline findings into lower operational tiers
+- `raw_score`: composite finding score for ranking behavior.
+- `operational_score`: normalized/clamped score for policy-facing risk reporting.
 
-This profile is intended for teams that want strong prioritization of known-exploited risk while avoiding broad “everything is urgent” output.
+These are intentionally different metrics.
 
-#### Current Scoring Profile (March 2026)
+## `tn_triage.json` reference
 
-VulnParse-Pin now uses a **balanced, exploit-first** risk model (validated on 100k+ record samples):
+`tn_triage.json` controls TopN and inference policy.
 
-- Strong prioritization of known-exploited vulnerabilities (CISA KEV, public exploits)
-- Reduced over-classification in upper risk bands - focuses analyst effort on urgent, actionable items
-- Preserves exploit-driven ordering for consistent triage workflow
+### `topn` section
 
+- `rank_basis`: `raw` or `operational`
+- `decay`: top-k weighting vector
+- `max_assets`
+- `max_findings_per_asset`
+- `include_global_top_findings`
+- `global_top_findings_max`
 
-## `tn_triage.json`
+Semantic requirements:
 
-Controls TopN ranking and inference behavior:
+- `decay` must be non-empty
+- `decay[0] == 1.0`
+- decay values must be non-increasing and in range `[0, 1]`
 
-- Rank basis (`raw` and policy-driven options)
-- `k` and decay configuration for top findings contribution
-- Max assets and findings per asset output limits
-- Exposure inference rules and confidence thresholds
+### `inference` section
 
-This file is where triage prioritization style is tuned.
+- `confidence_thresholds` (`low < medium < high`)
+- `public_service_ports`
+- `allow_predicates`
+- `rules`
 
-## Path modes and config location behavior
+Semantic validation rejects invalid threshold ordering, invalid port ranges, empty predicate allow-lists, and malformed rule definitions.
 
-Path and config directory behavior is resolved through `src/vulnparse_pin/core/apppaths.py`.
+## Environment variable reference
 
-- System mode (default): platform-specific app-data location
-- Portable mode: project-local data tree for self-contained execution
+Optional integrity hardening environment variables:
 
-## Safe configuration workflow
+- `VP_FEED_CACHE_HMAC_KEY`: signs feed integrity sidecars in `FeedCacheManager`.
+- `VP_SQLITE_HMAC_KEY`: signs NVD SQLite signature sidecar in `NVDFeedCache`.
 
-1. Copy defaults and commit baseline policy files
-2. Tune one parameter group at a time
-3. Re-run representative datasets
-4. Compare score coverage and TopN output changes
-5. Lock validated policy in version control
+If not set, modules fall back to SHA256 signature mode.
 
-## Configuration governance guidance
+## CLI-to-policy mapping
 
-- Treat config changes as risk-policy changes
-- Require review for scoring threshold adjustments
-- Keep benchmark baselines when tuning performance-related options
-- Document rationale for production policy deviations
+Cache and enrichment behavior:
+
+- `--mode`
+- `--refresh-cache`
+- `--allow_regen`
+- `--enrich-kev`
+- `--enrich-epss`
+- `--no-nvd`
+
+Runtime and PFH behavior:
+
+- `--forbid-symlinks-read`
+- `--forbid-symlinks-write`
+- `--enforce-root-read`
+- `--enforce-root-write`
+- `--file-mode`
+- `--dir-mode`
+- `--debug-path-policy`
+
+Logging behavior:
+
+- `--log-file`
+- `--log-level`
+
+## Configuration workflow guidance
+
+1. Start from version-controlled defaults.
+2. Change one policy area at a time (cache, scoring, or TopN).
+3. Re-run representative datasets.
+4. Compare score distribution, TopN output shape, and cache/runtime logs.
+5. Promote only validated changes.
+
+## Related deep dives
+
+- [Caching Deep Dive](Caching%20Deep%20Dive.md)
+- [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
+- [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)

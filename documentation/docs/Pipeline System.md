@@ -103,3 +103,9 @@ flowchart TD
 - Use explicit tie-breakers in heaps when payloads include dicts/lists
 - Keep worker functions top-level for pickle compatibility
 - Preserve deterministic ordering where output is ranked
+
+## Deep-dive references
+
+- [Caching Deep Dive](Caching%20Deep%20Dive.md)
+- [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
+- [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)

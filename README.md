@@ -41,9 +41,9 @@ Output: `A focused, ranked list of vulnerabilities enriched with exploit context
 
 **Stop sorting by severity alone. Start prioritizing by real-world risk.**
 
-> In a sample dataset of 1,250 findings, VulnParse-Pin reduced triage scope to 72 high-priority items while surfacing all KEV-listed vulnerabilities at the top.
+> **In a sample dataset of 1,250 findings, VulnParse-Pin reduced triage scope to 72 high-priority items while surfacing all KEV-listed vulnerabilities at the top.**
 >
-> This resulted in a **~94% reduction** in triage volume without losing known-exploited risk signals.
+> **This resulted in a <mark>~94% reduction</mark> in triage volume without losing known-exploited risk signals.**
 
 ## Try It In 60 Seconds
 
