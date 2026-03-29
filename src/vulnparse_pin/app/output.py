@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from vulnparse_pin.utils.csv_exporter import export_to_csv
 from vulnparse_pin.utils.markdown_report import generate_markdown_report
 from vulnparse_pin.utils.reportgen import materialize_presentation
+from vulnparse_pin.utils.runmanifest import build_runmanifest, write_runmanifest
 
 
 def run_output_and_summary(
@@ -27,6 +29,8 @@ def run_output_and_summary(
     csv_output,
     md_output,
     md_tech_output,
+    runmanifest_output,
+    scanner_input: Path,
     csv_sanitization_enabled: bool,
     kev_source,
     epss_source,
@@ -58,6 +62,23 @@ def run_output_and_summary(
 
     if md_tech_output:
         generate_markdown_report(ctx, scan_result, md_tech_output, report_type="technical")
+
+    if runmanifest_output:
+        runmanifest = build_runmanifest(
+            ctx=ctx,
+            _args=args,
+            scan_result=scan_result,
+            sources=sources,
+            scanner_input=scanner_input,
+            output_paths={
+                "json": json_output,
+                "csv": csv_output,
+                "md": md_output,
+                "md_technical": md_tech_output,
+            },
+        )
+        write_runmanifest(ctx, runmanifest, runmanifest_output)
+        logger.print_success(f"Run manifest generated: {runmanifest_output}", label="RunManifest")
 
     if args.pretty_print and not args.output:
         logger.print_info("Displaying results to console...")

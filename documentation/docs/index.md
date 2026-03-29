@@ -6,6 +6,7 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 
 - [Overview](Overview.md)
 - [Getting Started In 5 Minutes](Getting%20Started%20In%205%20Minutes.md)
+- [RunManifest Overview](RunManifest.md)
 
 ## Product and strategy
 
@@ -33,6 +34,7 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 - [Performance Optimizations](Performance%20Optimizations.md)
 - [Benchmarks](Benchmarks.md)
 - [Presentation Overlays](Presentation%20Overlays.md)
+- [RunManifest Technical Deep Dive](RunManifest_Technical.md)
 
 <!-- live reload probe -->
 

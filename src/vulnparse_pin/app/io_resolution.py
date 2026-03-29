@@ -24,6 +24,7 @@ class ResolvedIOState:
     csv_output: Path | None
     md_output: Path | None
     md_tech_output: Path | None
+    runmanifest_output: Path | None
     exploit_db: Path | None
     csv_sanitization_enabled: bool
     kev_source: str | Path
@@ -76,6 +77,15 @@ def resolve_io_paths_and_modes(args, runtime: RuntimeBootstrapState, kev_feed: s
         md_tech_output = pfh.ensure_writable_file(
             paths.output_dir / Path(args.output_md_technical).name,
             label="Markdown Technical Report",
+            create_parents=True,
+            overwrite=True,
+        )
+
+    runmanifest_output = None
+    if getattr(args, "output_runmanifest", None):
+        runmanifest_output = pfh.ensure_writable_file(
+            paths.output_dir / Path(args.output_runmanifest).name,
+            label="RunManifest Output File",
             create_parents=True,
             overwrite=True,
         )
@@ -166,6 +176,7 @@ def resolve_io_paths_and_modes(args, runtime: RuntimeBootstrapState, kev_feed: s
         csv_output=csv_output,
         md_output=md_output,
         md_tech_output=md_tech_output,
+        runmanifest_output=runmanifest_output,
         exploit_db=exploit_db,
         csv_sanitization_enabled=csv_sanitization_enabled,
         kev_source=kev_source,

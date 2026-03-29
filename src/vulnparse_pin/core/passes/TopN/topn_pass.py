@@ -16,6 +16,7 @@ import concurrent.futures as cf
 import os
 
 from vulnparse_pin.core.classes.pass_classes import DerivedPassResult, Pass, PassMeta
+from vulnparse_pin.core.classes.decision_reasons import DecisionReasonCodes
 from vulnparse_pin.core.classes.dataclass import AssetObservation
 from vulnparse_pin.core.passes.types import (
     ExposureInference,
@@ -139,6 +140,58 @@ class TopNPass(Pass):
             findings_by_asset=findings_by_asset_ranked,
             global_top_findings=global_top,
         )
+
+        services = getattr(ctx, "services", None)
+        ledger = getattr(services, "ledger", None)
+        runmanifest_mode = str(getattr(services, "runmanifest_mode", "compact") or "compact").lower()
+        if ledger is not None:
+            ledger.append_event(
+                component="TopN",
+                event_type="decision",
+                subject_ref="topn:summary",
+                reason_code=DecisionReasonCodes.TOPN_RANKING_COMPLETED,
+                reason_text="TopN ranking completed for assets and findings.",
+                factor_refs=["rank_basis", "topn.max_assets", "topn.global_top_findings"],
+                evidence={
+                    "ranked_assets": len(output.assets),
+                    "global_top_findings": len(output.global_top_findings),
+                },
+            )
+
+            asset_event_limit = 5 if runmanifest_mode == "compact" else min(len(output.assets), 20)
+            for asset_ref in output.assets[:asset_event_limit]:
+                ledger.append_event(
+                    component="TopN",
+                    event_type="decision",
+                    subject_ref=f"asset:{asset_ref.asset_id}",
+                    reason_code=DecisionReasonCodes.TOP_ASSET_SELECTED,
+                    reason_text="Asset selected in TopN ranked asset set.",
+                    factor_refs=["rank_basis", "top_scores", "inference"],
+                    confidence="high" if asset_ref.rank <= 3 else "medium",
+                    evidence={
+                        "rank": asset_ref.rank,
+                        "score": asset_ref.score,
+                        "scored_findings": asset_ref.scored_findings,
+                    },
+                )
+
+            inference_conf = {"high": 0, "medium": 0, "low": 0}
+            for inf in inference_by_asset.values():
+                c = (inf.confidence or "low").lower()
+                if c in inference_conf:
+                    inference_conf[c] += 1
+            ledger.append_event(
+                component="TopN",
+                event_type="decision",
+                subject_ref="topn:exposure_inference",
+                reason_code=DecisionReasonCodes.EXPOSURE_INFERENCE_SUMMARY,
+                reason_text="Exposure inference confidence distribution computed.",
+                factor_refs=["inference.rules", "inference.confidence_thresholds"],
+                evidence={
+                    "assets_with_inference": len(inference_by_asset),
+                    "confidence_counts": inference_conf,
+                },
+            )
 
         # 6 Write out
         ctx.logger.info("Produced %d ranked assets", len(output.assets), extra={"vp_label": "TopNPass"})
@@ -321,7 +374,7 @@ class TopNPass(Pass):
                     asset_rows.extend(payload["assets"])
                     global_candidates.extend(payload["global_candidates"])
 
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             ctx.logger.warning(
                 "[pass:topn] process pool unavailable, falling back to sequential | reason=%s",
                 exc,

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnparse-pin/schemas/runManifest.schema.json",
+  "title": "RunManifest",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "runmanifest_mode",
+    "run_id",
+    "generated_at_utc",
+    "runtime",
+    "inputs",
+    "config_hashes",
+    "outputs",
+    "enrichment_summary",
+    "pass_summaries",
+    "decision_ledger",
+    "verification"
+  ],
+  "properties": {
+    "manifest_version": { "type": "string" },
+    "runmanifest_mode": { "type": "string", "enum": ["compact", "expanded"] },
+    "run_id": { "type": "string" },
+    "generated_at_utc": { "type": "string" },
+    "runtime": {
+      "type": "object",
+      "required": ["vulnparse_version", "python_version", "platform"],
+      "properties": {
+        "vulnparse_version": { "type": "string" },
+        "python_version": { "type": "string" },
+        "platform": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "inputs": {
+      "type": "object",
+      "required": ["target_path", "target_sha256"],
+      "properties": {
+        "target_path": { "type": "string" },
+        "target_sha256": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "config_hashes": {
+      "type": "object",
+      "required": ["config_yaml_sha256", "scoring_json_sha256", "tn_triage_json_sha256"],
+      "properties": {
+        "config_yaml_sha256": { "type": ["string", "null"] },
+        "scoring_json_sha256": { "type": ["string", "null"] },
+        "tn_triage_json_sha256": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["json", "csv", "executive_markdown", "technical_markdown"],
+      "properties": {
+        "json": { "type": ["string", "null"] },
+        "csv": { "type": ["string", "null"] },
+        "executive_markdown": { "type": ["string", "null"] },
+        "technical_markdown": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "enrichment_summary": {
+      "type": "object",
+      "required": ["kev_enabled", "epss_enabled", "nvd_enabled", "exploit_enabled", "stats"],
+      "properties": {
+        "kev_enabled": { "type": "boolean" },
+        "epss_enabled": { "type": "boolean" },
+        "nvd_enabled": {},
+        "exploit_enabled": { "type": "boolean" },
+        "stats": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "pass_summaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "version", "started_at_utc", "ended_at_utc", "metrics"],
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "started_at_utc": { "type": ["string", "null"] },
+          "ended_at_utc": { "type": ["string", "null"] },
+          "metrics": { "type": "object" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "decision_ledger": {
+      "type": "object",
+      "required": ["chain_version", "entry_count", "chain_root", "entries"],
+      "properties": {
+        "chain_version": { "type": "string" },
+        "entry_count": { "type": "integer", "minimum": 0 },
+        "chain_root": { "type": "string" },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "seq",
+              "ts",
+              "component",
+              "event_type",
+              "subject_ref",
+              "why",
+              "evidence_digest",
+              "prev_hash",
+              "entry_hash"
+            ],
+            "properties": {
+              "seq": { "type": "integer", "minimum": 1 },
+              "ts": { "type": "string" },
+              "component": { "type": "string" },
+              "event_type": { "type": "string" },
+              "subject_ref": { "type": "string" },
+              "why": {
+                "type": "object",
+                "required": ["reason_code", "reason_text", "factor_refs"],
+                "properties": {
+                  "reason_code": { "type": "string" },
+                  "reason_text": { "type": "string" },
+                  "factor_refs": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "confidence": { "type": ["string", "null"] },
+                  "weight_context": { "type": ["string", "null"] }
+                },
+                "additionalProperties": true
+              },
+              "evidence_digest": { "type": "string" },
+              "prev_hash": { "type": "string" },
+              "entry_hash": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "verification": {
+      "type": "object",
+      "required": ["canonicalization", "volatile_fields_excluded", "manifest_digest"],
+      "properties": {
+        "canonicalization": { "type": "string" },
+        "volatile_fields_excluded": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "manifest_digest": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -19,6 +19,8 @@ nav:
     - Getting Started in 5 Minutes: Getting Started In 5 Minutes.md
     - Installation: Installation.md
     - Usage: Usage.md
+    - RunManifest Overview: RunManifest.md
+    - RunManifest Technical Deep Dive: RunManifest_Technical.md
     - ScanResult Schema: ScanResult_Schema.md
   - Architecture:
     - Overview: Architecture.md

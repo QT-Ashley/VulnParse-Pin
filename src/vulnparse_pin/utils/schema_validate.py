@@ -36,6 +36,13 @@ def _load_scan_result_schema() -> dict[str, Any]:
         return json.load(f)
 
 
+@lru_cache(maxsize=1)
+def _load_runmanifest_schema() -> dict[str, Any]:
+    schema_path = resources.files("vulnparse_pin.core.schemas").joinpath("runManifest.schema.json")
+    with schema_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def validate_scan_result_schema(scan_result: Any) -> None:
     if Draft202012Validator is None:
         raise RuntimeError("jsonschema is required for ScanResult schema validation. Install with: pip install jsonschema")
@@ -49,4 +56,19 @@ def validate_scan_result_schema(scan_result: Any) -> None:
     except JsonSchemaValidationError as exc:
         path = "/".join(str(p) for p in exc.path) if exc.path else "<root>"
         raise ValueError(f"ScanResult schema validation failed at {path}: {exc.message}") from exc
+
+
+def validate_runmanifest_schema(runmanifest: Any) -> None:
+    if Draft202012Validator is None:
+        raise RuntimeError("jsonschema is required for RunManifest schema validation. Install with: pip install jsonschema")
+
+    payload = _to_json_compatible(runmanifest)
+    schema = _load_runmanifest_schema()
+
+    validator = Draft202012Validator(schema)
+    try:
+        validator.validate(payload)
+    except JsonSchemaValidationError as exc:
+        path = "/".join(str(p) for p in exc.path) if exc.path else "<root>"
+        raise ValueError(f"RunManifest schema validation failed at {path}: {exc.message}") from exc
 

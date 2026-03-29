@@ -18,6 +18,7 @@ from typing import Any
 from vulnparse_pin import __version__
 from vulnparse_pin.core.apppaths import AppPaths, ensure_user_configs, load_config
 from vulnparse_pin.core.classes.dataclass import FeedSpec, RunContext, Services
+from vulnparse_pin.core.classes.execution_manifest import LedgerService
 from vulnparse_pin.core.classes.pass_classes import PassRunner
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
@@ -149,6 +150,8 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
         nvd_cache=nvd_cache,
         scoring_config=score_pol,
         topn_config=topn_pol.config,
+        ledger=LedgerService(),
+        runmanifest_mode=getattr(args, "runmanifest_mode", "compact"),
     )
     ctx = RunContext(paths=paths, pfh=pfh, logger=logger, services=services)
 

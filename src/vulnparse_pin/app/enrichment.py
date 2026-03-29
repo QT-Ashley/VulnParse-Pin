@@ -17,6 +17,7 @@ from typing import List, Dict
 from colorama import Fore, Style
 
 from vulnparse_pin.core.classes.dataclass import ScanResult, Services, RunContext
+from vulnparse_pin.core.classes.decision_reasons import DecisionReasonCodes
 from vulnparse_pin.utils.banner import print_section_header
 from vulnparse_pin.utils.enricher import enrich_scan_results, load_epss, load_kev, update_enrichment_status
 from vulnparse_pin.utils.enrichment_stats import stats
@@ -54,6 +55,17 @@ def run_enrichment_pipeline(
     epss_source,
 ) -> EnrichmentPipelineState:
     logger = ctx.logger
+    ledger = getattr(getattr(ctx, "services", None), "ledger", None)
+
+    if ledger is not None:
+        ledger.append_event(
+            component="Enrichment",
+            event_type="phase_start",
+            subject_ref="phase:enrichment",
+            reason_code=DecisionReasonCodes.ENRICHMENT_PHASE_STARTED,
+            reason_text="Enrichment pipeline started.",
+            factor_refs=["kev", "epss", "nvd", "exploit_db"],
+        )
 
     logger.phase("Threat-Intel Enrichment Feeds")
     kev_data = None
@@ -217,6 +229,8 @@ def run_enrichment_pipeline(
         scoring_config=ctx.services.scoring_config,
         topn_config=ctx.services.topn_config,
         post_enrichment_index=post_enrichment_index,
+        ledger=ctx.services.ledger,
+        runmanifest_mode=ctx.services.runmanifest_mode,
     )
     ctx = RunContext(
         paths=ctx.paths,
@@ -253,5 +267,16 @@ def run_enrichment_pipeline(
             "exploit_hits": stats.exploitdb_hits,
         },
     }
+
+    if ledger is not None:
+        ledger.append_event(
+            component="Enrichment",
+            event_type="phase_end",
+            subject_ref="phase:enrichment",
+            reason_code=DecisionReasonCodes.ENRICHMENT_PHASE_COMPLETED,
+            reason_text="Enrichment pipeline completed and index was built.",
+            factor_refs=["stats.kev_hits", "stats.epss_hits", "stats.exploit_hits"],
+            evidence={"stats": dict(sources.get("stats", {}))},
+        )
 
     return EnrichmentPipelineState(scan_result=scan_result, sources=sources, nvd_status=nvd_status)

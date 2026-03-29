@@ -41,6 +41,8 @@ Input: `Thousands of findings from Nessus/OpenVAS reports with CVSS only scoring
 
 Output: `A focused, ranked list of vulnerabilities enriched with exploit context and explainable scoring artifacts, ready for triage and remediation.`
 
+![Infograph](documentation/img/infograph.jpg)
+
 **Stop sorting by severity alone. Start prioritizing by real-world risk.**
 
 > **In a sample dataset of 1,250 findings, VulnParse-Pin reduced triage scope to 72 high-priority items while surfacing all KEV-listed vulnerabilities at the top.**
@@ -56,8 +58,6 @@ vpp --demo
 
 > Results are saved automatically to user's local app data and path shown in the terminal.
 
-
-
 ### What Happens?
 
 VulnParse-Pin analyzed your report and prioritized vulnerabilities based on:
@@ -70,7 +70,7 @@ VulnParse-Pin analyzed your report and prioritized vulnerabilities based on:
 
 ### What This Means For You:
 
-#### Instead of 12,000 findings with:
+#### Instead of **12,000** findings with:
 
 - CVSS-only scoring
 - No exploit context
@@ -86,42 +86,9 @@ This is your vulnerability data, but now it's actionable and focused on what mat
 
 ***You now have a clear starting point for remediation.***
 
-![Results Snippet](documentation/img/results_snippet.JPG)
+![Report Snippet](documentation/img/top20.jpg)
 
-Example JSON Output:
-
-```JSON
-{
-  "assets": [
-              {
-                  "asset_id": "aid_v1_413d17ffd0d4b5ea",
-                  "rank": 1,
-                  "score_basis": "raw",
-                  "score": 59.349,
-                  "top_scores": [
-                      22.944,
-                      21.639,
-                      20.985,
-                      18.691,
-                      16.895
-                  ],
-                  "scored_findings": 500,
-                  "inference": {
-                      "exposure_score": 2,
-                      "confidence": "low",
-                      "externally_facing_inferred": false,
-                      "public_service_ports_inferred": true,
-                      "evidence": [
-                          "Common public-service port observed (+2)",
-                          "RFC1918/private IP observed (-4)",
-                          "Remote administration port observed (+2)",
-                          "Web service port observed (+2)"
-                      ]
-                  }
-              },
-          ...
-}
-```
+![Asset Prioritization Example](documentation/img/techreportsnip.jpg)
 
 See the [Getting Started In 5 Minutes](documentation/docs/Getting%20Started%20In%205%20Minutes.md) or [Installation](documentation/docs/Installation.md) guide for more details and options.
 
@@ -236,7 +203,13 @@ pip install vulnparse_pin-1.0.0-py3-none-any.whl
 After installation, you can run VulnParse-Pin with your own scanner exports:
 
 ```bash
-vpp -f path/to/your_scan.[nessus|xml] -o <output_file>.json -pp -oC <output_file>.csv -oM <output_file>.md -oMT <output_file>_technical.md 
+vpp -f path/to/your_scan.[nessus|xml] -o <output_file>.json -pp -oC <output_file>.csv -oM <output_file>.md -oMT <output_file>_technical.md --output-runmanifest <output_file>_runmanifest.json
+```
+
+Verify a previously generated runmanifest artifact without rerunning the pipeline:
+
+```bash
+vpp --verify-runmanifest <output_file>_runmanifest.json
 ```
 
 Check out [Releases](https://github.com/QT-Ashley/VulnParse-Pin/releases) for the latest release artifacts.
@@ -275,6 +248,8 @@ For more detailed information on how to use, configure, and extend VulnParse-Pin
 - [Getting Started In 5 Minutes](documentation/docs/Getting%20Started%20In%205%20Minutes.md)
 - [Architecture](documentation/docs/Architecture.md)
 - [Pipeline System](documentation/docs/Pipeline%20System.md)
+- [RunManifest Overview](documentation/docs/RunManifest.md)
+- [RunManifest Technical Deep Dive](documentation/docs/RunManifest_Technical.md)
 - [Security Features](documentation/docs/Security%20Features.md)
 - [Current Scoring Profile (March 2026)](documentation/docs/Configs.md)
 - [Configs](documentation/docs/Configs.md)

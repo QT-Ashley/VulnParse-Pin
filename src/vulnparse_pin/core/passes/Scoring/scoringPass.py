@@ -15,6 +15,7 @@ import threading
 import os
 
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+from vulnparse_pin.core.classes.decision_reasons import DecisionReasonCodes
 from vulnparse_pin.core.classes.pass_classes import DerivedPassResult, Pass
 from vulnparse_pin.core.passes.types import ScoreCoverage, ScoredFinding, ScoringPassOutput
 from vulnparse_pin.core.classes.pass_classes import PassMeta
@@ -219,6 +220,73 @@ class ScoringPass(Pass):
             avg_scored_risk=avg_scored,
             avg_operational_risk=avg_op
         )
+
+        services = getattr(ctx, "services", None)
+        ledger = getattr(services, "ledger", None)
+        runmanifest_mode = str(getattr(services, "runmanifest_mode", "compact") or "compact").lower()
+        if ledger is not None:
+            ledger.append_event(
+                component="Scoring",
+                event_type="decision",
+                subject_ref="scoring:summary",
+                reason_code=DecisionReasonCodes.SCORING_SUMMARY_COMPUTED,
+                reason_text="Scoring summary metrics computed for this run.",
+                factor_refs=["coverage", "avg_scored_risk", "avg_operational_risk"],
+                evidence={
+                    "total_findings": total,
+                    "scored_findings": scored,
+                    "coverage_ratio": coverage_ratio,
+                },
+            )
+
+            if highest_asset is not None:
+                ledger.append_event(
+                    component="Scoring",
+                    event_type="decision",
+                    subject_ref=f"asset:{highest_asset}",
+                    reason_code=DecisionReasonCodes.HIGHEST_RISK_ASSET_SELECTED,
+                    reason_text="Asset selected as highest risk based on max raw score.",
+                    factor_refs=["asset_scores", "highest_risk_asset_score"],
+                    confidence="high",
+                    evidence={
+                        "asset_id": highest_asset,
+                        "raw_score": highest_score,
+                    },
+                )
+
+            if runmanifest_mode == "expanded":
+                top_assets = sorted(asset_scores.items(), key=lambda kv: kv[1], reverse=True)[:10]
+                for rank, (asset_id, score) in enumerate(top_assets, start=1):
+                    ledger.append_event(
+                        component="Scoring",
+                        event_type="decision",
+                        subject_ref=f"asset:{asset_id}",
+                        reason_code=DecisionReasonCodes.HIGHEST_RISK_ASSET_SELECTED,
+                        reason_text="Asset included in expanded scoring leaderboard by raw score.",
+                        factor_refs=["asset_scores", "highest_risk_asset_score"],
+                        confidence="medium" if rank > 3 else "high",
+                        evidence={
+                            "rank": rank,
+                            "asset_id": asset_id,
+                            "raw_score": score,
+                        },
+                    )
+
+            ledger.append_event(
+                component="Scoring",
+                event_type="decision",
+                subject_ref="assets:criticality_distribution",
+                reason_code=DecisionReasonCodes.ASSET_CRITICALITY_DERIVED,
+                reason_text="Asset criticality distribution derived from risk-band thresholds.",
+                factor_refs=[
+                    "asset_criticality_thresholds",
+                    "asset_band_counts",
+                ],
+                evidence={
+                    "assets_with_criticality": len(asset_criticality),
+                    "thresholds": criticality_thresholds,
+                },
+            )
 
         mode_label = "sequential"
         if use_parallel:
