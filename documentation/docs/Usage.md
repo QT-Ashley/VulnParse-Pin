@@ -73,36 +73,64 @@ vpp -f <input_file> -o <output_file> --log-level DEBUG
 
 ### Enrichment Options
 
-#### --mode
+Enrichment defaults to enabled + online for KEV, EPSS, and Exploit-DB.
 
-- `--mode [-m] <mode>`: This option specifies the enrichment mode to use during analysis. The available modes are `online` and `offline`. Use it as follows:
+Use disable flags to turn a source off, and source flags to switch to offline cache/file mode.
+
+#### --no-kev
+
+- `--no-kev`: Disable KEV enrichment.
 
 ```bash
-vpp -f <input_file> -o <output_file> --mode online
+vpp -f <input_file> -o <output_file> --no-kev
 ```
 
-#### --enrich-kev
+#### --no-epss
 
-- `--enrich-kev [-kev]`: This option enables enrichment using the Known Exploited Vulnerabilities (KEV) database. Use it like this:
+- `--no-epss`: Disable EPSS enrichment.
 
 ```bash
-vpp -f <input_file> -o <output_file> --enrich-kev
+vpp -f <input_file> -o <output_file> --no-epss
 ```
 
-#### --enrich-epss
+#### --no-exploit
 
-- `--enrich-epss [-epss]`: This option enables enrichment using the Exploit Prediction Scoring System (EPSS). Use it as follows:
+- `--no-exploit`: Disable Exploit-DB enrichment.
 
 ```bash
-vpp -f <input_file> -o <output_file> --enrich-epss
+vpp -f <input_file> -o <output_file> --no-exploit
 ```
 
-#### --enrich-exploit
+#### --kev-source
 
-- `--enrich-exploit [-ex]`: This option enables enrichment using the Exploit Database (Default True). Use it like this:
+- `--kev-source <online|offline>`: Select KEV source mode. Default is `online`.
 
 ```bash
-vpp -f <input_file> -o <output_file> --enrich-exploit
+vpp -f <input_file> -o <output_file> --kev-source offline
+```
+
+#### --epss-source
+
+- `--epss-source <online|offline>`: Select EPSS source mode. Default is `online`.
+
+```bash
+vpp -f <input_file> -o <output_file> --epss-source offline
+```
+
+#### --kev-feed
+
+- `--kev-feed <PATH|URL>`: Optional KEV feed override.
+
+```bash
+vpp -f <input_file> -o <output_file> --kev-feed https://example.org/kev.json
+```
+
+#### --epss-feed
+
+- `--epss-feed <PATH|URL>`: Optional EPSS feed override.
+
+```bash
+vpp -f <input_file> -o <output_file> --epss-feed https://example.org/epss.csv.gz
 ```
 
 #### --exploit-source
@@ -286,21 +314,27 @@ Here are some example commands to illustrate how to use VulnParse-Pin with vario
 # Basic usage with pretty print
 vpp -f vulnerabilities.xml -o output.json --pretty-print
 
-# Enrichment with KEV and EPSS
-vpp -f vulnerabilities.xml -o enriched_output.json --enrich-kev --enrich-epss
+# Enrichment is enabled by default (KEV + EPSS + Exploit)
+vpp -f vulnerabilities.xml -o enriched_output.json
+
+# Disable specific enrichments
+vpp -f vulnerabilities.xml -o enriched_output.json --no-kev --no-epss
 
 # Output in CSV format with custom log file
 vpp -f vulnerabilities.xml --output-csv output.csv --log-file vpp.log
 
 # Enrichment with exploit database and refresh cache
-vpp -f vulnerabilities.xml -o enriched_output.json --enrich-exploit --refresh-cache
+vpp -f vulnerabilities.xml -o enriched_output.json --refresh-cache
 
 # Enrichment with exploit database using offline source
-vpp -f vulnerabilities.xml -o enriched_output.json --enrich-exploit --exploit-source offline --exploit-db /path/to/exploit-db
+vpp -f vulnerabilities.xml -o enriched_output.json --exploit-source offline --exploit-db /path/to/exploit-db
+
+# KEV and EPSS using offline cache/files
+vpp -f vulnerabilities.xml -o enriched_output.json --kev-source offline --epss-source offline
 
 # Output in Markdown format for technical report
 vpp -f vulnerabilities.xml --output-md-technical technical_report.md
 
 # Enrichment with KEV and EPSS, output in presentation mode with overlay
-vpp -f vulnerabilities.xml -o presentation_output.json --enrich-kev --enrich-epss --presentation --overlay-mode namespace
+vpp -f vulnerabilities.xml -o presentation_output.json --presentation --overlay-mode namespace
 ```

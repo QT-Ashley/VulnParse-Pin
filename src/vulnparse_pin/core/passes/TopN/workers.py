@@ -94,6 +94,7 @@ def _predicate_matches_worker(
     pred_tokens: Tuple[str, ...],
     ip: str,
     hostname: str,
+    criticality: str,
     ports_set: set[int],
     public_service_ports_set: set[int],
 ) -> bool:
@@ -107,6 +108,8 @@ def _predicate_matches_worker(
         return any(p in ports_set for p in pred_ports)
     if pred_name == "hostname_contains_any":
         return any(tok in hostname for tok in pred_tokens)
+    if pred_name == "criticality_is":
+        return criticality in pred_tokens
     return False
 
 
@@ -120,6 +123,7 @@ def _infer_exposure_worker(
 
     ip = (obs.get("ip") or "").strip()
     hostname = (obs.get("hostname") or "").strip().lower()
+    criticality = str(obs.get("criticality") or "").strip().lower()
     ports_set = set(obs.get("open_ports", ()))
 
     for rule in inference_cfg["rules"]:
@@ -131,6 +135,7 @@ def _infer_exposure_worker(
             tuple(rule["predicate_tokens"]),
             ip,
             hostname,
+            criticality,
             ports_set,
             set(inference_cfg["public_service_ports"]),
         ):
@@ -167,13 +172,15 @@ def _topn_asset_chunk_worker(
 ) -> Dict[str, Any]:
     out_inference: Dict[str, Dict[str, Any]] = {}
     out_findings: Dict[str, List[Dict[str, Any]]] = {}
-    out_assets: List[Tuple[float, int, int, str, Tuple[float, ...]]] = []
+    out_assets: List[Tuple[float, int, int, int, str, Tuple[float, ...]]] = []
     global_heap: List[Tuple[float, str, str, int, Dict[str, Any]]] = []
     entry_counter = 0
 
     for asset_id, finding_ids in chunk:
         obs = asset_obs_by_id.get(asset_id, {"asset_id": asset_id, "ip": None, "hostname": None, "open_ports": ()})
         out_inference[asset_id] = _infer_exposure_worker(obs, inference_cfg)
+        crit_label = str(obs.get("criticality") or "").strip().lower()
+        crit_rank = {"extreme": 4, "high": 3, "medium": 2, "low": 1}.get(crit_label, 0)
 
         rows: List[Tuple[float, str, Dict[str, Any]]] = []
         asset_scores: List[float] = []
@@ -241,7 +248,7 @@ def _topn_asset_chunk_worker(
             if i < len(decay):
                 asset_score += float(value) * float(decay[i])
 
-        out_assets.append((asset_score, crit_high, scorable_count, asset_id, top_scores))
+        out_assets.append((asset_score, crit_high, crit_rank, scorable_count, asset_id, top_scores))
 
     global_candidates = [
         (score, asset_id, fid, ref_dict)

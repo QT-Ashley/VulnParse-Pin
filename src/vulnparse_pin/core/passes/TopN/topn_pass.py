@@ -9,13 +9,14 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import concurrent.futures as cf
 import os
 
 from vulnparse_pin.core.classes.pass_classes import DerivedPassResult, Pass, PassMeta
+from vulnparse_pin.core.classes.dataclass import AssetObservation
 from vulnparse_pin.core.passes.types import (
     ExposureInference,
     RankedAssetRef,
@@ -30,17 +31,6 @@ if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext, ScanResult
     from vulnparse_pin.core.passes.types import ScoredFinding
     from vulnparse_pin.core.passes.TopN.TN_triage_semantics import ConfidenceThreshold
-
-# -------------------------------------------
-# Observation View
-# -------------------------------------------
-
-@dataclass(frozen=True)
-class AssetObservation:
-    asset_id: str
-    ip: Optional[str]
-    hostname: Optional[str]
-    open_ports: Tuple[int, ...]
 
 
 # -------------------------------------------
@@ -75,7 +65,6 @@ class TopNPass(Pass):
 
         # 1 Build lookup index
         asset_to_findings = self._index_findings_by_asset(scan)     # { asset_id: [fid, fid, fid] }
-        
         # Count total findings
         total_findings = sum(len(fids) for fids in asset_to_findings.values())
         use_process_pool = total_findings > self.process_pool_threshold
@@ -98,7 +87,7 @@ class TopNPass(Pass):
             # 2 Compute inference per asset
             inference_by_asset: Dict[str, ExposureInference] = {}
             for asset_id, _ in asset_to_findings.items():
-                obs = self._collect_asset_observation(scan, asset_id, finding_ids=asset_to_findings[asset_id])
+                obs = self._collect_asset_observation(scan, asset_id, finding_ids=asset_to_findings[asset_id], ctx=ctx)
                 if obs is None:
                     continue
                 inference_by_asset[asset_id] = self._infer_exposure(obs)
@@ -112,6 +101,7 @@ class TopNPass(Pass):
                     asset_id=asset_id,
                     finding_ids=fids,
                     rank_basis=rank_basis,
+                    ctx=ctx,
                     max_findings=self.cfg.topn.max_findings_per_asset,
                 )
                 findings_by_asset_ranked[asset_id] = ranked
@@ -123,6 +113,7 @@ class TopNPass(Pass):
                 asset_to_findings=asset_to_findings,
                 inference_by_asset=inference_by_asset,
                 rank_basis=rank_basis,
+                ctx=ctx,
             )
 
             # trim to max_assets
@@ -136,6 +127,7 @@ class TopNPass(Pass):
                     scoring=scoring,
                     asset_to_findings=asset_to_findings,
                     rank_basis=rank_basis,
+                    ctx=ctx,
                     max_findings=self.cfg.topn.global_top_findings
                 )
 
@@ -198,28 +190,48 @@ class TopNPass(Pass):
 
         for asset in scan.assets:
             aid = getattr(asset, "asset_id", None)
-            ip_addr = getattr(asset, "ip_address", None)
-            hostname = getattr(asset, "hostname", None)
-            open_ports: set[int] = set()
             for finding in asset.findings:
                 if aid is None:
                     aid = getattr(finding, "asset_id", None)
                 fid = finding.finding_id
                 port = getattr(finding, "affected_port", None)
-                if isinstance(port, int):
-                    open_ports.add(port)
                 finding_attrs[fid] = {
                     "port": port,
                     "proto": getattr(finding, "protocol", None),
                     "plugin_id": getattr(finding, "vuln_id", None),
                 }
-            if aid is not None:
+
+        idx = getattr(getattr(ctx, "services", None), "post_enrichment_index", None)
+        if idx is not None:
+            for aid, obs in idx.asset_observations.items():
                 asset_obs_by_id[aid] = {
                     "asset_id": aid,
-                    "ip": ip_addr,
-                    "hostname": hostname,
-                    "open_ports": tuple(sorted(open_ports)),
+                    "ip": obs.ip,
+                    "hostname": obs.hostname,
+                    "criticality": obs.criticality,
+                    "open_ports": tuple(obs.open_ports),
                 }
+        else:
+            for asset in scan.assets:
+                aid = getattr(asset, "asset_id", None)
+                ip_addr = getattr(asset, "ip_address", None)
+                hostname = getattr(asset, "hostname", None)
+                crit = getattr(asset, "criticality", None)
+                open_ports: set[int] = set()
+                for finding in asset.findings:
+                    if aid is None:
+                        aid = getattr(finding, "asset_id", None)
+                    port = getattr(finding, "affected_port", None)
+                    if isinstance(port, int):
+                        open_ports.add(port)
+                if aid is not None:
+                    asset_obs_by_id[aid] = {
+                        "asset_id": aid,
+                        "ip": ip_addr,
+                        "hostname": hostname,
+                        "criticality": crit,
+                        "open_ports": tuple(sorted(open_ports)),
+                    }
 
         inference_cfg = {
             "thresholds": {
@@ -248,11 +260,11 @@ class TopNPass(Pass):
 
         inference_by_asset: Dict[str, ExposureInference] = {}
         findings_by_asset_ranked: Dict[str, Tuple[RankedFindingRef, ...]] = {}
-        asset_rows: List[Tuple[float, int, int, str, Tuple[float, ...]]] = []
+        asset_rows: List[Tuple[float, int, int, int, str, Tuple[float, ...]]] = []
         global_candidates: List[Tuple[float, str, str, Dict[str, Any]]] = []
 
         try:
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            with cf.ProcessPoolExecutor(max_workers=num_workers) as executor:
                 futures = {
                     executor.submit(
                         _topn_asset_chunk_worker,
@@ -271,7 +283,7 @@ class TopNPass(Pass):
                     for index, chunk in enumerate(chunks)
                 }
 
-                for future in as_completed(futures):
+                for future in cf.as_completed(futures):
                     payload = future.result()
 
                     for aid, inf in payload["inference"].items():
@@ -313,7 +325,7 @@ class TopNPass(Pass):
             )
             inference_by_asset = {}
             for asset_id, _ in asset_to_findings.items():
-                obs = self._collect_asset_observation(scan, asset_id, finding_ids=asset_to_findings[asset_id])
+                obs = self._collect_asset_observation(scan, asset_id, finding_ids=asset_to_findings[asset_id], ctx=ctx)
                 if obs is None:
                     continue
                 inference_by_asset[asset_id] = self._infer_exposure(obs)
@@ -326,6 +338,7 @@ class TopNPass(Pass):
                     asset_id=asset_id,
                     finding_ids=fids,
                     rank_basis=rank_basis,
+                    ctx=ctx,
                     max_findings=self.cfg.topn.max_findings_per_asset,
                 )
 
@@ -335,6 +348,7 @@ class TopNPass(Pass):
                 asset_to_findings=asset_to_findings,
                 inference_by_asset=inference_by_asset,
                 rank_basis=rank_basis,
+                ctx=ctx,
             )
             ranked_assets = ranked_assets[: self.cfg.topn.max_assets]
 
@@ -345,13 +359,14 @@ class TopNPass(Pass):
                     scoring=scoring,
                     asset_to_findings=asset_to_findings,
                     rank_basis=rank_basis,
+                    ctx=ctx,
                     max_findings=self.cfg.topn.global_top_findings,
                 )
             return inference_by_asset, findings_by_asset_ranked, ranked_assets, global_top
 
-        asset_rows.sort(key=lambda x: (-x[0], -x[1], -x[2], x[3]))
+        asset_rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], x[4]))
         ranked_assets: List[RankedAssetRef] = []
-        for i, (asset_score, _crit_high, scorable_count, asset_id, top_scores) in enumerate(
+        for i, (asset_score, _crit_high, _crit_rank, scorable_count, asset_id, top_scores) in enumerate(
             asset_rows[: self.cfg.topn.max_assets],
             start=1,
         ):
@@ -440,10 +455,17 @@ class TopNPass(Pass):
         if isinstance(scored, dict):
             return scored.get(finding_id)
 
-    def _collect_asset_observation(self, scan: "ScanResult", asset_id: str, *, finding_ids: List[str]) -> Optional[AssetObservation]:
+    def _collect_asset_observation(self, scan: "ScanResult", asset_id: str, *, finding_ids: List[str], ctx: Optional["RunContext"] = None) -> Optional[AssetObservation]:
         """
         Collect ip, hostname, and observed open ports for the given asset_id.
         """
+        services = getattr(ctx, "services", None) if ctx is not None else None
+        index = getattr(services, "post_enrichment_index", None) if services is not None else None
+        if index is not None:
+            obs = index.get_asset_observation(asset_id)
+            if obs is not None:
+                return obs
+
         asset = None
         for a in scan.assets:
             candidate_asset_id = getattr(a, "asset_id", None)
@@ -457,7 +479,7 @@ class TopNPass(Pass):
         # Gather open ports
         ports: List[int] = []
         for fid in finding_ids:
-            f = self._get_finding_by_id(scan, fid)
+            f = self._get_finding_by_id(scan, fid, ctx)
             if not f:
                 continue
             p = getattr(f, "affected_port", None)
@@ -465,9 +487,29 @@ class TopNPass(Pass):
                 ports.append(p)
 
         ports = sorted(set(ports))
-        return AssetObservation(asset_id=asset_id, ip=ip, hostname=hostname, open_ports=tuple(ports))
+        crit = getattr(asset, "criticality", None) if asset else None
+        return AssetObservation(asset_id=asset_id, ip=ip, hostname=hostname, criticality=crit, open_ports=tuple(ports))
 
-    def _get_finding_by_id(self, scan: "ScanResult", finding_id: str) -> Optional[Any]:
+    def _get_finding_by_id(self, scan: "ScanResult", finding_id: str, ctx: Optional["RunContext"] = None) -> Optional[Any]:
+        """
+        O(1) lookup for finding by ID using post-enrichment index if available.
+        Falls back to sequential scan if index not available or ctx not provided.
+        
+        Args:
+            scan: ScanResult (for fallback legacy path)
+            finding_id: ID of finding to retrieve
+            ctx: RunContext with services (optional, for indexed path)
+            
+        Returns:
+            Finding object or None if not found
+        """
+        # Try indexed path first (O(1))
+        services = getattr(ctx, "services", None) if ctx is not None else None
+        index = getattr(services, "post_enrichment_index", None) if services is not None else None
+        if index is not None:
+            return index.get_finding(finding_id)
+        
+        # Fallback to sequential scan (O(n×m)) if index not available
         for a in scan.assets:
             for f in a.findings:
                 if f.finding_id == finding_id:
@@ -487,6 +529,7 @@ class TopNPass(Pass):
         asset_id: str,
         finding_ids: List[str],
         rank_basis: str,
+        ctx: Optional["RunContext"] = None,
         max_findings: int,
     ) -> tuple[RankedFindingRef, ...]:
 
@@ -505,7 +548,7 @@ class TopNPass(Pass):
             band = str(rec.get("risk_band", "unknown"))
             reasons = tuple(rec.get("reason", ()).strip().split(";"))
 
-            f = self._get_finding_by_id(scan, fid)
+            f = self._get_finding_by_id(scan, fid, ctx)
             port = getattr(f, "affected_port", None) if f else None
             proto = getattr(f, "protocol", None) if f else None
             plugin_id = getattr(f, "vuln_id", None) if f else None
@@ -575,7 +618,7 @@ class TopNPass(Pass):
                     "proto": getattr(f, "protocol", None),
                     "plugin_id": getattr(f, "vuln_id", None),
                 }
-        
+
         # Prepare work chunks: [(asset_id, rank_basis, [fid, ...]), ...]
         work_items: List[Tuple[str, str, List[str]]] = []
         for asset_id, fids in asset_to_findings.items():
@@ -591,7 +634,7 @@ class TopNPass(Pass):
         findings_by_asset_ranked: Dict[str, Tuple[RankedFindingRef, ...]] = {}
         
         try:
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            with cf.ProcessPoolExecutor(max_workers=num_workers) as executor:
                 futures = {
                     executor.submit(
                         _rank_findings_chunk_worker,
@@ -603,7 +646,7 @@ class TopNPass(Pass):
                     for index, chunk in enumerate(chunks)
                 }
                 
-                for future in as_completed(futures):
+                for future in cf.as_completed(futures):
                     chunk_results = future.result()
                     
                     for asset_id, ranked_dicts in chunk_results.items():
@@ -641,6 +684,7 @@ class TopNPass(Pass):
                     asset_id=asset_id,
                     finding_ids=fids,
                     rank_basis=rank_basis,
+                    ctx=ctx,
                     max_findings=self.cfg.topn.max_findings_per_asset,
                 )
                 findings_by_asset_ranked[asset_id] = ranked
@@ -654,11 +698,12 @@ class TopNPass(Pass):
         asset_to_findings: Dict[str, List[str]],
         inference_by_asset: Dict[str, ExposureInference],
         rank_basis: str,
+        ctx: Optional["RunContext"] = None,
     ) -> List[RankedAssetRef]:
         decay = self.cfg.topn.decay
         k = self.cfg.topn.k
 
-        rows: List[Tuple[float, int, int, str, RankedAssetRef]] = []
+        rows: List[Tuple[float, int, int, int, str, RankedAssetRef]] = []
 
 
         for asset_id, fids, in asset_to_findings.items():
@@ -681,6 +726,10 @@ class TopNPass(Pass):
                 if band in ("critical", "high"):
                     crit_high += 1
 
+            obs = self._collect_asset_observation(scan, asset_id, finding_ids=fids, ctx=ctx)
+            crit_label = (obs.criticality or "").strip().lower() if obs else ""
+            crit_rank = {"extreme": 4, "high": 3, "medium": 2, "low": 1}.get(crit_label, 0)
+
             scores.sort(reverse=True)
             top_scores = tuple(scores[:k])
             # weighted aggregatio
@@ -699,12 +748,12 @@ class TopNPass(Pass):
             )
 
             # tie-break: asset_score desc, band count desc, scorable count desc, asset id asc
-            rows.append((asset_score, crit_high, scorable_count, asset_id, ref))
+            rows.append((asset_score, crit_high, crit_rank, scorable_count, asset_id, ref))
 
-        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], x[3]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], x[4]))
 
         output: List[RankedAssetRef] = []
-        for i, (_, _, _, _, ref) in enumerate(rows, start=1):
+        for i, (_, _, _, _, _, ref) in enumerate(rows, start=1):
             output.append(_replace_rank(ref, i))
         return output
 
@@ -716,6 +765,7 @@ class TopNPass(Pass):
         scoring: "DerivedPassResult",
         asset_to_findings: Dict[str, List[str]],
         rank_basis: str,
+        ctx: Optional["RunContext"] = None,
         max_findings: int,
     ) -> Tuple[RankedFindingRef, ...]:
 
@@ -734,7 +784,7 @@ class TopNPass(Pass):
                 band = str(rec.get("risk_band", "unknown"))
                 reasons = tuple(rec.get("reason", ()).strip().split(";"))
 
-                f = self._get_finding_by_id(scan, fid)
+                f = self._get_finding_by_id(scan, fid, ctx)
                 port = getattr(f, "affected_port", None) if f else None
                 proto = getattr(f, "protocol", None) if f else None
                 plugin_id = getattr(f, "vuln_id", None) if f else None
@@ -772,12 +822,13 @@ class TopNPass(Pass):
 
         ip = (obs.ip or "").strip()
         hostname = (obs.hostname or "").strip().lower()
+        criticality = (obs.criticality or "").strip().lower()
         ports_set = set(obs.open_ports)
 
         for rule in self.cfg.inference.rules:
             if not rule.enabled:
                 continue
-            if self._predicate_matches(rule.predicate, ip, hostname, ports_set):
+            if self._predicate_matches(rule.predicate, ip, hostname, criticality, ports_set):
                 score += rule.weight
                 hit_tags.add(rule.tag)
                 ev = rule.evidence.strip() if rule.evidence else f"{rule.rule_id} ({rule.weight:+d})"
@@ -799,7 +850,7 @@ class TopNPass(Pass):
             evidence=evidence_sorted
         )
 
-    def _predicate_matches(self, pred: ParsedPredicate, ip: str, hostname: str, ports_set: set[int]) -> bool:
+    def _predicate_matches(self, pred: ParsedPredicate, ip: str, hostname: str, criticality: str, ports_set: set[int]) -> bool:
         name = pred.name
 
         if name == "ip_is_public":
@@ -812,6 +863,8 @@ class TopNPass(Pass):
             return any(p in ports_set for p in pred.ports)
         if name == "hostname_contains_any":
             return any(tok in hostname for tok in pred.tokens)
+        if name == "criticality_is":
+            return criticality in pred.tokens
 
         return False
 

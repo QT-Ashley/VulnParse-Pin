@@ -316,6 +316,7 @@ _SUPPORTED_FORMS = frozenset({
     "any_port_in_public_list",
     "port_in",
     "hostname_contains_any",
+    "criticality_is",
 })
 
 
@@ -335,8 +336,10 @@ def _parse_when_predicate(
     - any_port_in_public_list
     - port_in:[80,443,...]
     - hostname_contains_any:[dmz,rtr,vpn,...]
+    - criticality_is:[extreme,high,medium,low]
     """
     if ":" in when:
+        _ = public_ports_set
         name, rest = when.split(":", 1)
         name = name.strip()
         rest = rest.strip()
@@ -403,6 +406,20 @@ def _parse_when_predicate(
             issues.append(SemanticIssue(rule_path, "hostname_contains_any token list too large (max 50)", "HOST_TOKEN_COUNT", detail=str(len(tokens))))
             return None
         return ParsedPredicate(name=name, tokens=tuple(tokens))
+
+    if name == "criticality_is":
+        allowed = {"extreme", "high", "medium", "low"}
+        values: List[str] = []
+        for it in items:
+            val = it.strip().lower()
+            if val not in allowed:
+                issues.append(SemanticIssue(rule_path, "criticality_is only supports [extreme,high,medium,low]", "CRIT_VALUE_INVALID", detail=val))
+                return None
+            values.append(val)
+        if not values:
+            issues.append(SemanticIssue(rule_path, "criticality_is cannot be empty", "CRIT_VALUE_EMPTY"))
+            return None
+        return ParsedPredicate(name=name, tokens=tuple(values))
 
     # any_port_in_public list uses 0 args: Reaching this point is a catch-all
     issues.append(SemanticIssue(rule_path, f"Unhandled predicate form: {name}", "PRED_INTERNAL"))

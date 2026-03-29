@@ -17,9 +17,6 @@ import sys
 from colorama import Fore, Style
 
 from vulnparse_pin.app.bootstrap import RuntimeBootstrapState
-from vulnparse_pin.app.runtime_helpers import resolve_feed_path
-
-
 @dataclass(frozen=True)
 class ResolvedIOState:
     scanner_input: Path
@@ -42,16 +39,10 @@ def resolve_io_paths_and_modes(args, runtime: RuntimeBootstrapState, kev_feed: s
     scanner_input = pfh.ensure_readable_file(args.file, label="Scanner Input")
 
     kev_path = None
-    if getattr(args, "enrich_kev", None) and not args.enrich_kev.startswith("http"):
-        kev_path = pfh.ensure_readable_file(args.enrich_kev, label="KEV Local Cache File")
-    else:
-        kev_path, _, _ = ctx.services.feed_cache.resolve("kev")
+    kev_path, _, _ = ctx.services.feed_cache.resolve("kev")
 
     epss_path = None
-    if getattr(args, "enrich_epss", None) and not args.enrich_epss.startswith("http"):
-        epss_path = pfh.ensure_readable_file(args.enrich_epss, label="EPSS Local Cache File")
-    else:
-        epss_path, _, _ = ctx.services.feed_cache.resolve("epss")
+    epss_path, _, _ = ctx.services.feed_cache.resolve("epss")
 
     json_output = None
     if getattr(args, "output", None):
@@ -92,7 +83,7 @@ def resolve_io_paths_and_modes(args, runtime: RuntimeBootstrapState, kev_feed: s
     src = None
     dst = None
     exploit_db = None
-    if args.enrich_exploit and args.exploit_source == "offline":
+    if (not args.no_exploit) and args.exploit_source == "offline":
         if args.exploit_db is not None and Path(args.exploit_db).suffix == ".csv":
             src = pfh.ensure_readable_file(args.exploit_db, label="Exploit-DB Input File")
             dst = pfh.ensure_writable_file(paths.cache_dir / "exploit_db" / "files_exploit.csv", label="Exploit-DB Cache File", create_parents=True, overwrite=True)
@@ -137,25 +128,35 @@ def resolve_io_paths_and_modes(args, runtime: RuntimeBootstrapState, kev_feed: s
             label="CSV-Sanitization",
         )
 
-    kev_source = resolve_feed_path(
-        arg_val=args.enrich_kev,
-        offline_mode=(args.mode == "offline"),
-        default_online=kev_feed,
-        default_offline=kev_path,
-    )
-    epss_source = resolve_feed_path(
-        arg_val=args.enrich_epss,
-        offline_mode=(args.mode == "offline"),
-        default_online=epss_feed,
-        default_offline=epss_path,
-    )
+    kev_source = None
+    if not args.no_kev:
+        kev_override = getattr(args, "kev_feed", None)
+        if kev_override:
+            if args.kev_source == "offline" and str(kev_override).startswith("http"):
+                raise ValueError("--kev-source offline does not allow HTTP/HTTPS KEV overrides.")
+            kev_source = pfh.ensure_readable_file(kev_override, label="KEV Local Cache File") if args.kev_source == "offline" else kev_override
+        else:
+            kev_source = kev_path if args.kev_source == "offline" else kev_feed
 
-    if args.mode == "offline":
-        logger.print_info("[*] Offline mode enabled. Enrichment will use local cache only.\n", label="Mode-Offline")
-        if not os.path.exists(kev_source):
+    epss_source = None
+    if not args.no_epss:
+        epss_override = getattr(args, "epss_feed", None)
+        if epss_override:
+            if args.epss_source == "offline" and str(epss_override).startswith("http"):
+                raise ValueError("--epss-source offline does not allow HTTP/HTTPS EPSS overrides.")
+            epss_source = pfh.ensure_readable_file(epss_override, label="EPSS Local Cache File") if args.epss_source == "offline" else epss_override
+        else:
+            epss_source = epss_path if args.epss_source == "offline" else epss_feed
+
+    if (not args.no_kev) and args.kev_source == "offline":
+        logger.print_info("[*] KEV offline mode enabled. Using local cache/file.", label="Mode-Offline")
+        if not os.path.exists(str(kev_source)):
             logger.print_error(f"[OFFLINE] KEV cache not found: {kev_source}", label="Mode-Offline")
             raise FileNotFoundError("Missing KEV cache.")
-        if not os.path.exists(epss_source):
+
+    if (not args.no_epss) and args.epss_source == "offline":
+        logger.print_info("[*] EPSS offline mode enabled. Using local cache/file.", label="Mode-Offline")
+        if not os.path.exists(str(epss_source)):
             logger.print_error(f"[OFFLINE] EPSS cache not found: {epss_source}", label="Mode-Offline")
             raise FileNotFoundError("Missing EPSS cache.")
 

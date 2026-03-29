@@ -1,80 +1,267 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://vulnparse-pin.local/schemas/scanResult.schema.json",
-  "title": "VulnParse-Pin ScanResult",
+  "title": "VulnParse-Pin ScanResult Schema",
+  "description": "Complete vulnerability scan result object encompassing metadata, scanned assets, and detected findings. This is the primary output structure from VulnParse-Pin parsers.",
   "type": "object",
   "required": ["scan_metadata", "assets", "derived"],
   "additionalProperties": false,
   "properties": {
     "scan_metadata": {
-      "type": "object",
-      "required": ["source", "scan_date", "asset_count", "vulnerability_count"],
-      "additionalProperties": true,
-      "properties": {
-        "source": {"type": "string", "minLength": 1},
-        "scan_date": {"type": ["string", "number"]},
-        "asset_count": {"type": "integer", "minimum": 0},
-        "vulnerability_count": {"type": "integer", "minimum": 0},
-        "parsed_at": {"type": ["string", "null"]},
-        "source_file": {"type": ["string", "null"]},
-        "scan_name": {"type": ["string", "null"]}
-      }
+      "$ref": "#/$defs/ScanMetaData"
     },
     "assets": {
       "type": "array",
+      "description": "Collection of scanned assets and their associated findings",
       "items": {
-        "type": "object",
-        "required": ["hostname", "ip_address", "findings"],
-        "additionalProperties": true,
-        "properties": {
-          "asset_id": {"type": ["string", "null"]},
-          "hostname": {"type": "string", "minLength": 1},
-          "ip_address": {"type": "string"},
-          "criticality": {"type": ["string", "null"]},
-          "avg_risk_score": {"type": ["number", "null"]},
-          "os": {"type": ["string", "null"]},
-          "findings": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["finding_id", "vuln_id", "title", "description", "severity", "cves"],
-              "additionalProperties": true,
-              "properties": {
-                "finding_id": {"type": "string", "minLength": 1},
-                "vuln_id": {"type": "string", "minLength": 1},
-                "title": {"type": "string", "minLength": 1},
-                "description": {"type": "string"},
-                "severity": {"type": "string"},
-                "cves": {
-                  "type": "array",
-                  "items": {"type": "string"}
-                },
-                "cvss_score": {"type": ["number", "null"]},
-                "epss_score": {"type": ["number", "null"]},
-                "cisa_kev": {"type": ["boolean", "null"]},
-                "cvss_vector": {"type": ["string", "null"]},
-                "exploit_available": {"type": ["boolean", "null"]},
-                "affected_port": {"type": ["integer", "null"]},
-                "protocol": {"type": ["string", "null"]},
-                "detection_plugin": {"type": ["string", "null"]},
-                "plugin_output": {"type": ["string", "null"]},
-                "solution": {"type": ["string", "null"]},
-                "references": {"type": ["array", "null"]},
-                "triage_priority": {"type": ["string", "null"]},
-                "enriched": {"type": ["boolean", "null"]},
-                "asset_id": {"type": ["string", "null"]}
-              }
-            }
+        "$ref": "#/$defs/Asset"
+      }
+    },
+    "derived": {
+      "$ref": "#/$defs/DerivedContext"
+    }
+  },
+  "$defs": {
+    "ScanMetaData": {
+      "type": "object",
+      "title": "Scan Metadata",
+      "description": "Metadata about the vulnerability scan",
+      "required": ["source", "scan_date", "asset_count", "vulnerability_count"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Vulnerability scanner source (e.g., Nessus, OpenVAS)"
+        },
+        "scan_date": {
+          "description": "Date and time the scan was performed (ISO 8601 format or Unix timestamp)",
+          "oneOf": [
+            {"type": "string", "format": "date-time"},
+            {"type": "number"}
+          ]
+        },
+        "asset_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of scanned assets"
+        },
+        "vulnerability_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of vulnerabilities detected"
+        },
+        "parsed_at": {
+          "type": ["string", "null"],
+          "description": "ISO 8601 timestamp when VulnParse-Pin parsed this scan",
+          "format": "date-time"
+        },
+        "source_file": {
+          "type": ["string", "null"],
+          "description": "Path to the source scanner report file"
+        },
+        "scan_name": {
+          "type": ["string", "null"],
+          "description": "Human-readable name or identifier for the scan"
+        }
+      }
+    },
+    "Asset": {
+      "type": "object",
+      "title": "Asset",
+      "description": "A scanned system or network device",
+      "required": ["hostname", "ip_address", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "type": ["string", "null"],
+          "description": "Unique identifier for the asset, generated from hostname and IP"
+        },
+        "hostname": {
+          "type": "string",
+          "minLength": 1,
+          "description": "FQDN or hostname of the asset"
+        },
+        "ip_address": {
+          "type": "string",
+          "description": "Primary IP address of the asset (IPv4 or IPv6)"
+        },
+        "criticality": {
+          "type": ["string", "null"],
+          "enum": ["Extreme", "High", "Medium", "Low", null],
+          "description": "Asset criticality level determined by highest-severity findings. Values: Extreme (3+ Critical), High (1+ Critical or 2+ High), Medium (1 High), Low (none). Used in TopN exposure inference rules (as lowercase: extreme, high, medium, low)"
+        },
+        "avg_risk_score": {
+          "type": ["number", "null"],
+          "description": "Average risk score across all findings on this asset (0-10 scale)",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "os": {
+          "type": ["string", "null"],
+          "description": "Operating system detected on the asset"
+        },
+        "shodan_data": {
+          "type": ["object", "null"],
+          "description": "Additional data from Shodan intelligence (if enrichment enabled)"
+        },
+        "findings": {
+          "type": "array",
+          "description": "Vulnerabilities detected on this asset",
+          "items": {
+            "$ref": "#/$defs/Finding"
           }
         }
       }
     },
-    "derived": {
+    "Finding": {
       "type": "object",
-      "required": ["passes"],
+      "title": "Finding",
+      "description": "Individual vulnerability finding",
+      "required": ["finding_id", "vuln_id", "title", "description", "severity", "cves"],
+      "additionalProperties": false,
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique identifier for this finding (hash of asset_id, scanner_sig, protocol, port, title)"
+        },
+        "vuln_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Scanner-specific plugin/OID identifier"
+        },
+        "asset_id": {
+          "type": ["string", "null"],
+          "description": "Reference to the parent asset"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Vulnerability name/title"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the vulnerability"
+        },
+        "severity": {
+          "type": "string",
+          "description": "Scanner-reported severity (e.g., Critical, High, Medium, Low, Info)"
+        },
+        "cves": {
+          "type": "array",
+          "description": "Associated CVE identifiers",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cvss_score": {
+          "type": ["number", "null"],
+          "description": "CVSS score (v2 or v3, typically 0-10)",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "cvss_vector": {
+          "type": ["string", "null"],
+          "description": "CVSS vector string (e.g., CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)"
+        },
+        "epss_score": {
+          "type": ["number", "null"],
+          "description": "EPSS (Exploit Prediction Scoring System) score (0-1, from CISA/NVD)",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "cisa_kev": {
+          "type": ["boolean", "null"],
+          "description": "Whether this CVE is on CISA's Known Exploited Vulnerabilities list"
+        },
+        "exploit_available": {
+          "type": ["boolean", "null"],
+          "description": "Whether a public exploit is known/available"
+        },
+        "exploit_references": {
+          "type": ["array", "null"],
+          "description": "References to public exploits",
+          "items": {
+            "type": "object"
+          }
+        },
+        "affected_port": {
+          "type": ["integer", "null"],
+          "description": "Network port associated with the vulnerability",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": ["string", "null"],
+          "description": "Protocol (tcp, udp, icmp, etc.)"
+        },
+        "detection_plugin": {
+          "type": ["string", "null"],
+          "description": "Detection method/plugin used by scanner"
+        },
+        "plugin_output": {
+          "type": ["string", "null"],
+          "description": "Raw plugin/detection output from scanner"
+        },
+        "plugin_evidence": {
+          "type": ["array", "null"],
+          "description": "Evidence items from scanner detection",
+          "items": {
+            "type": "string"
+          }
+        },
+        "solution": {
+          "type": ["string", "null"],
+          "description": "Remediation guidance or patching information"
+        },
+        "references": {
+          "type": ["array", "null"],
+          "description": "External references (URLs, documentation links)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enriched": {
+          "type": ["boolean", "null"],
+          "description": "Whether this finding was enriched with additional intelligence"
+        },
+        "enrichment_source_cve": {
+          "type": ["string", "null"],
+          "description": "CVE from which enrichment data (EPSS, KEV, etc.) was sourced"
+        },
+        "raw_risk_score": {
+          "type": ["number", "null"],
+          "description": "Initial risk score calculated by scoring pass before adjustments",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "risk_score": {
+          "type": ["number", "null"],
+          "description": "Final adjusted risk score after triage and prioritization",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "risk_band": {
+          "type": ["string", "null"],
+          "description": "Risk band classification (Critical, High, Medium, Low, Minimal)"
+        },
+        "triage_priority": {
+          "type": ["string", "null"],
+          "description": "Triage priority assigned by TopN pass (Critical, High, etc.)"
+        }
+      }
+    },
+    "DerivedContext": {
+      "type": "object",
+      "title": "Derived Context",
+      "description": "Container for results from post-parsing passes (Scoring, TopN, etc.)",
       "additionalProperties": true,
       "properties": {
-        "passes": {"type": "object"}
+        "passes": {
+          "type": "object",
+          "description": "Dictionary mapping pass names to their results"
+        }
       }
     }
   }

@@ -28,41 +28,76 @@ class OpenVASXMLParser(BaseParser):
         super().__init__(ctx = ctx, filepath=filepath)
 
     @classmethod
-    def detect_file(cls, filepath) -> bool:
-        """Detect if the file is an OpenVAS XML file by structure"""
+    def detect_file(cls, filepath) -> tuple[float, list[tuple[str, str]]]:
+        """
+        Detect if the file is an OpenVAS/GVM XML export.
 
-        if not filepath.suffix == ".xml":
-            return False
+        Returns (confidence, evidence_pairs) where confidence is in [0.0, 1.0].
+        Signals are additive; sum is capped at 1.0.
+        Hard negative gate: any NessusClientData_v2 presence → 0.0.
+        Signals:
+          known GVM root tag               :  +0.20
+          results//result structure        :  +0.30
+          nvt element present              :  +0.25
+          OID attribute on first nvt       :  +0.10  (dotted-numeric GVM OID)
+          creation_time element present    :  +0.05
+          host elements present            :  +0.05
+        """
+        evidence: list[tuple[str, str]] = []
+
+        if filepath.suffix != ".xml":
+            return 0.0, [("extension", f"rejected:{filepath.suffix}")]
 
         try:
-            size = os.path.getsize(filepath)
-            if size > 500 * 1024 * 1024:
-                cls.ctx.logger.print_error(f"File supplied exceeds 500MB. "
-                                    f"This is a mechanism to protect against DOS. File: {filepath}")
-                return False
-        except OSError as e:
-            cls.ctx.logger.error(f"Failed to stat file for detection: {e}")
-            return False
-
-
-        try:
+            if os.path.getsize(filepath) > 500 * 1024 * 1024:
+                return 0.0, [("size", "exceeds_500MB")]
             raw = Path(filepath).read_bytes()
             root = fromstring(raw)
-        except (OSError, ValueError) as e:
-            cls.ctx.logger.error(f"Error detecting file: {e}")
-            return False
+        except (OSError, ValueError, Exception):
+            return 0.0, [("parse", "failed")]
 
-        if (
-            root.tag == "NessusClientData_v2"
-            or root.find(".//NessusClientData_v2") is not None
-        ):
-            return False
+        # Hard negative: reject any Nessus file immediately
+        if root.tag == "NessusClientData_v2" or root.find(".//NessusClientData_v2") is not None:
+            return 0.0, [("rejected", "NessusClientData_v2_found")]
 
-        result_nodes = root.find(".//report//results//result") or root.find(".//results//result")
-        has_nvt = root.find(".//nvt") is not None
+        score = 0.0
 
-        # Confirm GVM structure
-        return bool(result_nodes) and has_nvt
+        # Root tag signal — known GVM/OpenVAS root element names
+        _GVM_ROOT_TAGS = frozenset({"report", "get_reports_response", "omp", "get_results_response"})
+        if root.tag in _GVM_ROOT_TAGS:
+            score += 0.20
+            evidence.append(("root_tag", root.tag))
+
+        # Core structural signal: result nodes under results hierarchy
+        result_node = root.find(".//report//results//result") or root.find(".//results//result")
+        if result_node is not None:
+            score += 0.30
+            evidence.append(("structure", "results//result"))
+
+        # NVT presence — GVM-specific concept, not present in other scanners
+        first_nvt = root.find(".//nvt")
+        if first_nvt is not None:
+            score += 0.25
+            evidence.append(("structure", "nvt"))
+
+            # OID attribute on nvt element: dotted-numeric GVM plugin identifier
+            oid = first_nvt.get("oid", "")
+            if oid and re.match(r'^\d+(\.\d+)+$', oid):
+                score += 0.10
+                evidence.append(("nvt_oid", oid[:40]))
+
+        # creation_time is present on all well-formed GVM reports
+        if root.findtext(".//creation_time"):
+            score += 0.05
+            evidence.append(("meta", "creation_time"))
+
+        # host elements confirm actual scan result data is present
+        host_count = len(root.findall(".//host"))
+        if host_count > 0:
+            score += 0.05
+            evidence.append(("structure", f"host_count={host_count}"))
+
+        return min(score, 1.0), evidence
 
     def parse(self) -> ScanResult:
         """Parse OpenVAS XML into ScanResult object with Assets + Findings."""

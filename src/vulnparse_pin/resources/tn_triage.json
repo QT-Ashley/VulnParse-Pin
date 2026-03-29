@@ -2,7 +2,7 @@
     "meta": {
         "name": "VulnParse-Pin TopN Triage Config",
         "version": "1",
-        "notes": "Token-based infernece rules. Ranking uses raw score by default. K = len(topn.decay)."
+        "notes": "Token-based inference rules. Ranking uses raw score by default. K = len(topn.decay)."
     },
     "topn": {
         "rank_basis": "raw",
@@ -49,7 +49,8 @@
             "ip_is_private",
             "any_port_in_public_list",
             "port_in",
-            "hostname_contains_any"
+            "hostname_contains_any",
+            "criticality_is"
         ],
         "rules": [
             {
@@ -99,6 +100,14 @@
                 "weight": 1,
                 "when": "hostname_contains_any:[dmz,edge,gw,gateway,bastion,vpn,proxy,lb,loadbalancer,public]",
                 "evidence": "Hostname hint suggests edge exposure (+1)"
+            },
+            {
+                "id": "critical_asset_hint",
+                "enabled": true,
+                "tag": "externally_facing",
+                "weight": 1,
+                "when": "criticality_is:[extreme,high]",
+                "evidence": "Asset criticality suggests elevated exposure priority (+1)"
             }
         ]
     }

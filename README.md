@@ -31,6 +31,8 @@ Normalize • Enrich • Prioritize • Decide
 ![Stars](https://img.shields.io/github/stars/QT-Ashley/VulnParse-Pin)
 ![Issues](https://img.shields.io/github/issues/QT-Ashley/VulnParse-Pin)
 
+⭐ ***If you find VulnParse-Pin useful, please consider starring the repository to show your support!*** ⭐
+
 ---
 
 VulnParse-Pin turns vulnerability scanner outputs into actionable, prioritized insights with rich context from KEV, EPSS, ExploitDB, and NVD. It helps security teams focus on what matters most by applying configurable scoring policies that emphasize real-world risk.

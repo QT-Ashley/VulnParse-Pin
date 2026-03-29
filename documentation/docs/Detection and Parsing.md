@@ -15,6 +15,23 @@ Schema detection is implemented in `src/vulnparse_pin/core/schema_detector.py`.
 
 Registered parser specs are defined in `src/vulnparse_pin/parsers/__init__.py`.
 
+### Graduated confidence scoring (v1.0.3+)
+
+`detect_file()` classmethods return `(float, list[tuple[str, str]])` instead of a plain boolean.
+The float is a **confidence score in [0.0, 1.0]** built from additive weighted signals.
+A parser is considered *matched* when `confidence >= 0.50`.
+
+`SchemaDetector` also handles legacy `bool` returns for third-party parsers (maps `True → 0.9`, `False → 0.0`).
+
+### Format sniff and BOM handling
+
+`SchemaDetector._sniff_format` reads the first 4 KB and checks the leading byte:
+
+- `{` or `[` → `"json"`
+- `<` → `"xml"`
+
+A UTF-8 BOM (`\xef\xbb\xbf`) is stripped before inspection so BOM-prefixed files are classified correctly.
+
 ## Supported parser classes
 
 ### Production-ready (v1.0 stable)
@@ -45,6 +62,20 @@ This keeps parser-specific code focused on schema mapping instead of low-level d
 
 `NessusXMLParser` detects files by validating the expected root/tag structure and required report nodes.
 
+#### Nessus detection signals
+
+| Signal | Weight | Notes |
+|--------|-------:|-------|
+| Root tag is `NessusClientData_v2` | **+0.50** | Absent → hard 0.0 (no match) |
+| Nested `NessusClientData_v2` (not root) | **+0.35** | Still diagnostic |
+| `ReportHost` present | **+0.20** | Structural confirmation |
+| `ReportItem` present | **+0.20** | Structural confirmation |
+| `HostProperties` present | **+0.05** | Secondary structural |
+| First `ReportItem.pluginID` is numeric | **+0.05** | Nessus-specific attribute |
+| File extension is `.nessus` | **+0.10** | Unambiguous extension bonus |
+
+Typical scores: `.nessus` file with full structure → **1.0** (capped) | `.xml`  file with full structure → **0.90** | Root tag only → **0.50** (matched at threshold).
+
 Typical mapped fields:
 
 - Host metadata (`HostProperties`)
@@ -57,6 +88,21 @@ Typical mapped fields:
 ## OpenVAS XML parsing behavior
 
 `OpenVASXMLParser` detects OpenVAS structures while explicitly rejecting Nessus root tags to avoid false positives.
+
+#### OpenVAS detection signals
+
+| Signal | Weight | Notes |
+|--------|-------:|-------|
+| Hard negative: `NessusClientData_v2` found | **0.0** | Immediate rejection |
+| Root tag in `{report, get_reports_response, omp, get_results_response}` | **+0.20** | Known GVM root elements |
+| `results//result` structure | **+0.30** | Core scan data structure |
+| `nvt` element present | **+0.25** | GVM-specific plugin concept |
+| OID attribute on `nvt` matches `^\d+(\.\d+)+$` | **+0.10** | GVM dotted-numeric OID |
+| `creation_time` element present | **+0.05** | Present on all well-formed GVM reports |
+| `host` elements present | **+0.05** | Confirms actual scan results |
+
+Typical scores: full report with OID → **0.95** | no OID → **0.75** | `nvt` + results, no root tag → **0.55** (matched at threshold).
+Only `.xml` extension is accepted; other extensions return 0.0 immediately.
 
 Typical mapped fields:
 

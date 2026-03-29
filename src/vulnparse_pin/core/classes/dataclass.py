@@ -8,7 +8,7 @@
 # See the LICENSE file for full terms.
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from datetime import datetime
 
 from vulnparse_pin.core.apppaths import AppPaths
@@ -103,6 +103,54 @@ class TriageConfig:
     balanced: bool = True # Prof togg
 
 
+@dataclass(frozen=True)
+class AssetObservation:
+    """
+    Observation view of an Asset for TopN pass processing.
+    Extracted to dataclass.py for indexing without circular imports.
+    """
+    asset_id: str
+    ip: Optional[str]
+    hostname: Optional[str]
+    criticality: Optional[str] = None
+    open_ports: Tuple[int, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class PostEnrichmentIndex:
+    """
+    Immutable post-enrichment index built once after enrichment pipeline completes.
+    Provides O(1) lookups for pass phases to avoid repeated ScanResult traversals.
+    
+    Built after enrichment, before pass runner execution.
+    Read-only for all downstream passes.
+    Rebuilt on each run (not cached across invocations).
+    """
+    # Core indices
+    finding_by_id: Dict[str, Finding] = field(default_factory=dict)
+    findings_by_asset_id: Dict[str, List[Finding]] = field(default_factory=dict)
+    asset_observations: Dict[str, AssetObservation] = field(default_factory=dict)
+    
+    # Precomputed attributes for frequent access patterns
+    finding_attributes: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    
+    # Optional secondary indices
+    findings_by_severity: Dict[str, List[Finding]] = field(default_factory=dict)
+    findings_by_cve: Dict[str, List[Finding]] = field(default_factory=dict)
+
+    def get_finding(self, finding_id: str) -> Optional[Finding]:
+        """O(1) lookup for finding by ID."""
+        return self.finding_by_id.get(finding_id)
+
+    def get_findings_for_asset(self, asset_id: str) -> List[Finding]:
+        """Get all findings for a specific asset."""
+        return self.findings_by_asset_id.get(asset_id, [])
+
+    def get_asset_observation(self, asset_id: str) -> Optional[AssetObservation]:
+        """Get precomputed asset observation."""
+        return self.asset_observations.get(asset_id)
+
+
 @dataclass(frozen = True)
 class Services:
     """
@@ -112,6 +160,7 @@ class Services:
     nvd_cache: Optional["NVDFeedCache"] = None
     scoring_config: Optional["ScoringPolicyV1"] = None
     topn_config: Optional["TriageConfigLoadResult"] = None
+    post_enrichment_index: Optional[PostEnrichmentIndex] = None
 
 @dataclass(frozen = True)
 class RunContext:

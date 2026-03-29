@@ -109,9 +109,10 @@
                         "ip_is_private",
                         "any_port_in_public_list",
                         "port_in",
-                        "hostname_contains_any"
+                        "hostname_contains_any",
+                        "criticality_is"
                     ],
-                    "description": "Allowlist of supported predicate names."
+                    "description": "Allowlist of supported predicate names (including optional criticality-based predicates)."
                 },
 
                 "rules": {
@@ -161,7 +162,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256,
-                    "description": "Predicate expression."
+                    "description": "Predicate expression. Supported forms include ip_is_public, ip_is_private, any_port_in_public_list, port_in:[...], hostname_contains_any:[...], criticality_is:[extreme|high|medium|low]."
                 },
 
                 "evidence": {

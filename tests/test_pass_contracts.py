@@ -93,6 +93,10 @@ def get_policy() -> ScoringPolicyV1:
 
 
 def _run_full_pipeline(ctx, scan):
+    # Some test cases call helper with reversed argument order; normalize here.
+    if hasattr(ctx, "assets") and hasattr(scan, "logger"):
+        ctx, scan = scan, ctx
+
     scoring = ScoringPass(get_policy())
     topn = TopNPass(_safe_fallback_config())
     runner = PassRunner([scoring, topn])

@@ -32,6 +32,7 @@ Important implementation details:
 - Chunked worker dispatch for asset/finding partitions
 - Stable tie-breakers in heaps (entry counters)
 - Controlled global-top merge behavior
+- `PostEnrichmentIndex` provides O(1) finding and asset observation lookups, avoiding repeated linear scans for large datasets
 
 ## NVD optimization stack
 

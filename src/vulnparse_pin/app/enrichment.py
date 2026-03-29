@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import concurrent.futures as cf
 from typing import List, Dict
 
 from colorama import Fore, Style
 
-from vulnparse_pin.core.classes.dataclass import ScanResult
+from vulnparse_pin.core.classes.dataclass import ScanResult, Services, RunContext
 from vulnparse_pin.utils.banner import print_section_header
 from vulnparse_pin.utils.enricher import enrich_scan_results, load_epss, load_kev, update_enrichment_status
 from vulnparse_pin.utils.enrichment_stats import stats
@@ -28,6 +28,7 @@ from vulnparse_pin.utils.exploit_enrichment_service import (
 from vulnparse_pin.utils.nvdcacher import nvd_policy_from_config
 
 from vulnparse_pin.app.runtime_helpers import extract_cve_years, select_years
+from vulnparse_pin.app.index_builder import build_post_enrichment_index
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,7 @@ def run_enrichment_pipeline(
     epss_data = None
 
     exploit_data = None
-    if args.enrich_exploit and args.exploit_source == "online":
+    if (not args.no_exploit) and args.exploit_source == "online":
         print_section_header("Exploit-DB")
         logger.print_info(
             f"Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}{args.exploit_source.upper()}{Style.RESET_ALL} source...",
@@ -68,7 +69,7 @@ def run_enrichment_pipeline(
 
         exploit_data = load_exploit_data(ctx, source=args.exploit_source, force_refresh=args.refresh_cache, allow_regen=args.allow_regen)
         logger.print_success(f"Loaded Exploit-DB data ({len(exploit_data)} CVEs with exploits)\n", label="Exploit-DB Loader")
-    elif args.enrich_exploit and args.exploit_source == "offline":
+    elif (not args.no_exploit) and args.exploit_source == "offline":
         print_section_header("Exploit-DB")
         logger.print_info(
             f"Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}{ctx.pfh.format_for_log(exploit_db)}{Style.RESET_ALL}...",
@@ -117,7 +118,7 @@ def run_enrichment_pipeline(
                     config=cfg_yaml,
                     feed_cache=feed_cache,
                     refresh_cache=args.refresh_cache,
-                    offline=(args.mode == "offline"),
+                    offline=(args.kev_source == "offline" and args.epss_source == "offline"),
                     years=years_to_load,
                     include_modified=include_modified,
                     target_cves=cves_in_scan,
@@ -136,7 +137,7 @@ def run_enrichment_pipeline(
         epss_data = load_epss(ctx, path_url=epss_source, force_refresh=args.refresh_cache, allow_regen=args.allow_regen)
 
     logger.phase("Exploit Enrichment")
-    if args.enrich_exploit and exploit_data:
+    if (not args.no_exploit) and exploit_data:
         print_section_header("Exploit Enrichment Results")
         
         # Parallel exploit enrichment with batch logging
@@ -152,10 +153,10 @@ def run_enrichment_pipeline(
                 enriched, asset_stat = enrich_exploit_availability(ctx, asset.findings, exploit_data, asset.asset_id)
                 return asset, enriched, asset_stat
             
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {executor.submit(enrich_asset, asset): asset for asset in scan_result.assets}
                 
-                for future in as_completed(futures):
+                for future in cf.as_completed(futures):
                     asset, enriched_findings, asset_stat = future.result()
                     asset.findings = enriched_findings
                     asset_stats.append(asset_stat)
@@ -183,16 +184,47 @@ def run_enrichment_pipeline(
     apply_heuristic_exploit_tags_batch(ctx, scan_result)
 
     logger.phase("Enrichment Pipeline")
-    if kev_data or epss_data and (args.enrich_kev or args.enrich_epss):
+    kev_enabled = (not args.no_kev)
+    epss_enabled = (not args.no_epss)
+    if (kev_enabled and kev_data is not None) or (epss_enabled and epss_data is not None):
         enrich_scan_results(
             ctx,
             scan_result,
             kev_data,
             epss_data,
-            offline_mode=args.mode == "offline",
+            offline_mode=(args.kev_source == "offline" and args.epss_source == "offline"),
             nvd_cache=nvd_cache,
         )
         logger.print_success("All enrichments Applied")
+
+    # Build post-enrichment index for pass phase optimization
+    logger.phase("Post-Enrichment Indexing")
+    logger.print_info("Building post-enrichment index for pass phases...", label="Index Builder")
+    post_enrichment_index = build_post_enrichment_index(scan_result)
+    logger.debug(
+        "Index built: %d findings, %d assets, %d severity groups, %d CVE groups",
+        len(post_enrichment_index.finding_by_id),
+        len(post_enrichment_index.asset_observations),
+        len(post_enrichment_index.findings_by_severity),
+        len(post_enrichment_index.findings_by_cve),
+        extra={"vp_label": "Index Builder"}
+    )
+    
+    # Update context with indexed services
+    updated_services = Services(
+        feed_cache=ctx.services.feed_cache,
+        nvd_cache=ctx.services.nvd_cache,
+        scoring_config=ctx.services.scoring_config,
+        topn_config=ctx.services.topn_config,
+        post_enrichment_index=post_enrichment_index,
+    )
+    ctx = RunContext(
+        paths=ctx.paths,
+        pfh=ctx.pfh,
+        logger=ctx.logger,
+        services=updated_services,
+    )
+    logger.print_success("Post-enrichment index built and wired to services")
 
     logger.phase("Derived Pass Pipeline")
     logger.print_info(

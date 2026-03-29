@@ -19,6 +19,7 @@ nav:
     - Getting Started in 5 Minutes: Getting Started In 5 Minutes.md
     - Installation: Installation.md
     - Usage: Usage.md
+    - ScanResult Schema: ScanResult_Schema.md
   - Architecture:
     - Overview: Architecture.md
     - Features: Features.md

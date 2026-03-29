@@ -104,12 +104,13 @@ Semantic validation enforces invariants and rejects invalid structures.
 TopN processing stages:
 
 1. Load scoring output.
-2. Build per-asset finding index.
-3. Compute exposure inference per asset.
-4. Rank findings per asset using rank basis.
-5. Rank assets with top-k/decay weighting.
-6. Build optional global top findings.
-7. Trim to configured max assets and finding limits.
+2. Build per-asset finding index (backed by `PostEnrichmentIndex` for O(1) lookups when available).
+3. Collect per-asset observations including IP, open ports, hostname, and criticality.
+4. Compute exposure inference per asset.
+5. Rank findings per asset using rank basis.
+6. Rank assets with top-k/decay weighting and criticality tie-breaking.
+7. Build optional global top findings.
+8. Trim to configured max assets and finding limits.
 
 ## Inference semantics
 
@@ -118,6 +119,18 @@ Inference rules are predicate-driven and weighted. Predicates can include port- 
 Confidence tiering is based on cumulative weighted evidence and configured thresholds.
 
 Public service port configuration is central to externally exposed asset inference.
+
+Supported predicate forms:
+
+- `ip_is_public` — matches assets with a routable IP address
+- `ip_is_private` — matches RFC 1918 / private IP addresses
+- `any_port_in_public_list` — matches if any open port appears in the `public_service_ports` list
+- `port_in:[p1,p2,...]` — matches if any open port is in the supplied list
+- `hostname_contains_any:[t1,t2,...]` — matches if the hostname contains any of the supplied tokens
+- `criticality_is:[extreme|high|medium|low]` — matches based on the asset’s enriched criticality classification
+
+Criticality is sourced from `asset.criticality` and is populated at index-build time via `PostEnrichmentIndex`.
+Assets with `extreme` or `high` criticality receive additional exposure weighting from the built-in `critical_asset_hint` rule.
 
 ## TopN execution strategy
 

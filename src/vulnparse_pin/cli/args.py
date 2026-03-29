@@ -97,17 +97,20 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     output_group = parser.add_argument_group("Output Options", "Flags that deal with output such as output location or presentation modes.")
     gen_group.add_argument("--file", "-f", help="Path to vulnerability scan file", required=False, default=None, type=valid_input_file)
     gen_group.add_argument("--demo", action="store_true", default=False, help="Run a full end-to-end pipeline demo using the bundled Lab_test.nessus sample. Takes no additional input.")
-    enrich_group.add_argument("--enrich-kev", "-kev", nargs="?", help="Path/URL to CISA KEV JSON or JSON.gz file. If omitted, uses official CISA KEV feed.")
-    enrich_group.add_argument("--enrich-epss", "-epss", nargs="?", help="Path/URL to EPSS .csv or CSV.gz file. If omitted, use official EPSS feed.")
+    enrich_group.add_argument("--no-kev", action="store_true", default=False, help="Disable KEV enrichment.")
+    enrich_group.add_argument("--no-epss", action="store_true", default=False, help="Disable EPSS enrichment.")
+    enrich_group.add_argument("--no-exploit", action="store_true", default=False, help="Disable Exploit-DB enrichment.")
+    enrich_group.add_argument("--kev-source", choices=['online', 'offline'], default='online', help="Select KEV source mode (online feed or offline cache/file).")
+    enrich_group.add_argument("--epss-source", choices=['online', 'offline'], default='online', help="Select EPSS source mode (online feed or offline cache/file).")
+    enrich_group.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
+    enrich_group.add_argument("--kev-feed", type=str, help="Optional KEV feed override (URL or local path).")
+    enrich_group.add_argument("--epss-feed", type=str, help="Optional EPSS feed override (URL or local path).")
     output_group.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Output is in JSON")
     gen_group.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
     gen_group.add_argument("--log-file", "-Lf", default="vulnparse_pin.log", help="Log File destination.")
     gen_group.add_argument("--log-level", "-Ll", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
     gen_group.add_argument("--version", "-v", help="Show program version and exit.", action="version", version=f"%(prog)s {__version__}")
-    enrich_group.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
     enrich_group.add_argument("--exploit-db", "-edb", type=str, help="Path to offline exploit database (CSV)")
-    enrich_group.add_argument("--enrich-exploit", "-ex", action="store_true", help="Enrich findings with exploit availability info.", default=True)
-    enrich_group.add_argument("--mode", "-m", choices=["online", "offline"], default="online", help="Set to 'offline' to disable epss and kev external enrichment requests and use local cache only.")
     enrich_group.add_argument("--refresh-cache", action="store_true", help="Forces cache refesh for feeds.")
     enrich_group.add_argument("--allow_regen", action="store_true", help="Allows regeneration of cache meta and checksum if missing using 'best-effort'.", default=False)
     enrich_group.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
@@ -143,7 +146,11 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             parser.error(f"--demo: sample file is not readable: {demo_path}")
         args.file = demo_path
         # Demo mode is always online and runs a full end-to-end artifact set.
-        args.mode = "online"
+        args.no_kev = False
+        args.no_epss = False
+        args.no_exploit = False
+        args.kev_source = "online"
+        args.epss_source = "online"
         args.exploit_source = "online"
         args.no_nvd = False
         if not args.pretty_print:
@@ -159,7 +166,7 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         print(
             "\n[DEMO MODE] Running full pipeline on bundled sample: "
             f"{demo_path}\n"
-            "Mode forced: online (NVD enabled, exploit source online).\n"
+            "Enrichment forced: KEV/EPSS/Exploit enabled with online sources (NVD enabled).\n"
             "Artifacts enabled: JSON, CSV, executive Markdown, technical Markdown.\n"
             "Output will be written to the configured output directory.\n"
         )
@@ -177,7 +184,7 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     if (not args.output_csv) and args.no_csv_sanitize:
         parser.error("[Security Warning] --no-csv-sanitize requires --output-csv")
 
-    if (args.exploit_source == "offline") and (not args.exploit_db):
+    if (not args.no_exploit) and (args.exploit_source == "offline") and (not args.exploit_db):
         parser.error("Offline exploit source requires --exploit-db to be set.")
 
     return args

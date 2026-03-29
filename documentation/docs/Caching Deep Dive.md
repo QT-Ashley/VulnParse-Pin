@@ -185,11 +185,16 @@ Feed processing can run in parallel for multi-feed operations and is filtered by
 
 ## CLI controls that impact cache behavior
 
-- `--mode online|offline`
 - `--refresh-cache`
 - `--allow_regen`
-- `--enrich-kev [PATH|URL]`
-- `--enrich-epss [PATH|URL]`
+- `--no-kev`
+- `--no-epss`
+- `--no-exploit`
+- `--kev-source online|offline`
+- `--epss-source online|offline`
+- `--exploit-source online|offline`
+- `--kev-feed [PATH|URL]`
+- `--epss-feed [PATH|URL]`
 - `--no-nvd`
 
 ## Failure modes and expected behavior

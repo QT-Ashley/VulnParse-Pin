@@ -25,29 +25,73 @@ class NessusXMLParser(BaseParser):
         super().__init__(ctx = ctx, filepath=filepath)
 
     @classmethod
-    def detect_file(cls, filepath):
-        """Detect if the file is a Nessus XML export (.nessus)"""
-        if filepath.suffix in [".nessus", ".xml"]:
-            try:
-                # Size guardrail (Lets do >500MB)
-                if os.path.getsize(filepath) > 500 * 1024 * 1024:
-                    cls.ctx.logger.print_error(f"File supplied exceeds 500MB. This is a mechanism to protect against DOS. File: {filepath}")
-                    return False
+    def detect_file(cls, filepath) -> tuple[float, list[tuple[str, str]]]:
+        """
+        Detect if the file is a Nessus XML export.
 
-                # Setup Parser
-                raw = Path(filepath).read_bytes()
-                root = fromstring(raw)
+        Returns (confidence, evidence_pairs) where confidence is in [0.0, 1.0].
+        Signals are additive; sum is capped at 1.0.
+        Signals:
+          root tag NessusClientData_v2 :  +0.50  (primary gate; absent → hard 0.0)
+          nested NessusClientData_v2   :  +0.35  (if not root; still diagnostic)
+          ReportHost present           :  +0.20
+          ReportItem present           :  +0.20
+          HostProperties present       :  +0.05
+          first pluginID is numeric    :  +0.05  (Nessus-specific attribute)
+          extension is .nessus         :  +0.10  (definitive extension bonus)
+        """
+        evidence: list[tuple[str, str]] = []
 
-                # Valid Nessus report must have root and at least one ReportItem to look for.
-                if root.tag == "NessusClientData_v2" or root.find(".//NessusClientData_v2") is not None:
-                    # Look for at least one ReportHost/ReportItem
-                    has_hosts = root.find(".//ReportHost") is not None
-                    has_items = root.find(".//ReportItem") is not None
-                    return has_hosts and has_items
-                return False
-            except (OSError, ParseError):
-                return False
-        return False
+        if filepath.suffix not in (".nessus", ".xml"):
+            return 0.0, [("extension", f"rejected:{filepath.suffix}")]
+
+        try:
+            if os.path.getsize(filepath) > 500 * 1024 * 1024:
+                return 0.0, [("size", "exceeds_500MB")]
+            raw = Path(filepath).read_bytes()
+            root = fromstring(raw)
+        except (OSError, ParseError, Exception):
+            return 0.0, [("parse", "failed")]
+
+        score = 0.0
+
+        # Primary gate: NessusClientData_v2 must be present somewhere
+        if root.tag == "NessusClientData_v2":
+            score += 0.50
+            evidence.append(("root_tag", "NessusClientData_v2"))
+        elif root.find(".//NessusClientData_v2") is not None:
+            score += 0.35
+            evidence.append(("nested_tag", "NessusClientData_v2"))
+        else:
+            return 0.0, [("root_tag", "absent")]
+
+        # Structural signals
+        if root.find(".//ReportHost") is not None:
+            score += 0.20
+            evidence.append(("structure", "ReportHost"))
+
+        if root.find(".//ReportItem") is not None:
+            score += 0.20
+            evidence.append(("structure", "ReportItem"))
+
+        if root.find(".//HostProperties") is not None:
+            score += 0.05
+            evidence.append(("structure", "HostProperties"))
+
+        # Content-level: Nessus pluginID is always a numeric string
+        first_item = root.find(".//ReportItem")
+        if first_item is not None:
+            pid = first_item.get("pluginID", "")
+            if pid.isdigit():
+                score += 0.05
+                evidence.append(("plugin_id", f"numeric:{pid[:8]}"))
+
+        # Extension bonus: .nessus is unambiguously Nessus
+        if filepath.suffix == ".nessus":
+            score += 0.10
+            evidence.append(("extension", ".nessus"))
+
+        return min(score, 1.0), evidence
 
 
     def parse(self) -> ScanResult:

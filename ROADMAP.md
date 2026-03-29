@@ -4,13 +4,13 @@ This document outlines planned product milestones after v1.0.0.
 
 ## v1.1.0
 
-- JSON Schema validation for the output dataclass structure `ScanResult`
+- ~~JSON Schema validation for the output dataclass structure `ScanResult`~~ (completed in v1.0.3)
 - Verified execution framework (`RunManifest`)
 - ~~`vpp --demo` dataset~~
-- Performance optimization: pre-process scanner fields into in-memory dictionaries for faster lookups, then pass to downstream passes
-- Enhanced inference prioritization logic for better exposure-management scoring
+- ~~Performance optimization: pre-process scanner fields into in-memory dictionaries for faster lookups, then pass to downstream passes~~
+- ~~Enhanced inference prioritization logic for better exposure-management scoring~~
 - ~~Touch-up markdown reports~~
-- Better documentation
+- Better documentation (ongoing)
 
 ## v1.2.0
 

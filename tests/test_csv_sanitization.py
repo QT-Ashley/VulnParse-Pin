@@ -181,16 +181,16 @@ def test_csv_export_handles_none_scores_gracefully(tmp_path):
     assert fnocve_line is not None, "Data row for F_NOCVE should exist"
     fnocve_cols = fnocve_line.split(",")
 
-    # identify numeric score/risk-related columns by header name
-    score_indices = [
-        idx
-        for idx, col_name in enumerate(header)
-        if any(token in col_name.lower() for token in ("score", "risk", "epss", "kev", "exploit"))
-    ]
+    # identify numeric score columns that must use SENTINEL_SCORE (-1.0) when no enrichment data is present
+    # Only check columns that are strictly numeric and expected to be None/sentinel for no-CVE findings.
+    # Excluding: boolean fields (cisa_kev, exploit_available), string fields (exploit_ids, score_reason(s)),
+    # and pass-computed scores like topn_exposure_score / topn_weighted_asset_score (always populated).
+    _sentinel_cols = {"cvss_score", "epss_score", "raw_score", "operational_score", "asset_avg_risk_score"}
+    score_indices = [idx for idx, col_name in enumerate(header) if col_name in _sentinel_cols]
     # ensure we actually detected some score-related columns
-    assert score_indices, "Expected at least one score/risk column in CSV header"
+    assert score_indices, "Expected at least one sentinel-eligible numeric score column in CSV header"
 
-    # all relevant numeric columns for F_NOCVE (which has no scores) should use the sentinel -1.0
+    # all sentinel-eligible numeric columns for F_NOCVE should use the sentinel -1.0
     for idx in score_indices:
         assert fnocve_cols[idx] == "-1.0", (
             f"Expected sentinel -1.0 for column '{header[idx]}' "

@@ -123,6 +123,16 @@ Semantic requirements:
 
 Semantic validation rejects invalid threshold ordering, invalid port ranges, empty predicate allow-lists, and malformed rule definitions.
 
+Supported predicate forms in `rules[].when`:
+
+- `ip_is_public`, `ip_is_private`
+- `any_port_in_public_list`
+- `port_in:[p1,p2,...]`
+- `hostname_contains_any:[t1,t2,...]`
+- `criticality_is:[extreme|high|medium|low]`
+
+`allow_predicates` controls which predicate forms are permitted in loaded config. Any predicate not in this list causes a validation rejection at startup.
+
 ## Environment variable reference
 
 Optional integrity hardening environment variables:
@@ -136,11 +146,16 @@ If not set, modules fall back to SHA256 signature mode.
 
 Cache and enrichment behavior:
 
-- `--mode`
 - `--refresh-cache`
 - `--allow_regen`
-- `--enrich-kev`
-- `--enrich-epss`
+- `--no-kev`
+- `--no-epss`
+- `--no-exploit`
+- `--kev-source`
+- `--epss-source`
+- `--exploit-source`
+- `--kev-feed`
+- `--epss-feed`
 - `--no-nvd`
 
 Runtime and PFH behavior:

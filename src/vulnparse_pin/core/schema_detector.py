@@ -102,7 +102,9 @@ class SchemaDetector:
     def _sniff_format(self, ctx, path: Path) -> str:
         # Small data read only here.
         with ctx.pfh.open_for_read(path, mode="rb", label="Input File", log = False) as f:
-            head = f.read(4096).lstrip()
+            head = f.read(4096)
+        # Strip UTF-8 BOM then leading whitespace before inspecting first byte
+        head = head.lstrip(b"\xef\xbb\xbf").lstrip()
 
         if head.startswith(b"{") or head.startswith(b"["):
             return "json"
@@ -112,17 +114,27 @@ class SchemaDetector:
 
     def _call_parser_detect_file(self, ctx, spec: ParserSpec, path: Path, sniff: str) -> DetectionResult:
         p = spec.parser_cls
-        # If parser implements classmethod detect_file, return bool
+        # If parser implements classmethod detect_file, call it
         if hasattr(p, "detect_file"):
-            ok = p.detect_file(path)
+            result = p.detect_file(path)
+            # Parsers may return (confidence, evidence_pairs) tuple or legacy bool
+            if isinstance(result, tuple) and len(result) == 2:
+                confidence = float(result[0])
+                evidence = tuple(
+                    DetectionEvidence(str(k), str(v)) for k, v in result[1]
+                )
+            else:
+                # Legacy bool return — treat True as 0.9
+                confidence = 0.9 if result else 0.0
+                evidence = (DetectionEvidence("detect_file", "true" if result else "false"),)
             return DetectionResult(
                 parser_name=spec.name,
                 parser_cls=p,
-                matched=bool(ok),
-                confidence=0.9 if ok else 0.0,
+                matched=confidence >= 0.50,
+                confidence=confidence,
                 format=sniff,
                 scanner=spec.scanner,
-                evidence=(DetectionEvidence("detect_file", "true" if ok else "false"),)
+                evidence=evidence,
             )
         return DetectionResult(
             parser_name=spec.name,
@@ -131,7 +143,7 @@ class SchemaDetector:
             confidence=0.0,
             format=sniff,
             scanner=spec.scanner,
-            evidence=(DetectionEvidence("detect_file", "missing"),)
+            evidence=(DetectionEvidence("detect_file", "missing"),),
         )
 
     def _pick_winner(self, results: list[DetectionResult]) -> DetectionResult:

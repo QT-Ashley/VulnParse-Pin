@@ -7,7 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- See the [ROADMAP](ROADMAP.md) for planned features and improvements in upcoming releases.
+## [1.0.3] - 2026-03-28
+
+### Added
+
+- Added immutable post-enrichment indexing (`PostEnrichmentIndex`) and runtime service wiring for O(1) pass-phase finding lookups.
+- Added `criticality` field to `AssetObservation` populated from the post-enrichment index at pass time.
+- Added `criticality_is` predicate to the TopN inference engine supporting `extreme|high|medium|low` asset classification.
+- Added bundled `critical_asset_hint` inference rule to `tn_triage.json` that applies a +1 exposure weight for `extreme` and `high` criticality assets.
+- Added criticality-based tie-breaking to the asset ranking sort tuple for deterministic ordering when asset scores are equal.
+- Added `criticality_is` to the `allow_predicates` default in `topN.schema.json`.
+- Added new CLI enrichment controls with online-by-default semantics and explicit disable/source selection:
+	- `--no-kev`, `--no-epss`, `--no-exploit`
+	- `--kev-source`, `--epss-source`, `--exploit-source`
+	- `--kev-feed`, `--epss-feed`
+- Added graduated confidence scoring to `NessusXMLParser.detect_file` and `OpenVASXMLParser.detect_file`.
+	Each parser now returns `(float, list[tuple[str, str]])` instead of a plain `bool`, using additive weighted signals capped at `1.0`.
+- Added weighted `DetectionEvidence` recording in `SchemaDetector._call_parser_detect_file` while retaining backward-compatible legacy `bool` parser support.
+- Added comprehensive JSON Schema for `ScanResult` with field-level descriptions, type constraints, and enum validation for `asset.criticality` (`Extreme|High|Medium|Low`).
+- Added user-facing `ScanResult_Schema.md` documentation with complete field reference, examples, validation instructions, and common Python patterns.
+- Enhanced `asset.criticality` field documentation in schema and markdown to explain determination logic and TopN inference rule usage (lowercase: `extreme|high|medium|low`).
+
+### Fixed
+
+- Fixed `asset.criticality` schema definition and documentation to match parser implementation and TopN inference logic (values: `Extreme` not `Critical`, `High`, `Medium`, `Low`).
+- Fixed enrichment conditional precedence so KEV/EPSS enrichment execution is evaluated correctly.
+- Fixed CSV exporter sentinel handling for `cvss_score`, `epss_score`, and `asset_avg_risk_score` — all now emit `-1.0` when no score data is available, consistent with the `raw_score` and `operational_score` sentinel contract.
+- Fixed `_sniff_format` to strip a leading UTF-8 BOM before format detection so BOM-prefixed XML/JSON inputs are classified correctly.
+
+### Changed
+
+- Removed legacy enrichment flags `--enrich-kev`, `--enrich-epss`, and `--enrich-exploit` (hard rename).
+- Updated CLI matrix coverage and user documentation for the new enrichment flag model.
+- Validated the full OpenVAS XML pipeline against `tests_output/diverse_openvas_mixed.xml`; detection selected `openvas-xml` at `0.95` confidence and successfully generated JSON, CSV, executive Markdown, and technical Markdown artifacts.
 
 ## [1.0.2] - 2026-03-25
 
@@ -117,7 +149,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.2
 [1.0.1]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.1
 [1.0.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.0
