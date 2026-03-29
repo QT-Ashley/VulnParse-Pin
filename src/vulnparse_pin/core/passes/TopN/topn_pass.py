@@ -187,9 +187,12 @@ class TopNPass(Pass):
 
         finding_attrs: Dict[str, Dict[str, Any]] = {}
         asset_obs_by_id: Dict[str, Dict[str, Any]] = {}
+        asset_criticality_by_id: Dict[str, Optional[str]] = {}
 
         for asset in scan.assets:
             aid = getattr(asset, "asset_id", None)
+            if aid is not None:
+                asset_criticality_by_id[aid] = getattr(asset, "criticality", None)
             for finding in asset.findings:
                 if aid is None:
                     aid = getattr(finding, "asset_id", None)
@@ -204,11 +207,12 @@ class TopNPass(Pass):
         idx = getattr(getattr(ctx, "services", None), "post_enrichment_index", None)
         if idx is not None:
             for aid, obs in idx.asset_observations.items():
+                criticality = asset_criticality_by_id.get(aid, obs.criticality)
                 asset_obs_by_id[aid] = {
                     "asset_id": aid,
                     "ip": obs.ip,
                     "hostname": obs.hostname,
-                    "criticality": obs.criticality,
+                    "criticality": criticality,
                     "open_ports": tuple(obs.open_ports),
                 }
         else:
@@ -461,10 +465,6 @@ class TopNPass(Pass):
         """
         services = getattr(ctx, "services", None) if ctx is not None else None
         index = getattr(services, "post_enrichment_index", None) if services is not None else None
-        if index is not None:
-            obs = index.get_asset_observation(asset_id)
-            if obs is not None:
-                return obs
 
         asset = None
         for a in scan.assets:
@@ -472,6 +472,19 @@ class TopNPass(Pass):
             if candidate_asset_id == asset_id:
                 asset = a
                 break
+
+        current_criticality = getattr(asset, "criticality", None) if asset else None
+
+        if index is not None:
+            obs = index.get_asset_observation(asset_id)
+            if obs is not None:
+                return AssetObservation(
+                    asset_id=obs.asset_id,
+                    ip=obs.ip,
+                    hostname=obs.hostname,
+                    criticality=current_criticality if current_criticality is not None else obs.criticality,
+                    open_ports=obs.open_ports,
+                )
 
         ip = getattr(asset, "ip_address", None) if asset else None
         hostname = getattr(asset, "hostname", None) if asset else None
@@ -487,7 +500,7 @@ class TopNPass(Pass):
                 ports.append(p)
 
         ports = sorted(set(ports))
-        crit = getattr(asset, "criticality", None) if asset else None
+        crit = current_criticality
         return AssetObservation(asset_id=asset_id, ip=ip, hostname=hostname, criticality=crit, open_ports=tuple(ports))
 
     def _get_finding_by_id(self, scan: "ScanResult", finding_id: str, ctx: Optional["RunContext"] = None) -> Optional[Any]:

@@ -26,14 +26,14 @@ SENTINEL_SCORE = -1.0
 
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0B\x0E-\x1F\x7F]")
 
-def _flatten_exploits(exploit_refs: dict[str, list[dict]]) -> tuple[str, str, str]:
+def _flatten_exploits(exploit_refs: Any) -> tuple[str, str, str]:
     """
     Flatten exploit refs into semicolon-separated strings.
 
     Returns:
         (ids, titles, urls) as strings
     """
-    if not exploit_refs or not isinstance(exploit_refs, dict):
+    if not exploit_refs:
         return ("", "", "")
 
 
@@ -41,18 +41,31 @@ def _flatten_exploits(exploit_refs: dict[str, list[dict]]) -> tuple[str, str, st
     titles: List[str] = []
     urls: List[str] = []
 
-    for cve, refs in exploit_refs.items():
-        if not refs:
-            continue
-        if not isinstance(refs, list):
-            continue
-
-        for ref in refs:
+    # New shape (v1.0.3+): list[dict] with optional ref['cve']
+    if isinstance(exploit_refs, list):
+        for ref in exploit_refs:
             if not isinstance(ref, dict):
                 continue
-            ids.append(f"{cve}:{ref.get('exploit_id', '')}")
-            titles.append(f"{cve}:{ref.get('title', '')}")
-            urls.append(f"{cve}:{ref.get('url', '')}")
+            cve = str(ref.get("cve") or "")
+            prefix = f"{cve}:" if cve else ""
+            ids.append(f"{prefix}{ref.get('exploit_id', '')}")
+            titles.append(f"{prefix}{ref.get('title', '')}")
+            urls.append(f"{prefix}{ref.get('url', '')}")
+        return ";".join(ids), ";".join(titles), ";".join(urls)
+
+    # Legacy shape: dict[cve -> list[dict]]
+    if isinstance(exploit_refs, dict):
+        for cve, refs in exploit_refs.items():
+            if not refs or not isinstance(refs, list):
+                continue
+
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    continue
+                ids.append(f"{cve}:{ref.get('exploit_id', '')}")
+                titles.append(f"{cve}:{ref.get('title', '')}")
+                urls.append(f"{cve}:{ref.get('url', '')}")
+        return ";".join(ids), ";".join(titles), ";".join(urls)
 
     return ";".join(ids), ";".join(titles), ";".join(urls)
 

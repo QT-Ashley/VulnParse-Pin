@@ -82,6 +82,7 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
     risk_dist = summary.risk_distribution
     top_risks = summary.top_risks
     remediation = summary.remediation_priorities
+    asset_summary = summary.asset_summary
 
     def _risk_drivers(risk: Any) -> str:
         drivers: list[str] = []
@@ -164,6 +165,31 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
         )
     
     md += f"""
+
+---
+
+## 🧭 Recommended Asset Target List (Patching Priority)
+
+These are the recommended most vulnerable assets to target first for patching based on derived scoring and asset criticality.
+
+| Asset ID | Hostname | Criticality | Critical (Derived) | High (Derived) | #1 CVE |
+|----------|----------|-------------|--------------------|----------------|--------|
+"""
+
+    for asset in asset_summary['assets'][:10]:
+        md += (
+            f"| {asset.get('asset_id', 'N/A')} | {asset.get('hostname') or 'N/A'} | "
+            f"{asset.get('criticality') or 'N/A'} | {asset.get('critical_findings', 0):,} | "
+            f"{asset.get('high_findings', 0):,} | {asset.get('top_cve', 'N/A')} |\n"
+        )
+
+    md += f"""
+
+### Executive SLA Recommendation
+
+- **Extreme criticality assets:** Patch critical findings within **24-48 hours**
+- **High criticality assets:** Patch critical/high findings within **7 days**
+- **Medium/Low criticality assets:** Patch according to standard change windows (up to **30 days**)
 
 ---
 
@@ -259,12 +285,16 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 
 ### Top {len(asset_summary['assets'])} Highest Risk Assets
 
-| Asset ID | IP Address | Hostname | Findings | Risk Score | Critical | High |
-|----------|------------|----------|----------|------------|----------|------|
+| Asset ID | IP Address | Hostname | Criticality | Findings | Risk Score | Critical | High |
+|----------|------------|----------|-------------|----------|------------|----------|------|
 """
     
     for asset in asset_summary['assets'][:20]:  # Limit for readability
-        md += f"| {asset['asset_id']} | {asset['ip'] or 'N/A'} | {asset['hostname'] or 'N/A'} | {asset['total_findings']:,} | {asset['risk_score']:.2f} | {asset['critical_findings']:,} | {asset['high_findings']:,} |\n"
+        md += (
+            f"| {asset['asset_id']} | {asset['ip'] or 'N/A'} | {asset['hostname'] or 'N/A'} | "
+            f"{asset.get('criticality') or 'N/A'} | {asset['total_findings']:,} | {asset['risk_score']:.2f} | "
+            f"{asset['critical_findings']:,} | {asset['high_findings']:,} |\n"
+        )
     
     md += f"""
 

@@ -125,12 +125,22 @@ class ScoringPass(Pass):
         min_findings_per_worker: int = 50,
         process_pool_threshold: int = 20_000,
         process_workers: Optional[int] = None,
+        critical_extreme_min_critical: int = 3,
+        critical_high_min_critical: int = 1,
+        critical_high_min_high: int = 2,
+        critical_medium_min_high: int = 1,
+        critical_medium_min_medium: int = 5,
     ):
         self.policy = policy
         self.parallel_threshold = max(1, int(parallel_threshold))
         self.min_findings_per_worker = max(1, int(min_findings_per_worker))
         self.process_pool_threshold = max(1, int(process_pool_threshold))
         self.process_workers = process_workers
+        self.critical_extreme_min_critical = max(1, int(critical_extreme_min_critical))
+        self.critical_high_min_critical = max(1, int(critical_high_min_critical))
+        self.critical_high_min_high = max(1, int(critical_high_min_high))
+        self.critical_medium_min_high = max(1, int(critical_medium_min_high))
+        self.critical_medium_min_medium = max(1, int(critical_medium_min_medium))
         self._result_lock = threading.Lock()
         self._memo_lock = threading.Lock()
 
@@ -141,6 +151,7 @@ class ScoringPass(Pass):
         """
         # Flatten findings with asset context (asset_id, ip_address)
         findings_with_context: List[Tuple[Any, str, Optional[str]]] = []
+        assets_by_id: Dict[str, Any] = {}
         total = 0
         
         for asset in scan.assets:
@@ -148,6 +159,8 @@ class ScoringPass(Pass):
                 total += 1
                 asset_id = getattr(asset, "asset_id", None) or f.asset_id or asset.ip_address
                 findings_with_context.append((f, asset_id, asset.ip_address))
+                if asset_id not in assets_by_id:
+                    assets_by_id[asset_id] = asset
 
         # Pre-compute plugin attributes once (smart caching)
         plugin_cache = self._build_plugin_cache(findings_with_context)
@@ -183,9 +196,23 @@ class ScoringPass(Pass):
             highest_asset = max(asset_scores, key=asset_scores.get)
             highest_score = asset_scores[highest_asset]
 
+        asset_criticality, asset_band_counts = self._derive_asset_criticality(scored_findings)
+        self._write_asset_criticality(scan, assets_by_id, asset_criticality)
+
+        criticality_thresholds = {
+            "extreme_min_critical": self.critical_extreme_min_critical,
+            "high_min_critical": self.critical_high_min_critical,
+            "high_min_high": self.critical_high_min_high,
+            "medium_min_high": self.critical_medium_min_high,
+            "medium_min_medium": self.critical_medium_min_medium,
+        }
+
         output = ScoringPassOutput(
             scored_findings=scored_findings,
             asset_scores=asset_scores,
+            asset_criticality=asset_criticality,
+            asset_band_counts=asset_band_counts,
+            asset_criticality_thresholds=criticality_thresholds,
             coverage=ScoreCoverage(total_findings=total, scored_findings=scored, coverage_ratio=coverage_ratio),
             highest_risk_asset=highest_asset,
             highest_risk_asset_score=highest_score,
@@ -216,6 +243,61 @@ class ScoringPass(Pass):
             notes="Derived risk scoring (truth-preserving)."
         )
         return DerivedPassResult(meta=meta, data=asdict(output))
+
+    def _derive_asset_criticality(
+        self,
+        scored_findings: Dict[str, ScoredFinding],
+    ) -> Tuple[Dict[str, str], Dict[str, Dict[str, int]]]:
+        """Derive per-asset criticality from scored finding risk-band counts."""
+        band_counts: Dict[str, Dict[str, int]] = {}
+
+        for sf in scored_findings.values():
+            aid = sf.asset_id
+            if aid not in band_counts:
+                band_counts[aid] = {
+                    "Critical": 0,
+                    "High": 0,
+                    "Medium": 0,
+                    "Low": 0,
+                    "Informational": 0,
+                }
+            band = sf.risk_band if sf.risk_band in band_counts[aid] else "Informational"
+            band_counts[aid][band] += 1
+
+        asset_criticality: Dict[str, str] = {}
+        for aid, counts in band_counts.items():
+            critical_count = counts.get("Critical", 0)
+            high_count = counts.get("High", 0)
+            medium_count = counts.get("Medium", 0)
+
+            if critical_count >= self.critical_extreme_min_critical:
+                asset_criticality[aid] = "Extreme"
+            elif (
+                critical_count >= self.critical_high_min_critical
+                or high_count >= self.critical_high_min_high
+            ):
+                asset_criticality[aid] = "High"
+            elif (
+                high_count >= self.critical_medium_min_high
+                or medium_count >= self.critical_medium_min_medium
+            ):
+                asset_criticality[aid] = "Medium"
+            else:
+                asset_criticality[aid] = "Low"
+
+        return asset_criticality, band_counts
+
+    def _write_asset_criticality(
+        self,
+        scan: "ScanResult",
+        assets_by_id: Dict[str, Any],
+        asset_criticality: Dict[str, str],
+    ) -> None:
+        """Persist derived asset criticality back to the mutable ScanResult asset objects."""
+        for asset_id, criticality in asset_criticality.items():
+            asset = assets_by_id.get(asset_id)
+            if asset is not None:
+                asset.criticality = criticality
 
     def _build_plugin_cache(self, findings_with_context: List[Tuple[Any, str, str]]) -> Dict[str, Dict[str, Any]]:
         """

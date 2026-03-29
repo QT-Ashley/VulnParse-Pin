@@ -10,12 +10,14 @@ from vulnparse_pin.core.classes.dataclass import (
     Finding,
     RunContext,
     AppPaths,
+    Services,
 )
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
 from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
 from vulnparse_pin.core.classes.pass_classes import PassRunner
+from vulnparse_pin.app.index_builder import build_post_enrichment_index
 from vulnparse_pin.utils.logger import LoggerWrapper
 from vulnparse_pin.io.pfhandler import PermFileHandler
 
@@ -232,6 +234,131 @@ def test_downstream_uses_asset_level_asset_id(tmp_path):
     assert "ASSET-LEGACY" not in scoring.get("asset_scores", {})
     assert "ASSET-CANONICAL" in topn.get("findings_by_asset", {})
     assert "ASSET-LEGACY" not in topn.get("findings_by_asset", {})
+
+
+def test_scoring_derives_and_persists_asset_criticality(tmp_path):
+    """ScoringPass should derive asset criticality from risk-band counts and persist it on ScanResult assets."""
+    ctx = make_ctx(tmp_path)
+
+    findings = []
+    for i in range(3):
+        findings.append(
+            Finding(
+                finding_id=f"FCRIT-{i}",
+                vuln_id=f"VCRIT-{i}",
+                title=f"Critical-{i}",
+                description="critical finding",
+                severity="Critical",
+                cves=[],
+                cvss_score=10.0,
+                asset_id="A1",
+            )
+        )
+
+    asset = Asset(hostname="A1", ip_address="1.1.1.1", findings=findings)
+    asset.asset_id = "A1"
+    asset.criticality = None
+
+    scan = ScanResult(
+        scan_metadata=ScanMetaData(
+            source="unit-test",
+            scan_date=datetime.now(),
+            asset_count=1,
+            vulnerability_count=3,
+        ),
+        assets=[asset],
+    )
+
+    scoring = ScoringPass(get_policy())
+    result = scoring.run(ctx, scan)
+
+    assert scan.assets[0].criticality == "Extreme"
+    assert result.data["asset_criticality"]["A1"] == "Extreme"
+    assert result.data["asset_band_counts"]["A1"]["Critical"] == 3
+
+
+def test_topn_prefers_updated_scan_criticality_over_stale_index(tmp_path):
+    """TopN should honor Scoring-updated criticality even when the post-enrichment index is stale."""
+    ctx = make_ctx(tmp_path)
+
+    # Asset with Extreme criticality after scoring (3 Critical findings).
+    z_extreme_findings = [
+        Finding(
+            finding_id=f"ZE-{i}",
+            vuln_id=f"V-ZE-{i}",
+            title=f"ZE-{i}",
+            description="extreme",
+            severity="Critical",
+            cves=[],
+            cvss_score=10.0,
+            asset_id="Z-EXTREME",
+        )
+        for i in range(3)
+    ]
+    z_extreme = Asset(hostname="z-extreme", ip_address="10.0.0.10", findings=z_extreme_findings)
+    z_extreme.asset_id = "Z-EXTREME"
+
+    # Asset with High criticality after scoring (2 Critical + 1 High => crit_high ties with Z-EXTREME).
+    a_high_findings = [
+        Finding(
+            finding_id="AH-1",
+            vuln_id="V-AH-1",
+            title="AH-1",
+            description="high",
+            severity="Critical",
+            cves=[],
+            cvss_score=10.0,
+            asset_id="A-HIGH",
+        ),
+        Finding(
+            finding_id="AH-2",
+            vuln_id="V-AH-2",
+            title="AH-2",
+            description="high",
+            severity="Critical",
+            cves=[],
+            cvss_score=10.0,
+            asset_id="A-HIGH",
+        ),
+        Finding(
+            finding_id="AH-3",
+            vuln_id="V-AH-3",
+            title="AH-3",
+            description="high",
+            severity="High",
+            cves=[],
+            cvss_score=8.0,
+            asset_id="A-HIGH",
+        ),
+    ]
+    a_high = Asset(hostname="a-high", ip_address="10.0.0.20", findings=a_high_findings)
+    a_high.asset_id = "A-HIGH"
+
+    scan = ScanResult(
+        scan_metadata=ScanMetaData(
+            source="unit-test",
+            scan_date=datetime.now(),
+            asset_count=2,
+            vulnerability_count=6,
+        ),
+        assets=[z_extreme, a_high],
+    )
+
+    # Build stale index before scoring derives and writes asset criticality.
+    stale_index = build_post_enrichment_index(scan)
+    ctx = RunContext(
+        paths=ctx.paths,
+        pfh=ctx.pfh,
+        logger=ctx.logger,
+        services=Services(post_enrichment_index=stale_index),
+    )
+
+    scoring = ScoringPass(get_policy())
+    topn = TopNPass(_safe_fallback_config())
+    out = PassRunner([scoring, topn]).run_all(ctx, scan)
+
+    ranked_assets = out.derived.passes["TopN@1.0"].data["assets"]
+    assert ranked_assets[0]["asset_id"] == "Z-EXTREME"
 
 
 # ---------- TopN mapping contract tests (Phase 2 verification) ----------

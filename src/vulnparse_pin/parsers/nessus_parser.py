@@ -199,8 +199,7 @@ class NessusParser(BaseParser):
 
                 assets[canonical_asset_id].findings.append(finding)
 
-            # Determine criticality
-            assets[canonical_asset_id].criticality = self.determine_asset_criticality(severity_counter)
+            # Asset criticality is derived later in Scoring pass.
 
         asset_count = len(assets)
         vuln_count = sum(len(asset.findings) for asset in assets.values())

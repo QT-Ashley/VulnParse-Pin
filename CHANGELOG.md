@@ -11,35 +11,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added immutable post-enrichment indexing (`PostEnrichmentIndex`) and runtime service wiring for O(1) pass-phase finding lookups.
-- Added `criticality` field to `AssetObservation` populated from the post-enrichment index at pass time.
-- Added `criticality_is` predicate to the TopN inference engine supporting `extreme|high|medium|low` asset classification.
-- Added bundled `critical_asset_hint` inference rule to `tn_triage.json` that applies a +1 exposure weight for `extreme` and `high` criticality assets.
-- Added criticality-based tie-breaking to the asset ranking sort tuple for deterministic ordering when asset scores are equal.
-- Added `criticality_is` to the `allow_predicates` default in `topN.schema.json`.
-- Added new CLI enrichment controls with online-by-default semantics and explicit disable/source selection:
+- **Derived Asset Criticality Architecture**: Moved asset criticality derivation from parser normalization to the `ScoringPass`, ensuring true derived characteristics are owned by appropriate pass phases.
+  - `ScoringPass` now computes `asset_criticality` from risk-band thresholds (`Extreme`, `High`, `Medium`, `Low`).
+  - Criticality threshold configuration added to `scoring.json` with sensible defaults.
+  - Asset criticality persisted back to `ScanResult.assets[*].criticality` for downstream pass consumption.
+  - Removed parser-layer criticality assignment from `NessusParser` and `OpenVASParser` (data normalization scope reduced per architecture principle).
+- **TopN Pass Criticality Integration**: Updated asset ranking logic to prioritize current-scan derived criticality over stale index observations.
+  - TopN asset ranking now merges current `ScanResult.assets[*].criticality` into parallel pipeline inference state.
+  - Asset observations now inherit derived criticality for consistent exposure-management decisions.
+- **Enhanced Markdown Reports**:
+  - Executive report now includes "Recommended Asset Target List" table showing vulnerable assets with derived criticality, critical/high risk counts, and top CVE per asset.
+  - Executive report now includes SLA recommendation note based on criticality distribution.
+  - Technical report asset analysis table now displays criticality column for visibility.
+  - Both reports now clearly leverage scored risk-band criticality (not scanner severity).
+- **Presentation Overlay Criticality Storage**: Asset-level derived criticality and scored risk-band counts now materialized in presentation overlay for both `flatten` and `namespace` modes.
+  - Overlay asset entries include: `criticality` (string), derived scoring context (risk-band thresholds and counts).
+- **Exploit References Schema Compliance**: Fixed `exploit_references` field emission to conform to schema contract.
+  - Changed from non-compliant `exploit_references: {}` object to schema-compliant `exploit_references: [{ "cve": "CVE-xxx" }, ...]` array of dicts.
+  - Updated CSV exporter to support both new list-of-dicts format and legacy dict format for backward compatibility.
+  - Added regression test (`test_exploit_references_shape.py`) to prevent backsliding.
+- **Comprehensive JSON Schema for ScanResult**: Packaged as `core/schemas/scanResult.schema.json` with field-level descriptions, type constraints, and enum validation.
+  - Added schema documentation artifact (`ScanResult_Schema.md`) with complete field reference, examples, validation instructions, and common Python patterns.
+  - Schema validation included in `pyproject.toml` package resources for runtime contract enforcement.
+- **Immutable post-enrichment indexing** (`PostEnrichmentIndex`) with O(1) pass-phase finding lookups.
+- **Criticality predicate** (`criticality_is`) added to TopN inference engine for `extreme|high|medium|low` asset classification.
+- **Bundled criticality-aware inference rule** (`critical_asset_hint`) in `tn_triage.json` applying +1 exposure weight for `extreme` and `high` criticality assets.
+- **New CLI enrichment controls** with online-by-default semantics and explicit disable/source selection:
 	- `--no-kev`, `--no-epss`, `--no-exploit`
 	- `--kev-source`, `--epss-source`, `--exploit-source`
 	- `--kev-feed`, `--epss-feed`
-- Added graduated confidence scoring to `NessusXMLParser.detect_file` and `OpenVASXMLParser.detect_file`.
-	Each parser now returns `(float, list[tuple[str, str]])` instead of a plain `bool`, using additive weighted signals capped at `1.0`.
-- Added weighted `DetectionEvidence` recording in `SchemaDetector._call_parser_detect_file` while retaining backward-compatible legacy `bool` parser support.
-- Added comprehensive JSON Schema for `ScanResult` with field-level descriptions, type constraints, and enum validation for `asset.criticality` (`Extreme|High|Medium|Low`).
-- Added user-facing `ScanResult_Schema.md` documentation with complete field reference, examples, validation instructions, and common Python patterns.
-- Enhanced `asset.criticality` field documentation in schema and markdown to explain determination logic and TopN inference rule usage (lowercase: `extreme|high|medium|low`).
+- **Graduated confidence scoring** in `NessusXMLParser.detect_file` and `OpenVASXMLParser.detect_file` returning `(float, list[tuple[str, str]])` instead of a plain `bool`.
 
 ### Fixed
 
-- Fixed `asset.criticality` schema definition and documentation to match parser implementation and TopN inference logic (values: `Extreme` not `Critical`, `High`, `Medium`, `Low`).
+- Fixed `asset.criticality` schema definition and documentation to match derived scoring logic (values: `Extreme|High|Medium|Low`).
 - Fixed enrichment conditional precedence so KEV/EPSS enrichment execution is evaluated correctly.
-- Fixed CSV exporter sentinel handling for `cvss_score`, `epss_score`, and `asset_avg_risk_score` — all now emit `-1.0` when no score data is available, consistent with the `raw_score` and `operational_score` sentinel contract.
-- Fixed `_sniff_format` to strip a leading UTF-8 BOM before format detection so BOM-prefixed XML/JSON inputs are classified correctly.
+- Fixed CSV exporter sentinel handling for `cvss_score`, `epss_score`, and `asset_avg_risk_score` — all now emit `-1.0` when no score data is available.
+- Fixed `_sniff_format` to strip leading UTF-8 BOM before format detection so BOM-prefixed XML/JSON inputs are classified correctly.
+- Fixed exploit references schema contract violation (now array of dicts, not bare object).
 
 ### Changed
 
 - Removed legacy enrichment flags `--enrich-kev`, `--enrich-epss`, and `--enrich-exploit` (hard rename).
 - Updated CLI matrix coverage and user documentation for the new enrichment flag model.
+- Refactored asset criticality ownership: parser normalization no longer assigns criticality; derived passes own it.
+- Updated markdown report generation to use derived scored risk-band criticality (not scanner severity) for asset prioritization and presentation.
 - Validated the full OpenVAS XML pipeline against `tests_output/diverse_openvas_mixed.xml`; detection selected `openvas-xml` at `0.95` confidence and successfully generated JSON, CSV, executive Markdown, and technical Markdown artifacts.
+- Schema validation on demo output confirmed zero schema errors (including exploit references shape fix).
 
 ## [1.0.2] - 2026-03-25
 

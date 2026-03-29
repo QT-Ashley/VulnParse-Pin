@@ -130,12 +130,45 @@ def materialize_presentation(
     scoring_pass = _ensure_dict(passes.get(chosen_key)) if chosen_key else {}
     scoring_data = _ensure_dict(scoring_pass.get("data"))
     scored_findings = _ensure_dict(scoring_data.get("scored_findings"))
+    scored_asset_criticality = _ensure_dict(scoring_data.get("asset_criticality"))
+    scored_asset_band_counts = _ensure_dict(scoring_data.get("asset_band_counts"))
 
     # Lookup build: fid -> scoring record 
     sf_map: Dict[str, Dict[str, Any]] = {}
     for fid, rec in scored_findings.items():
         if isinstance(fid, str):
             sf_map[fid] = _ensure_dict(rec)
+
+    # Overlay onto assets (derived asset-level characteristics)
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        aid = asset.get("asset_id")
+        if not isinstance(aid, str):
+            continue
+
+        asset_crit = scored_asset_criticality.get(aid)
+        asset_counts = scored_asset_band_counts.get(aid)
+
+        if overlay_mode == "namespace":
+            a_derived = asset.get("derived")
+            if not isinstance(a_derived, dict):
+                a_derived = {}
+                asset["derived"] = a_derived
+            pass_key = chosen_key or "Scoring@?"
+            scoped = a_derived.get(pass_key)
+            if not isinstance(scoped, dict):
+                scoped = {}
+                a_derived[pass_key] = scoped
+            if asset_crit is not None:
+                scoped["asset_criticality"] = asset_crit
+            if isinstance(asset_counts, dict):
+                scoped["asset_band_counts"] = asset_counts
+        elif overlay_mode == "flatten":
+            if asset_crit is not None:
+                asset["criticality"] = asset_crit
+            if isinstance(asset_counts, dict):
+                asset["asset_band_counts"] = asset_counts
 
     # Overlay onto each finding
     for asset in assets:

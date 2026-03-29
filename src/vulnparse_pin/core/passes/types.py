@@ -39,6 +39,9 @@ class ScoreCoverage:
 class ScoringPassOutput:
     scored_findings: Dict[str, ScoredFinding] = field(default_factory=dict)
     asset_scores: Dict[str, float] = field(default_factory=dict)
+    asset_criticality: Dict[str, str] = field(default_factory=dict)
+    asset_band_counts: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    asset_criticality_thresholds: Dict[str, int] = field(default_factory=dict)
     coverage: ScoreCoverage = field(default_factory=lambda: ScoreCoverage(0, 0, 0.0))
     highest_risk_asset: Optional[str] = None
     highest_risk_asset_score: Optional[float] = None

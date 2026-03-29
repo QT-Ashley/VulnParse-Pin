@@ -226,10 +226,7 @@ class OpenVASParser(BaseParser):
 
            assets[canonical_asset_id].findings.append(finding)
 
-       for asset in assets.values():
-           # Determine criticality
-           severity_counter = Counter(finding.severity for finding in asset.findings)
-           asset.criticality = self.determine_asset_criticality(severity_counter)
+       # Asset criticality is derived later in Scoring pass.
 
        asset_count = len(assets)
        vuln_count = sum(len(asset.findings) for asset in assets.values())

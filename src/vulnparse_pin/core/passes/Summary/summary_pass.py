@@ -175,6 +175,24 @@ class SummaryPass(Pass):
             return {"total_assets": len(scan.assets), "assets": []}
         
         scored_assets = scoring.get('asset_scores', {}) if isinstance(scoring, dict) else {}
+        scored_findings = scoring.get('scored_findings', {}) if isinstance(scoring, dict) else {}
+        scored_asset_criticality = scoring.get('asset_criticality', {}) if isinstance(scoring, dict) else {}
+
+        # Derived risk-band counters by asset (from Scoring pass output).
+        derived_counts_by_asset: Dict[str, Dict[str, int]] = {}
+        if isinstance(scored_findings, dict):
+            for rec in scored_findings.values():
+                if not isinstance(rec, dict):
+                    continue
+                aid = rec.get("asset_id")
+                if not isinstance(aid, str) or not aid:
+                    continue
+                counts = derived_counts_by_asset.setdefault(aid, {"Critical": 0, "High": 0})
+                band = str(rec.get("risk_band", ""))
+                if band == "Critical":
+                    counts["Critical"] += 1
+                elif band == "High":
+                    counts["High"] += 1
         
         # Use heapq for efficient top-N selection on large datasets
         # Negative scores for max-heap behavior
@@ -185,6 +203,24 @@ class SummaryPass(Pass):
         for asset in scan.assets:
             asset_id = getattr(asset, "asset_id", None) or asset.hostname or asset.ip_address
             risk_score = scored_assets.get(asset_id, 0.0)
+
+            derived_counts = derived_counts_by_asset.get(asset_id, {"Critical": 0, "High": 0})
+
+            # #1 CVE for asset: highest raw-score finding with at least one CVE.
+            top_cve = "N/A"
+            top_raw = float("-inf")
+            for f in asset.findings:
+                if not getattr(f, "cves", None):
+                    continue
+                frec = scored_findings.get(getattr(f, "finding_id", ""), {}) if isinstance(scored_findings, dict) else {}
+                raw_val = frec.get("raw_score") if isinstance(frec, dict) else None
+                try:
+                    raw = float(raw_val)
+                except (TypeError, ValueError):
+                    raw = float("-inf")
+                if raw > top_raw:
+                    top_raw = raw
+                    top_cve = str(f.cves[0])
             
             asset_entry = {
                 "asset_id": asset_id,
@@ -193,8 +229,10 @@ class SummaryPass(Pass):
                 "total_findings": len(asset.findings),
                 "risk_score": round(risk_score, 2),
                 "operational_risk": 0.0,  # Not stored per-asset in current implementation
-                "critical_findings": sum(1 for f in asset.findings if getattr(f, 'severity', '') == 'Critical'),
-                "high_findings": sum(1 for f in asset.findings if getattr(f, 'severity', '') == 'High'),
+                "criticality": scored_asset_criticality.get(asset_id) or getattr(asset, "criticality", None),
+                "critical_findings": derived_counts.get("Critical", 0),
+                "high_findings": derived_counts.get("High", 0),
+                "top_cve": top_cve,
             }
             
             # Use min-heap with negated scores to get top-k
