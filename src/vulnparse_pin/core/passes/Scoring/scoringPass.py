@@ -10,7 +10,7 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Dict, Optional, TYPE_CHECKING, List, Tuple, Any
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import concurrent.futures as cf
 import threading
 import os
 
@@ -197,7 +197,7 @@ class ScoringPass(Pass):
             highest_score = asset_scores[highest_asset]
 
         asset_criticality, asset_band_counts = self._derive_asset_criticality(scored_findings)
-        self._write_asset_criticality(scan, assets_by_id, asset_criticality)
+        self._write_asset_criticality(assets_by_id, asset_criticality)
 
         criticality_thresholds = {
             "extreme_min_critical": self.critical_extreme_min_critical,
@@ -289,7 +289,6 @@ class ScoringPass(Pass):
 
     def _write_asset_criticality(
         self,
-        scan: "ScanResult",
         assets_by_id: Dict[str, Any],
         asset_criticality: Dict[str, str],
     ) -> None:
@@ -382,13 +381,13 @@ class ScoringPass(Pass):
         asset_scores: Dict[str, float] = {}
 
         try:
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            with cf.ProcessPoolExecutor(max_workers=num_workers) as executor:
                 futures = {
                     executor.submit(_score_chunk_process, chunk, policy_values): index
                     for index, chunk in enumerate(chunks)
                 }
 
-                for future in as_completed(futures):
+                for future in cf.as_completed(futures):
                     chunk_results, chunk_assets = future.result()
 
                     for finding_id, payload in chunk_results.items():
@@ -407,7 +406,7 @@ class ScoringPass(Pass):
                             asset_scores[asset_id] = score
 
             return scored_findings, asset_scores
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             ctx.logger.warning(
                 "[pass:scoring] process pool unavailable, falling back to thread pool | reason=%s",
                 exc,
@@ -418,7 +417,7 @@ class ScoringPass(Pass):
 
     def _score_parallel(
         self,
-        ctx: "RunContext",
+        _ctx: "RunContext",
         findings_with_context: List[Tuple[Any, str, str]],
         plugin_cache: Dict[str, Dict[str, Any]],
         score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
@@ -435,7 +434,7 @@ class ScoringPass(Pass):
         asset_scores: Dict[str, float] = {}
 
         # Submit all chunks to executor
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        with cf.ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = {
                 executor.submit(
                     self._score_chunk_range,
@@ -449,7 +448,7 @@ class ScoringPass(Pass):
             }
 
             # Collect results as they complete (not necessarily in order)
-            for future in as_completed(futures):
+            for future in cf.as_completed(futures):
                 chunk_results, chunk_assets = future.result()
                 
                 # Thread-safe merge: acquisition is minimal (insert-only)

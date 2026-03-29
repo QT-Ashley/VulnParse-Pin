@@ -417,7 +417,7 @@ class TopNPass(Pass):
     def _get_scoring_output(self, scan: "ScanResult") -> DerivedPassResult | None:
         try:
             return scan.derived.passes["Scoring@1.0"]
-        except Exception:
+        except (AttributeError, TypeError, KeyError):
             return None
 
     def _index_findings_by_asset(self, scan: "ScanResult") -> dict[str, List[str]]:
@@ -683,7 +683,7 @@ class TopNPass(Pass):
             
             return findings_by_asset_ranked
             
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             ctx.logger.warning(
                 f"[pass:topn] process pool unavailable, falling back to sequential | reason={exc}",
                 extra={"vp_label": "TopNPass"},
