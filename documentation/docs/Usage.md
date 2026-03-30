@@ -207,6 +207,44 @@ vpp -f <input_file> --output-md <md_file>
 vpp -f <input_file> --output-md-technical <md_tech_file>
 ```
 
+#### --output-runmanifest
+
+- `--output-runmanifest [-oRM] <runmanifest_file>`: Emit a RunManifest JSON artifact that captures run metadata, pass metrics, and the embedded decision ledger.
+
+```bash
+vpp -f <input_file> --output-runmanifest runmanifest.json
+```
+
+#### --runmanifest-mode
+
+- `--runmanifest-mode <compact|expanded>`: Controls decision detail volume in the RunManifest. `compact` is default and optimized for routine operations; `expanded` includes richer decision detail for investigations.
+
+```bash
+vpp -f <input_file> --output-runmanifest runmanifest.json --runmanifest-mode expanded
+```
+
+#### --verify-runmanifest
+
+- `--verify-runmanifest <runmanifest_file>`: Validate an existing RunManifest file (schema + integrity chain + manifest digest) and exit without running the parsing/enrichment pipeline.
+
+```bash
+vpp --verify-runmanifest runmanifest.json
+```
+
+#### RunManifest auditability best practice
+
+For auditable workflows, treat RunManifest as untrusted until verified.
+
+- Verify immediately after the pipeline writes it.
+- Verify again before trust actions (sharing, ticket evidence, compliance review, or archival as final evidence).
+
+Example post-run verification pattern:
+
+```bash
+vpp -f <input_file> -o <output_file> --output-runmanifest runmanifest.json
+vpp --verify-runmanifest runmanifest.json
+```
+
 #### --presentation
 
 - `--presentation <mode>`: This option allows you to specify a presentation mode where the output is formatted for presentation purposes. This is useful for generating reports that are easy to read and understand and SIEM ingestion pipelines. Use it as follows:
@@ -334,6 +372,15 @@ vpp -f vulnerabilities.xml -o enriched_output.json --kev-source offline --epss-s
 
 # Output in Markdown format for technical report
 vpp -f vulnerabilities.xml --output-md-technical technical_report.md
+
+# Emit RunManifest in default compact mode
+vpp -f vulnerabilities.xml -o output.json --output-runmanifest runmanifest.json
+
+# Emit RunManifest in expanded mode for deeper investigation
+vpp -f vulnerabilities.xml -o output.json --output-runmanifest runmanifest.json --runmanifest-mode expanded
+
+# Verify existing RunManifest without re-running scan
+vpp --verify-runmanifest runmanifest.json
 
 # Enrichment with KEV and EPSS, output in presentation mode with overlay
 vpp -f vulnerabilities.xml -o presentation_output.json --presentation --overlay-mode namespace

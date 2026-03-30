@@ -20,6 +20,7 @@ from vulnparse_pin.utils.nvdcacher import NVDFeedCache
 if TYPE_CHECKING:
     from vulnparse_pin.core.passes.TopN.TN_triage_config import TriageConfigLoadResult
     from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+    from vulnparse_pin.core.classes.execution_manifest import LedgerService
 
 @dataclass
 class Finding:
@@ -161,6 +162,8 @@ class Services:
     scoring_config: Optional["ScoringPolicyV1"] = None
     topn_config: Optional["TriageConfigLoadResult"] = None
     post_enrichment_index: Optional[PostEnrichmentIndex] = None
+    ledger: Optional["LedgerService"] = None
+    runmanifest_mode: str = "compact"
 
 @dataclass(frozen = True)
 class RunContext:

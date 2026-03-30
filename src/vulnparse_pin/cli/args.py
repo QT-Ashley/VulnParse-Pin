@@ -106,6 +106,12 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     enrich_group.add_argument("--kev-feed", type=str, help="Optional KEV feed override (URL or local path).")
     enrich_group.add_argument("--epss-feed", type=str, help="Optional EPSS feed override (URL or local path).")
     output_group.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Output is in JSON")
+    output_group.add_argument(
+        "--verify-runmanifest",
+        metavar="PATH",
+        type=str,
+        help="Validate an existing runmanifest JSON file (schema + integrity) and exit.",
+    )
     gen_group.add_argument("--pretty-print", "-pp", action="store_true", help="Output the JSON results with identation for readability to cli")
     gen_group.add_argument("--log-file", "-Lf", default="vulnparse_pin.log", help="Log File destination.")
     gen_group.add_argument("--log-level", "-Ll", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Sets Logging level for log.", type=valid_log_level)
@@ -117,6 +123,13 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     output_group.add_argument("--output-csv", "-oC", type=str, metavar="PATH", help="Path to save enriched results in CSV format (optional)")
     output_group.add_argument("--output-md", "-oM", type=str, metavar="PATH", help="Generate executive summary Markdown report")
     output_group.add_argument("--output-md-technical", "-oMT", type=str, metavar="PATH", help="Generate detailed technical Markdown report")
+    output_group.add_argument("--output-runmanifest", "-oRM", type=str, metavar="PATH", help="Generate run manifest JSON artifact with embedded decision ledger")
+    output_group.add_argument(
+        "--runmanifest-mode",
+        choices=["compact", "expanded"],
+        default="compact",
+        help="Decision detail level in runmanifest ledger (compact keeps high-impact events; expanded includes broader detail).",
+    )
     gen_group.add_argument("--allow-large", "-al", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests. Default: False")
     output_group.add_argument("--no-csv-sanitize", "-noC", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools). Default: Off")
     file_group.add_argument("--forbid-symlinks-read", "--forbid-symlinks_read", "-Sr", action="store_true", default=False, help="Disables following symlinks when resolving paths during read operations.")
@@ -163,6 +176,8 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             args.output_md = "demo_summary.md"
         if not args.output_md_technical:
             args.output_md_technical = "demo_technical.md"
+        if not args.output_runmanifest:
+            args.output_runmanifest = "demo_runmanifest.json"
         print(
             "\n[DEMO MODE] Running full pipeline on bundled sample: "
             f"{demo_path}\n"
@@ -170,8 +185,15 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "Artifacts enabled: JSON, CSV, executive Markdown, technical Markdown.\n"
             "Output will be written to the configured output directory.\n"
         )
-    elif args.file is None:
+    elif args.file is None and not args.verify_runmanifest:
         parser.error("the following arguments are required: --file/-f (or use --demo to run on the bundled sample)")
+
+    if args.verify_runmanifest:
+        verify_path = os.path.abspath(args.verify_runmanifest)
+        if not os.path.isfile(verify_path):
+            parser.error(f"--verify-runmanifest: file does not exist or is not a file: {args.verify_runmanifest}")
+        if not os.access(verify_path, os.R_OK):
+            parser.error(f"--verify-runmanifest: file is not readable: {args.verify_runmanifest}")
 
     if args.output:
         output_dir = os.path.dirname(os.path.abspath(args.output)) or '.'

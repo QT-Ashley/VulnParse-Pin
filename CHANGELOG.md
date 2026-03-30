@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-29 Auditability and Provenance Update
+
+This release introduces comprehensive auditability and provenance tracking for VulnParse-Pin runs. The new Execution Framework captures detailed lifecycle events for each pass and enrichment phase, records input and configuration hashes, and produces a verifiable RunManifest artifact that allows offline integrity and schema validation of the run outputs.  
+
+This ensures that every run can be independently verified for correctness, traceability, and tamper-evidence, providing security teams with confidence in the integrity of the prioritized vulnerability outputs.  
+
+Incident Response, forensics, and compliance teams can now rely on the RunManifest to demonstrate exactly what occurred during a given run, what inputs were used, and how decisions were derived, without needing to rerun the processing pipeline.
+
+### Added
+
+- **RunManifest execution artifact** with embedded decision ledger output via `--output-runmanifest`.
+  - Includes runtime metadata, input/config hashes, output references, enrichment summary, pass summaries, and verification block.
+- **Decision ledger runtime service** (`LedgerService`) with append-only hash chaining.
+  - Pass lifecycle events (`pass_start`, `pass_end`, `pass_error`) now captured during orchestration.
+  - Enrichment lifecycle events (`phase_start`, `phase_end`) now captured in the pipeline.
+- **RunManifest schema contract** (`core/schemas/runManifest.schema.json`) and runtime schema validation support.
+- **RunManifest integrity verification** with chain continuity, entry hash recomputation, and manifest digest verification.
+- **Standalone RunManifest verifier command**: `--verify-runmanifest <PATH>` for offline schema/integrity validation without rerunning scan processing.
+- **RunManifest mode controls**: `--runmanifest-mode compact|expanded`.
+  - `compact` remains default for bounded artifact size.
+  - `expanded` emits richer decision detail in Scoring/TopN event emission paths.
+- **Decision reason code registry** (`DecisionReasonCodes`) with stable reason identifiers for explainability.
+- **Pass-phase metrics in runmanifest** now populated from real pass outputs (Scoring, TopN, Summary) rather than placeholders.
+- **New documentation**:
+  - `documentation/docs/RunManifest.md`
+  - `documentation/docs/RunManifest_Technical.md`
+  - Usage updates for generation, mode selection, and verification workflows.
+- **RunManifest test suite** covering schema, integrity, tamper detection, reason-code presence, pass metrics, and file verification flows.
+
+### Changed
+
+- Demo output defaults now include `demo_runmanifest.json` when runmanifest output is requested in demo workflow.
+- Output orchestration now writes RunManifest alongside JSON/CSV/Markdown artifacts when configured.
+- Runtime services container extended with `ledger` and `runmanifest_mode` fields to support explainability and artifact controls.
+
+### Fixed
+
+- Fixed empty `pass_summaries[*].metrics` in RunManifest by deriving metrics from actual pass outputs.
+- Reduced analyzer noise in verification flow by narrowing exception handling for verifier path.
+
 ## [1.0.3] - 2026-03-28
 
 ### Added
@@ -37,9 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Criticality predicate** (`criticality_is`) added to TopN inference engine for `extreme|high|medium|low` asset classification.
 - **Bundled criticality-aware inference rule** (`critical_asset_hint`) in `tn_triage.json` applying +1 exposure weight for `extreme` and `high` criticality assets.
 - **New CLI enrichment controls** with online-by-default semantics and explicit disable/source selection:
-	- `--no-kev`, `--no-epss`, `--no-exploit`
-	- `--kev-source`, `--epss-source`, `--exploit-source`
-	- `--kev-feed`, `--epss-feed`
+  - `--no-kev`, `--no-epss`, `--no-exploit`
+  - `--kev-source`, `--epss-source`, `--exploit-source`
+  - `--kev-feed`, `--epss-feed`
 - **Graduated confidence scoring** in `NessusXMLParser.detect_file` and `OpenVASXMLParser.detect_file` returning `(float, list[tuple[str, str]])` instead of a plain `bool`.
 
 ### Fixed
@@ -167,7 +207,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.2
 [1.0.1]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.1

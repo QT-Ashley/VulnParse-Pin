@@ -36,6 +36,7 @@ from vulnparse_pin.app.io_resolution import resolve_io_paths_and_modes
 from vulnparse_pin.app.normalization import normalize_input
 from vulnparse_pin.app.enrichment import run_enrichment_pipeline
 from vulnparse_pin.app.output import run_output_and_summary
+from vulnparse_pin.utils.runmanifest import verify_runmanifest_file
 
 KEV_FEED = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS_FEED = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
@@ -334,6 +335,17 @@ def main(argv: Optional[Sequence[str]] = None):
     start_time = time.time()
     args = get_args(argv)
 
+    if getattr(args, "verify_runmanifest", None):
+        verify_path = Path(args.verify_runmanifest)
+        try:
+            manifest = verify_runmanifest_file(verify_path)
+            entry_count = manifest.get("decision_ledger", {}).get("entry_count", 0)
+            print(f"[OK] RunManifest verified: {verify_path} (entries={entry_count})")
+            return 0
+        except (ValueError, OSError) as e:
+            print(f"[FAIL] RunManifest verification failed: {verify_path}: {e}")
+            return 1
+
     runtime = initialize_runtime(args)
     ctx = runtime.ctx
     cfg_yaml = runtime.cfg_yaml
@@ -351,6 +363,7 @@ def main(argv: Optional[Sequence[str]] = None):
     csv_output = io_state.csv_output
     md_output = io_state.md_output
     md_tech_output = io_state.md_tech_output
+    runmanifest_output = io_state.runmanifest_output
     exploit_db = io_state.exploit_db
     csv_sanitization_enabled = io_state.csv_sanitization_enabled
     kev_source = io_state.kev_source
@@ -386,6 +399,8 @@ def main(argv: Optional[Sequence[str]] = None):
         csv_output=csv_output,
         md_output=md_output,
         md_tech_output=md_tech_output,
+        runmanifest_output=runmanifest_output,
+        scanner_input=scanner_input,
         csv_sanitization_enabled=csv_sanitization_enabled,
         kev_source=kev_source,
         epss_source=epss_source,

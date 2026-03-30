@@ -10,6 +10,8 @@
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Protocol, TYPE_CHECKING
 
+from vulnparse_pin.core.classes.decision_reasons import DecisionReasonCodes
+
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import ScanResult
     from vulnparse_pin.core.classes.dataclass import RunContext
@@ -55,7 +57,7 @@ class DerivedContext:
         return self.passes.get(key)
 
     def get_latest(self, name: str) -> Optional[DerivedPassResult]:
-        for k, v in reversed(list(self.passes.items())):
+        for _, v in reversed(list(self.passes.items())):
             if v.meta.name == name:
                 return v
         return None
@@ -81,7 +83,41 @@ class PassRunner:
     def run_all(self, ctx: "RunContext", scan: "ScanResult") -> "ScanResult":
         for p in self.passes:
             ctx.logger.debug("Running pass: %s@%s", p.name, p.version, extra = {"vp_label": "PassRunner"})
-            res = p.run(ctx, scan)
+            ledger = getattr(getattr(ctx, "services", None), "ledger", None)
+            if ledger is not None:
+                ledger.append_event(
+                    component="PassRunner",
+                    event_type="pass_start",
+                    subject_ref=f"pass:{p.name}@{p.version}",
+                    reason_code=DecisionReasonCodes.PASS_EXECUTION_STARTED,
+                    reason_text=f"Starting pass {p.name}@{p.version}.",
+                    factor_refs=["pass.name", "pass.version"],
+                )
+
+            try:
+                res = p.run(ctx, scan)
+            except Exception as exc:
+                if ledger is not None:
+                    ledger.append_event(
+                        component="PassRunner",
+                        event_type="pass_error",
+                        subject_ref=f"pass:{p.name}@{p.version}",
+                        reason_code=DecisionReasonCodes.PASS_EXECUTION_FAILED,
+                        reason_text=f"Pass {p.name}@{p.version} raised an exception.",
+                        factor_refs=["pass.name", "pass.version"],
+                        evidence={"error": str(exc)},
+                    )
+                raise
+
+            if ledger is not None:
+                ledger.append_event(
+                    component="PassRunner",
+                    event_type="pass_end",
+                    subject_ref=f"pass:{p.name}@{p.version}",
+                    reason_code=DecisionReasonCodes.PASS_EXECUTION_COMPLETED,
+                    reason_text=f"Completed pass {p.name}@{p.version}.",
+                    factor_refs=["pass.name", "pass.version"],
+                )
 
             new_derived = scan.derived.put(res)
             scan = replace(scan, derived=new_derived)
