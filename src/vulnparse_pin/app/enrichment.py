@@ -253,7 +253,7 @@ def run_enrichment_pipeline(
             update_enrichment_status(finding)
 
     sources = {
-        "exploitdb": True,
+        "exploitdb": (not args.no_exploit) and (exploit_data is not None),
         "kev": kev_data is not None,
         "epss": epss_data is not None,
         "nvd": nvd_status,

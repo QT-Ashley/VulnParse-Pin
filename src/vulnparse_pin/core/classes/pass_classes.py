@@ -69,6 +69,7 @@ class Pass(Protocol):
     """
     name: str
     version: str
+    requires_passes: tuple[str, ...]
 
     def run(self, ctx: "RunContext", scan: "ScanResult") -> DerivedPassResult:
         pass
@@ -80,7 +81,27 @@ class PassRunner:
     """
     passes: List[Pass]
 
+    def _validate_dependencies(self) -> None:
+        pipeline_keys = [f"{p.name}@{p.version}" for p in self.passes]
+
+        duplicates = {k for k in pipeline_keys if pipeline_keys.count(k) > 1}
+        if duplicates:
+            dupes = ", ".join(sorted(duplicates))
+            raise ValueError(f"Duplicate passes in pipeline: {dupes}")
+
+        key_to_index = {k: i for i, k in enumerate(pipeline_keys)}
+        for i, p in enumerate(self.passes):
+            current_key = pipeline_keys[i]
+            required = tuple(getattr(p, "requires_passes", ()) or ())
+            for dep in required:
+                dep_idx = key_to_index.get(dep)
+                if dep_idx is None:
+                    raise ValueError(f"Pass {current_key} requires missing dependency {dep}")
+                if dep_idx >= i:
+                    raise ValueError(f"Pass {current_key} must run after dependency {dep}")
+
     def run_all(self, ctx: "RunContext", scan: "ScanResult") -> "ScanResult":
+        self._validate_dependencies()
         for p in self.passes:
             ctx.logger.debug("Running pass: %s@%s", p.name, p.version, extra = {"vp_label": "PassRunner"})
             ledger = getattr(getattr(ctx, "services", None), "ledger", None)

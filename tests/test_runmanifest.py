@@ -244,6 +244,49 @@ def test_runmanifest_populates_pass_metrics_and_mode(tmp_path: Path):
     assert metrics_by_name["Summary"]["total_assets"] == 2
 
 
+def test_runmanifest_topn_skipped_artifact_metrics(tmp_path: Path):
+    ctx = _make_context(tmp_path)
+    scan = _make_scan_result()
+    scanner_input = tmp_path / "input.nessus"
+    scanner_input.write_text("dummy", encoding="utf-8")
+
+    topn_skipped = DerivedPassResult(
+        meta=PassMeta(name="TopN", version="1.0", created_at_utc="2026-03-29T00:00:01Z"),
+        data={
+            "rank_basis": "raw",
+            "k": 5,
+            "decay": [1.0, 0.7, 0.5, 0.35, 0.25],
+            "assets": [],
+            "findings_by_asset": {},
+            "global_top_findings": [],
+            "status": "skipped",
+            "error": {
+                "code": "missing_dependency",
+                "missing": ["Scoring@1.0"],
+            },
+        },
+    )
+    scan.derived = DerivedContext(passes={"TopN@1.0": topn_skipped})
+
+    manifest = build_runmanifest(
+        ctx=ctx,
+        _args=SimpleNamespace(),
+        scan_result=scan,
+        sources={"exploitdb": False, "kev": False, "epss": False, "nvd": "Disabled", "stats": {}},
+        scanner_input=scanner_input,
+        output_paths={"json": None, "csv": None, "md": None, "md_technical": None},
+    )
+
+    validate_runmanifest_schema(manifest)
+    verify_runmanifest_integrity(manifest)
+
+    metrics_by_name = {p["name"]: p["metrics"] for p in manifest["pass_summaries"]}
+    topn_metrics = metrics_by_name["TopN"]
+    assert topn_metrics["status"] == "skipped"
+    assert topn_metrics["error_code"] == "missing_dependency"
+    assert topn_metrics["ranked_assets"] == 0
+
+
 def test_verify_runmanifest_file_success(tmp_path: Path):
     ctx = _make_context(tmp_path)
     scan_result = _make_scan_result_with_passes()

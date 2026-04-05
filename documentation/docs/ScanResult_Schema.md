@@ -268,7 +268,7 @@ for asset in scan.assets:
 
 ### Export to CSV
 
-See the `--output-csv` flag in the [CLI documentation](Installation.md#command-line-options) for direct CSV export with schema-aware field handling.
+See the `--output-csv` flag in the [CLI documentation](Usage.md) for direct CSV export with schema-aware field handling.
 
 ---
 

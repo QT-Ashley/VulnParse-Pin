@@ -38,13 +38,13 @@ pip install vulnparse_pin-1.0.0-py3-none-any.whl
 Use a supported input format (`.nessus` / `.xml` for Nessus or OpenVAS XML):
 
 ```bash
-vpp -f test.xml -kev -epss -o test_output.json
+vpp -f test.xml -o test_output.json
 ```
 
 Typical options:
 
 ```bash
-vpp -f input.xml -kev -epss -o output.json 
+vpp -f input.xml -o output.json
 ```
 
 ## 3) Export CSV or Markdown reports for operational use
@@ -98,6 +98,12 @@ In output JSON, check:
 - **Unsupported file:** ensure the input is Nessus/OpenVAS XML supported by detector
 - **Import warnings in editor:** confirm VS Code is using your project `.venv`
 - **Network-restricted environment:** run in offline mode if external feed access is unavailable
+
+For upgrade differences, deeper troubleshooting, and output-reading guidance, see:
+
+- [Upgrade and Migration](Upgrade%20and%20Migration.md)
+- [Troubleshooting](Troubleshooting.md)
+- [Output Interpretation](Output%20Interpretation.md)
 
 ## 5-minute checklist
 

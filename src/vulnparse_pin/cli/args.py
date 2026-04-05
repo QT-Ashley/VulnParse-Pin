@@ -130,6 +130,7 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="compact",
         help="Decision detail level in runmanifest ledger (compact keeps high-impact events; expanded includes broader detail).",
     )
+    output_group.add_argument("--output_all", "-oA", type=str, metavar="BASENAME", default=None, help="Base name for all output artifacts. Derives .json, .csv, _summary.md, _technical.md, _runmanifest.json from this stem. Individual output flags override specific artifacts.")
     gen_group.add_argument("--allow-large", "-al", action="store_true", help="Allow parsing very large reports (up to ~50GB). Use only for enterprise-scale or synthetic stress tests. Default: False")
     output_group.add_argument("--no-csv-sanitize", "-noC", action="store_true", help="Disable CSV cell sanitization (dangerous: may allow CSV formula injection in spreadsheet tools). Default: Off")
     file_group.add_argument("--forbid-symlinks-read", "--forbid-symlinks_read", "-Sr", action="store_true", default=False, help="Disables following symlinks when resolving paths during read operations.")
@@ -168,14 +169,8 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         args.no_nvd = False
         if not args.pretty_print:
             args.pretty_print = True
-        if not args.output:
-            args.output = "demo_output.json"
-        if not args.output_csv:
-            args.output_csv = "demo_output.csv"
-        if not args.output_md:
-            args.output_md = "demo_summary.md"
-        if not args.output_md_technical:
-            args.output_md_technical = "demo_technical.md"
+        if not args.output_all:
+            args.output_all = "demo_output"
         if not args.output_runmanifest:
             args.output_runmanifest = "demo_runmanifest.json"
         print(
@@ -187,6 +182,20 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         )
     elif args.file is None and not args.verify_runmanifest:
         parser.error("the following arguments are required: --file/-f (or use --demo to run on the bundled sample)")
+
+    # Individual flags, if explicitly provided, take precedence.
+    if args.output_all:
+        _base = str(Path(args.output_all).with_suffix(""))
+        if not args.output:
+            args.output = _base + ".json"
+        if not args.output_csv:
+            args.output_csv = _base + ".csv"
+        if not args.output_md:
+            args.output_md = _base + "_summary.md"
+        if not args.output_md_technical:
+            args.output_md_technical = _base + "_technical.md"
+        if not args.output_runmanifest:
+            args.output_runmanifest = _base + "_runmanifest.json"
 
     if args.verify_runmanifest:
         verify_path = os.path.abspath(args.verify_runmanifest)

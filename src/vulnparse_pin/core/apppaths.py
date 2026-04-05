@@ -8,23 +8,22 @@
 # See the LICENSE file for full terms.
 
 from __future__ import annotations
-from importlib import resources
 import os
 import stat
-import json
 from typing import TYPE_CHECKING, Tuple
 from dataclasses import dataclass
 from pathlib import Path
-from ruamel.yaml import YAML
-from ruamel.yaml.error import YAMLError
 from vulnparse_pin import __version__
+from vulnparse_pin.core.config_source import ConfigSource
+from vulnparse_pin.core.config_validator import ConfigValidator
+from vulnparse_pin.core.config_projector import ConfigProjector
 
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext
 
 
 try:
-    from platformdirs import user_config_dir, user_data_dir, user_cache_dir, user_log_dir
+    from platformdirs import user_data_dir
 except ImportError as e:
     raise RuntimeError(
         "Missing dependency: platformdirs. Install with pip install platformdirs"
@@ -146,32 +145,14 @@ class AppPaths:
     def config_path_topn(self) -> Path:
         return self.config_dir / "tn_triage.json"
 
+
 def ensure_user_configs(paths: AppPaths) -> Tuple[Path, Path, Path]:
     """
-    Ensure config.yaml and/or scoring.json exists in the writable config dir.
-    If missing, copy from package resource default.
+    Backward-compatible wrapper: ensure config files exist.
+    Delegates to ConfigSource for file provisioning.
     """
-    paths.ensure_dirs()
-    dst_yaml = paths.config_path_yaml() # e.g., .../config/config.yaml
-    dst_scoring = paths.config_path_scoring() # e.g., .../config/scoring.json
-    dst_topn = paths.config_path_topn() # e.g., .../config/tn_triage.json
-
-    #   Create missing Global config YAML
-    if not dst_yaml.exists():
-        default_bytes_yaml = resources.files("vulnparse_pin.resources").joinpath("config.yaml").read_bytes()
-        dst_yaml.write_bytes(default_bytes_yaml)
-
-    #   Create missing Scoring config JSON
-    if not dst_scoring.exists():
-        default_bytes_scoring = resources.files("vulnparse_pin.resources").joinpath("scoring.json").read_bytes()
-        dst_scoring.write_bytes(default_bytes_scoring)
-
-    if not dst_topn.exists():
-        default_bytes_topn = resources.files("vulnparse_pin.resources").joinpath("tn_triage.json").read_bytes()
-        dst_topn.write_bytes(default_bytes_topn)
-
-
-    return dst_yaml, dst_scoring, dst_topn
+    file_set = ConfigSource.ensure_files(paths)
+    return file_set.global_yaml, file_set.scoring_json, file_set.topn_json
 
 def load_config(ctx: "RunContext") -> Tuple[dict, dict, dict]:
     """
@@ -180,45 +161,16 @@ def load_config(ctx: "RunContext") -> Tuple[dict, dict, dict]:
     - Scoring Config: scoring.json
     - TopN Config: tn_triage.json
 
-    :param paths: Various attributes available from AppPaths dataclass.
-    :type paths: AppPaths
-    :return: Returns dict objects with config data.
+    :param ctx: RunContext with paths and PFH handler.
+    :type ctx: RunContext
+    :return: Returns tuple of (global_config, scoring_config, topn_config) dicts.
     :rtype: Tuple[dict, dict, dict]
     """
-    cfg_path_yaml, cfg_path_scoring, cfg_path_topn = ensure_user_configs(ctx.paths)
-
-    # Enforce PFH policy
-
-    # YAML INIT
-    yaml=YAML(typ = "safe", pure = True)
-    try:
-        with ctx.pfh.open_for_read(cfg_path_yaml, mode = "r", label = "Global Config (YAML)") as r:
-            cfg_yaml = yaml.load(r)
-    except (TypeError, ValueError, YAMLError) as e:
-        raise RuntimeError("Could not parse yaml file.") from e
-
-    if not isinstance(cfg_yaml, dict):
-        raise RuntimeError("Global config must be an object/mapping at top-level.")
-
-    try:
-        with ctx.pfh.open_for_read(cfg_path_scoring, mode = "r", label = "Scoring Config (JSON)") as r:
-            cfg_json = json.load(r)
-    except (json.JSONDecodeError, TypeError, ValueError) as e:
-        raise RuntimeError("Could not load json config file.") from e
-
-    if not isinstance(cfg_json, dict):
-        raise RuntimeError("Scoring config must be an object at top-level.")
-
-    try:
-        with ctx.pfh.open_for_read(cfg_path_topn, mode = "r", label = "TopN Config (JSON)") as r:
-            cfg_topn = json.load(r)
-    except (json.JSONDecodeError, TypeError, ValueError) as e:
-        raise RuntimeError("Could not load json config file.") from e
-
-    if not isinstance(cfg_topn, dict):
-        raise RuntimeError("TopN config must be an object at top-level.")
-
-    return cfg_yaml, cfg_json, cfg_topn
+    files = ConfigSource.ensure_files(ctx.paths)
+    payloads = ConfigSource.read_payloads(ctx, files)
+    validation = ConfigValidator.validate(ctx, payloads)
+    bundle = ConfigProjector.project(validation)
+    return bundle.global_config, bundle.scoring_config, bundle.topn_config
 
 def _harden_dir(path: Path, mode: int) -> None:
     """

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnparse-pin.local/schemas/scoring.schema.json",
+  "title": "VulnParse-Pin Scoring Config Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "epss", "evidence_points", "bands", "aggregation", "weights", "risk_ceiling"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["v1"]
+    },
+    "epss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scale", "min", "max"],
+      "properties": {
+        "scale": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 100.0 },
+        "min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "max": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      }
+    },
+    "evidence_points": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kev", "exploit"],
+      "properties": {
+        "kev": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "exploit": { "type": "number", "minimum": 0.0, "maximum": 100.0 }
+      }
+    },
+    "bands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["critical", "high", "medium", "low"],
+      "properties": {
+        "critical": { "type": "number", "minimum": 0.0, "maximum": 1000.0 },
+        "high": { "type": "number", "minimum": 0.0, "maximum": 1000.0 },
+        "medium": { "type": "number", "minimum": 0.0, "maximum": 1000.0 },
+        "low": { "type": "number", "minimum": 0.0, "maximum": 1000.0 }
+      }
+    },
+    "aggregation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_score"],
+      "properties": {
+        "asset_score": { "type": "string", "enum": ["max", "avg"] }
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epss_high", "epss_medium", "kev", "exploit"],
+      "properties": {
+        "epss_high": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "epss_medium": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "kev": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "exploit": { "type": "number", "minimum": 0.0, "maximum": 100.0 }
+      }
+    },
+    "risk_ceiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_raw_risk", "max_operational_risk"],
+      "properties": {
+        "max_raw_risk": { "type": "number", "minimum": 0.0, "maximum": 1000.0 },
+        "max_operational_risk": { "type": "number", "minimum": 0.0, "maximum": 1000.0 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "epss": {
+            "required": ["min", "max"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "epss": {
+            "properties": {
+              "min": { "type": "number" },
+              "max": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

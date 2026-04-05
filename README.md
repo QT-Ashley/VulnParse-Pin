@@ -13,12 +13,13 @@ Normalize • Enrich • Prioritize • Decide
 </p>
 
 <p align="center">
-<a href="/documentation/docs/index.md">Index</a> •
-<a href="/documentation/docs/Overview.md">Overview</a> •
-<a href="/documentation/docs/Features.md">Features</a> •
-<a href="/documentation/docs/Architecture.md">Architecture</a> •
-<a href="/documentation/docs/Getting%20Started%20In%205%20Minutes.md">Getting Started</a> •
-<a href="/documentation/docs/Licensing.md">Licensing</a>
+<a href="https://docs.vulnparse-pin.com">Documentation</a> •
+<a href="https://docs.vulnparse-pin.com/Overview">Overview</a> •
+<a href="https://docs.vulnparse-pin.com/Features">Features</a> •
+<a href="https://docs.vulnparse-pin.com/Architecture">Architecture</a> •
+<a href="https://docs.vulnparse-pin.com/Getting%20Started%20In%205%20Minutes">Getting Started</a> •
+<a href="/CHANGELOG.md">Changelog</a> •
+<a href="https://docs.vulnparse-pin.com/Licensing">Licensing</a>
 </p>
 
 ![Static Badge](https://img.shields.io/badge/VulnParsePin-pin?style=plastic&color=%230096FF&logo=github)
@@ -30,8 +31,13 @@ Normalize • Enrich • Prioritize • Decide
 ![Last Commit](https://img.shields.io/github/last-commit/QT-Ashley/VulnParse-Pin)
 ![Stars](https://img.shields.io/github/stars/QT-Ashley/VulnParse-Pin)
 ![Issues](https://img.shields.io/github/issues/QT-Ashley/VulnParse-Pin)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/vulnparse-pin?period=total&units=INTERNATIONAL_SYSTEM&left_color=BRIGHTGREEN&right_color=BRIGHTGREEN&left_text=PyPi+downloads)](https://pepy.tech/projects/vulnparse-pin)
 
 ⭐ ***If you find VulnParse-Pin useful, please consider starring the repository to show your support!*** ⭐
+
+⚙️ ***If you want to contribute, check out the [CONTRIBUTING.md](CONTRIBUTING.md) guide for details on how to get involved.*** ⚙️
+
+🎗️ ***Feedback is very much desired. Please leave a discussion or issue!*** 🎗️
 
 ---
 
@@ -195,7 +201,7 @@ pip install -e .
 Standalone executables with release artifacts are also available on PyPI and GitHub Releases, which include pre-built wheels for easy installation:
 
 ```bash
-pip install vulnparse_pin-1.0.0-py3-none-any.whl
+pip install vulnparse_pin-*py3-none-any.whl
 ```
 
 ### Run Your Own Scan
@@ -229,6 +235,8 @@ If you tried VulnParse-Pin, even briefly, please consider leaving feedback or co
 
 Anything you can share is helpful, whether it's a quick comment, a detailed issue, or a pull request with improvements.
 
+Contributor workflow and expectations are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Roadmap and Future Enhancements
 
 - **Additional Scanner Support**: Expanding normalization capabilities to support more vulnerability scanners and feeds.
@@ -246,7 +254,15 @@ For more detailed information on how to use, configure, and extend VulnParse-Pin
 - [Docs Index](documentation/docs/index.md)
 - [Overview](documentation/docs/Overview.md)
 - [Getting Started In 5 Minutes](documentation/docs/Getting%20Started%20In%205%20Minutes.md)
+- [Upgrade and Migration](documentation/docs/Upgrade%20and%20Migration.md)
+- [Troubleshooting](documentation/docs/Troubleshooting.md)
+- [Output Interpretation](documentation/docs/Output%20Interpretation.md)
+- [Testing Guide](documentation/docs/Testing%20Guide.md)
 - [Architecture](documentation/docs/Architecture.md)
+- [Extension Playbooks](documentation/docs/Extension%20Playbooks.md)
+- [ADR Workflow](documentation/docs/ADR%20Workflow.md)
+- [Architecture Review Checklist](documentation/docs/Architecture%20Review%20Checklist.md)
+- [Deprecation and Versioning Policy](documentation/docs/Deprecation%20and%20Versioning%20Policy.md)
 - [Pipeline System](documentation/docs/Pipeline%20System.md)
 - [RunManifest Overview](documentation/docs/RunManifest.md)
 - [RunManifest Technical Deep Dive](documentation/docs/RunManifest_Technical.md)

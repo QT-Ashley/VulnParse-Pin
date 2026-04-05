@@ -74,8 +74,11 @@ def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
         assets = data.get("assets")
         findings_by_asset = data.get("findings_by_asset")
         global_top = data.get("global_top_findings")
+        error_block = data.get("error") if isinstance(data.get("error"), dict) else {}
         return {
             "rank_basis": data.get("rank_basis"),
+            "status": data.get("status", "ok"),
+            "error_code": error_block.get("code"),
             "k": data.get("k"),
             "decay_weights": len(data.get("decay", [])) if isinstance(data.get("decay"), list) else 0,
             "ranked_assets": len(assets) if isinstance(assets, list) else 0,

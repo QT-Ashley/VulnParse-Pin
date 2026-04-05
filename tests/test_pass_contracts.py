@@ -16,7 +16,7 @@ from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
 from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
-from vulnparse_pin.core.classes.pass_classes import PassRunner
+from vulnparse_pin.core.classes.pass_classes import PassRunner, DerivedPassResult, PassMeta
 from vulnparse_pin.app.index_builder import build_post_enrichment_index
 from vulnparse_pin.utils.logger import LoggerWrapper
 from vulnparse_pin.io.pfhandler import PermFileHandler
@@ -210,11 +210,15 @@ def test_missing_pass_dependency_behavior(tmp_path):
 
     cfg = _safe_fallback_config()
     topn = TopNPass(cfg)
-    # when scoring output is missing, TopN.run returns the original scan unchanged
+    # when scoring output is missing, TopN.run emits a soft no-op artifact
     result = topn.run(ctx, scan)
-    assert result == scan
-    # derived context should still be empty
-    assert not scan.derived.passes, "Derived context should remain empty if TopN skipped"
+    assert result.meta.name == "TopN"
+    assert result.data.get("status") == "skipped"
+    err = result.data.get("error", {})
+    assert err.get("code") == "missing_dependency"
+    assert "Scoring@1.0" in err.get("missing", [])
+    assert result.data.get("assets") in ([], ())
+    assert result.data.get("findings_by_asset") == {}
 
 
 def test_downstream_uses_asset_level_asset_id(tmp_path):
@@ -496,3 +500,54 @@ def test_topn_score_rank_consistency(tmp_path):
     assert f1_rec and f2_rec, "Both findings should appear in output"
     assert f2_rec.get("rank", float('inf')) < f1_rec.get("rank", float('inf')), \
         "Finding with higher EPSS/CVSS should have lower (better) rank"
+
+
+def test_pass_runner_rejects_missing_declared_dependency(tmp_path):
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+
+    class _DependentOnlyPass:
+        name = "DependentOnly"
+        version = "1.0"
+        requires_passes = ("Scoring@1.0",)
+
+        def run(self, _ctx, _scan):
+            return DerivedPassResult(
+                meta=PassMeta(name=self.name, version=self.version, created_at_utc=datetime.now().isoformat()),
+                data={"ok": True},
+            )
+
+    runner = PassRunner([_DependentOnlyPass()])
+    with pytest.raises(ValueError, match="requires missing dependency"):
+        runner.run_all(ctx, scan)
+
+
+def test_pass_runner_rejects_wrong_dependency_order(tmp_path):
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+
+    class _FakeScoring:
+        name = "Scoring"
+        version = "1.0"
+        requires_passes = ()
+
+        def run(self, _ctx, _scan):
+            return DerivedPassResult(
+                meta=PassMeta(name=self.name, version=self.version, created_at_utc=datetime.now().isoformat()),
+                data={"scored_findings": {}},
+            )
+
+    class _NeedsScoring:
+        name = "NeedsScoring"
+        version = "1.0"
+        requires_passes = ("Scoring@1.0",)
+
+        def run(self, _ctx, _scan):
+            return DerivedPassResult(
+                meta=PassMeta(name=self.name, version=self.version, created_at_utc=datetime.now().isoformat()),
+                data={"ok": True},
+            )
+
+    runner = PassRunner([_NeedsScoring(), _FakeScoring()])
+    with pytest.raises(ValueError, match="must run after dependency"):
+        runner.run_all(ctx, scan)

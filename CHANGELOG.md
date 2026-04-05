@@ -5,7 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) where practical.
 
-## [Unreleased]
+## [1.1.1] - 2026-04-05 Governance and Architecture Hardening
+
+### Added
+
+- Strict schema validation for all runtime config files (`config.yaml`, `scoring.json`, `tn_triage.json`) during config load.
+- New configuration schemas: `core/schemas/config.schema.json`, `core/schemas/scoring.schema.json`.
+- TopN soft no-op dependency artifact when `Scoring@1.0` is unavailable, including explicit error metadata.
+- Pass dependency declarations and pipeline dependency/order validation in `PassRunner`.
+- RunManifest TopN pass summary metrics now include skip status and error code when applicable.
+- Governance guardrail docs: ADR workflow, architecture review checklist, and deprecation/versioning policy.
+- Enrichment seam contract: implementation-ready boundary design with staged migration and rollback guidance (`Enrichment Seam Contract.md`).
+- Config seam contract: implementation-ready boundary design with staged migration and rollback guidance (`Config Seam Contract.md`).
+- Config seam architecture (4-stage refactor) with dedicated `ConfigSource`, `ConfigValidator`, `ConfigProjector` modules and ADR-0001 decision record.
+- `--output_all BASENAME` now derives all output artifact paths from a single base name stem: `<base>.json`, `<base>.csv`, `<base>_summary.md`, `<base>_technical.md`, `<base>_runmanifest.json`. Individual output flags still override specific artifacts when provided alongside `--output_all`.
+
+### Changed
+
+- Parser lifecycle metadata now supports `stability` and deprecation markers in parser specs.
+- Nessus/OpenVAS JSON parser specs are now explicitly marked as `experimental` and `deprecated`.
+- Parser spec `formats` fields were normalized to tuple form for single-format entries.
+- Enrichment source summary now reports `exploitdb` enablement truthfully instead of hardcoded true.
+- Default global config now includes explicit `version: v1` marker.
+
+### Fixed
+
+- TopN pass contract behavior now remains pass-compatible on missing dependencies by returning a derived artifact rather than a scan object.
+- Pass pipelines with missing or misordered declared dependencies now fail fast with explicit validation errors.
+- `--output_all` CLI flag redefined as a `BASENAME` string argument; was incorrectly declared as a boolean store-true flag causing argparse to raise "expected one argument" when used.
+- Removed spurious f-string with no interpolated variables in `markdown_report.py`.
 
 ## [1.1.0] - 2026-03-29 Auditability and Provenance Update
 
