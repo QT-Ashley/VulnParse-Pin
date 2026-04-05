@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnparse-pin.local/schemas/config.schema.json",
+  "title": "VulnParse-Pin Global Config Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feed_cache", "summary"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["v1"]
+    },
+    "feed_cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaults", "ttl_hours", "feeds"],
+      "properties": {
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ttl_hours"],
+          "properties": {
+            "ttl_hours": { "type": "integer", "minimum": 1, "maximum": 8760 }
+          }
+        },
+        "ttl_hours": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exploit_db", "kev", "epss", "nvd_yearly", "nvd_modified"],
+          "properties": {
+            "exploit_db": { "type": "integer", "minimum": 1, "maximum": 8760 },
+            "kev": { "type": "integer", "minimum": 1, "maximum": 8760 },
+            "epss": { "type": "integer", "minimum": 1, "maximum": 8760 },
+            "nvd_yearly": { "type": "integer", "minimum": 1, "maximum": 8760 },
+            "nvd_modified": { "type": "integer", "minimum": 1, "maximum": 8760 }
+          }
+        },
+        "feeds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exploit_db", "kev", "epss", "nvd"],
+          "properties": {
+            "exploit_db": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "ttl_hours"],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ttl_hours": { "type": "integer", "minimum": 1, "maximum": 8760 }
+              }
+            },
+            "kev": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "ttl_hours"],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ttl_hours": { "type": "integer", "minimum": 1, "maximum": 8760 }
+              }
+            },
+            "epss": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "ttl_hours"],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ttl_hours": { "type": "integer", "minimum": 1, "maximum": 8760 }
+              }
+            },
+            "nvd": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "enabled",
+                "ttl_yearly",
+                "ttl_modified",
+                "start_year",
+                "end_year",
+                "sqlite_enforce_permissions",
+                "sqlite_file_mode",
+                "sqlite_max_age_hours",
+                "sqlite_max_rows"
+              ],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ttl_yearly": { "type": "integer", "minimum": 1, "maximum": 8760 },
+                "ttl_modified": { "type": "integer", "minimum": 1, "maximum": 8760 },
+                "start_year": { "type": "integer", "minimum": 2002, "maximum": 2100 },
+                "end_year": { "type": "integer", "minimum": 2002, "maximum": 2100 },
+                "sqlite_enforce_permissions": { "type": "boolean" },
+                "sqlite_file_mode": { "type": "string", "pattern": "^0o[0-7]{3}$" },
+                "sqlite_max_age_hours": { "type": "integer", "minimum": 1, "maximum": 100000 },
+                "sqlite_max_rows": { "type": "integer", "minimum": 1, "maximum": 100000000 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["top_n_findings"],
+      "properties": {
+        "top_n_findings": { "type": "integer", "minimum": 1, "maximum": 500 }
+      }
+    }
+  }
+}

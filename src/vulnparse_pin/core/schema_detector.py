@@ -23,6 +23,9 @@ class ParserSpec:
     formats: Tuple[str]
     scanner: str                        # "openvas" | "nessus" | "unknown"
     priority: int = 100                 # lower = preferred tie-breaker
+    stability: str = "stable"          # stable | experimental
+    deprecated: bool = False
+    deprecation_notice: Optional[str] = None
     detect_file: Optional[Callable[[Any, Path], DetectionResult]] = None
 
 @dataclass(frozen=True)
@@ -33,6 +36,8 @@ class DetectionResult:
     confidence: float
     format: str
     scanner: str
+    stability: str = "stable"
+    deprecated: bool = False
     evidence: tuple[DetectionEvidence, ...] = ()
     error: Optional[str] = None
 
@@ -85,6 +90,8 @@ class SchemaDetector:
                     confidence=0.0,
                     format=sniff,
                     scanner=spec.scanner,
+                    stability=spec.stability,
+                    deprecated=spec.deprecated,
                     evidence=(),
                     error=str(e)
                 ))
@@ -96,6 +103,19 @@ class SchemaDetector:
 
         if not winner.matched:
             raise ValueError(f"No parser matched input: {path.name}")
+
+        winner_spec = self._spec_by_name.get(winner.parser_name)
+        if winner_spec is not None and (winner_spec.deprecated or winner_spec.stability == "experimental"):
+            msg = (
+                f"Parser '{winner.parser_name}' is marked {winner_spec.stability}"
+                f"{' and deprecated' if winner_spec.deprecated else ''}."
+            )
+            if winner_spec.deprecation_notice:
+                msg += f" {winner_spec.deprecation_notice}"
+            if hasattr(ctx.logger, "print_warning"):
+                ctx.logger.print_warning(msg, label="Normalization")
+            else:
+                ctx.logger.warning(msg)
 
         return winner
 
@@ -134,6 +154,8 @@ class SchemaDetector:
                 confidence=confidence,
                 format=sniff,
                 scanner=spec.scanner,
+                stability=spec.stability,
+                deprecated=spec.deprecated,
                 evidence=evidence,
             )
         return DetectionResult(
@@ -143,6 +165,8 @@ class SchemaDetector:
             confidence=0.0,
             format=sniff,
             scanner=spec.scanner,
+            stability=spec.stability,
+            deprecated=spec.deprecated,
             evidence=(DetectionEvidence("detect_file", "missing"),),
         )
 
@@ -168,6 +192,8 @@ class SchemaDetector:
                 confidence=0.0,
                 format="unknown",
                 scanner="unknown",
+                stability="stable",
+                deprecated=False,
             ))
         def sort_key(r: DetectionResult):
             return (

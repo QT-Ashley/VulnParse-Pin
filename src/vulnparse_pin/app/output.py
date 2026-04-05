@@ -45,7 +45,7 @@ def run_output_and_summary(
     if args.output or args.output_csv:
         logger.phase("Output")
 
-    if args.output:
+    if args.output_all:
         if args.presentation and not scan_result.derived.get("Scoring@1.0"):
             raise RuntimeError("Presentation overlay requested, but Scoring@1.0 pass result not found.")
         if args.presentation:
@@ -53,15 +53,32 @@ def run_output_and_summary(
             write_output_fn(ctx, data=out, file_path=json_output, pretty_print=args.pretty_print)
         else:
             write_output_fn(ctx, data=scan_result, file_path=json_output, pretty_print=args.pretty_print)
-
-    if args.output_csv:
+        # CSV
         export_to_csv(ctx, scan_result, csv_path=csv_output, csv_sanitization=csv_sanitization_enabled)
-
-    if md_output:
+        
+        # Markdown Exec
         generate_markdown_report(ctx, scan_result, md_output, report_type="executive")
-
-    if md_tech_output:
+        
+        # Markdown Tech
         generate_markdown_report(ctx, scan_result, md_tech_output, report_type="technical")
+    else:
+        if args.output:
+            if args.presentation and not scan_result.derived.get("Scoring@1.0"):
+                raise RuntimeError("Presentation overlay requested, but Scoring@1.0 pass result not found.")
+            if args.presentation:
+                out = materialize_presentation(scan_result, overlay_mode=args.overlay_mode, scoring_pass_key="Scoring@1.0")
+                write_output_fn(ctx, data=out, file_path=json_output, pretty_print=args.pretty_print)
+            else:
+                write_output_fn(ctx, data=scan_result, file_path=json_output, pretty_print=args.pretty_print)
+
+        if args.output_csv:
+            export_to_csv(ctx, scan_result, csv_path=csv_output, csv_sanitization=csv_sanitization_enabled)
+
+        if md_output:
+            generate_markdown_report(ctx, scan_result, md_output, report_type="executive")
+
+        if md_tech_output:
+            generate_markdown_report(ctx, scan_result, md_tech_output, report_type="technical")
 
     if runmanifest_output:
         runmanifest = build_runmanifest(

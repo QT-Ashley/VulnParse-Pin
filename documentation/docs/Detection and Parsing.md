@@ -48,6 +48,36 @@ These parsers have been tested extensively with real-world fixtures and are reco
 
 The JSON parsers are marked experimental and are not the default path for production workflows. Their behavior and output format may evolve in future releases, and should not be relied upon for long-term integrations. Use XML formats where possible for v1.0.
 
+## Parser lifecycle policy (v1.2 hardening)
+
+Parser specs now carry lifecycle metadata for governance and runtime visibility.
+
+Lifecycle fields in parser spec:
+
+- `stability`: `stable` or `experimental`
+- `deprecated`: boolean
+- `deprecation_notice`: optional user-facing guidance
+
+Current policy:
+
+| Lifecycle state | Intended use | Compatibility expectations |
+| --- | --- | --- |
+| `stable` | Production workflows | Contract changes require explicit release notes and migration guidance |
+| `experimental` | Evaluation and early adoption | Behavior may change between minor releases |
+| `deprecated` | Temporary compatibility path | Subject to removal in a future release window |
+
+Runtime behavior:
+
+1. `SchemaDetector` may still select an experimental/deprecated parser if it is the best match.
+2. When selected, a warning is emitted indicating lifecycle status and notice text.
+
+Current status in registry:
+
+- XML parsers: `stable`
+- JSON parsers: `experimental` + `deprecated`
+
+For roadmap timing and removal intent, see [Roadmap](../../ROADMAP.md).
+
 ## Base parser utilities
 
 Common parser helper behavior lives in `src/vulnparse_pin/parsers/base_parser.py`:
@@ -146,3 +176,4 @@ To add a parser:
 3. Register parser in `PARSER_SPECS`
 4. Add edge-case tests and real-world regression samples
 5. Ensure normalized model consistency (`Finding`, `Asset`, `ScanResult`)
+6. Set lifecycle metadata (`stability`, `deprecated`, and optional `deprecation_notice`) explicitly

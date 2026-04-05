@@ -118,6 +118,7 @@ def _score_chunk_process(
 class ScoringPass(Pass):
     name: str = "Scoring"
     version: str = "1.0"
+    requires_passes: tuple[str, ...] = ()
 
     def __init__(
         self,

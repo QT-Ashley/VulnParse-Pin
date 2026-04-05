@@ -1,3 +1,5 @@
+version: v1
+
 feed_cache:
   defaults:
     ttl_hours: 24

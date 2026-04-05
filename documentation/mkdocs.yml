@@ -19,12 +19,24 @@ nav:
     - Getting Started in 5 Minutes: Getting Started In 5 Minutes.md
     - Installation: Installation.md
     - Usage: Usage.md
+    - Upgrade and Migration: Upgrade and Migration.md
+    - Troubleshooting: Troubleshooting.md
+    - Testing Guide: Testing Guide.md
+    - Output Interpretation: Output Interpretation.md
     - RunManifest Overview: RunManifest.md
     - RunManifest Technical Deep Dive: RunManifest_Technical.md
     - ScanResult Schema: ScanResult_Schema.md
   - Architecture:
     - Overview: Architecture.md
     - Features: Features.md
+    - Extension Playbooks: Extension Playbooks.md
+    - Enrichment Seam Contract: Enrichment Seam Contract.md
+    - Config Seam Contract: Config Seam Contract.md
+    - ADR Workflow: ADR Workflow.md
+    - ADR-0001: adr/ADR-0001-config-seam.md
+    - ADR-0002: adr/ADR-0002-enrichment-seam.md
+    - Architecture Review Checklist: Architecture Review Checklist.md
+    - Deprecation and Versioning Policy: Deprecation and Versioning Policy.md
     - Security: Security Features.md
     - Detection and Parsing: Detection and Parsing.md
     - Identity Contract: Identity Contract.md

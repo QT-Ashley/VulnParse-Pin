@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 class TopNPass(Pass):
     name = "TopN"
     version: str = "1.0"
+    requires_passes: tuple[str, ...] = ("Scoring@1.0",)
 
     def __init__(
         self, 
@@ -52,7 +53,7 @@ class TopNPass(Pass):
         self.process_pool_threshold = max(1, int(process_pool_threshold))
         self.process_workers = process_workers
 
-    def run(self, ctx: "RunContext", scan: "ScanResult") -> "ScanResult":
+    def run(self, ctx: "RunContext", scan: "ScanResult") -> DerivedPassResult:
         """
         Consumes scan result to include previous derived passes data.
         Produces:
@@ -62,7 +63,42 @@ class TopNPass(Pass):
         scoring = self._get_scoring_output(scan)                    # Returns Scoring Pass DerivedPassResult
         if scoring is None:
             ctx.logger.error("Missing scoring output; cannot rank.", extra={"vp_label": "TopNPass"})
-            return scan
+            services = getattr(ctx, "services", None)
+            ledger = getattr(services, "ledger", None)
+            if ledger is not None:
+                ledger.append_event(
+                    component="TopN",
+                    event_type="decision",
+                    subject_ref="topn:summary",
+                    reason_code=DecisionReasonCodes.TOPN_SKIPPED_MISSING_SCORING,
+                    reason_text="TopN skipped because Scoring@1.0 output was missing.",
+                    factor_refs=["dependency:Scoring@1.0"],
+                    evidence={"status": "skipped", "missing_dependency": "Scoring@1.0"},
+                )
+
+            output = TopNPassOutput(
+                rank_basis=self.cfg.topn.rank_basis,
+                k=self.cfg.topn.k,
+                decay=self.cfg.topn.decay,
+                assets=(),
+                findings_by_asset={},
+                global_top_findings=(),
+            )
+            data = asdict(output)
+            data["status"] = "skipped"
+            data["error"] = {
+                "code": "missing_dependency",
+                "message": "Scoring@1.0 output not found; TopN ranking not executed.",
+                "missing": ["Scoring@1.0"],
+            }
+
+            meta = PassMeta(
+                name=self.name,
+                version=self.version,
+                created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                notes="TopN soft no-op due to missing Scoring pass output.",
+            )
+            return DerivedPassResult(meta=meta, data=data)
 
         # 1 Build lookup index
         asset_to_findings = self._index_findings_by_asset(scan)     # { asset_id: [fid, fid, fid] }

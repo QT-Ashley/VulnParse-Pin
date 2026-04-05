@@ -4,6 +4,12 @@ Listed below are the detailed usage instructions for VulnParse-Pin. This guide w
 
 Here are example usage instructions for VulnParse-Pin. For detailed installation instructions, please refer to the [Installation Guide](Installation.md).
 
+For version transitions and operations guidance, also see:
+
+- [Upgrade and Migration](Upgrade%20and%20Migration.md)
+- [Troubleshooting](Troubleshooting.md)
+- [Output Interpretation](Output%20Interpretation.md)
+
 ## Basic Usage
 
 To run VulnParse-Pin, use the following command in your terminal:

@@ -50,8 +50,8 @@ def generate_markdown_report(
         content = _generate_technical_report(scan, summary)
     else:
         raise ValueError(f"Unknown report type: {report_type}. Expected 'executive' or 'technical'.")
-    
-    # Write using PFH
+
+    # Caller provides the target path (io_resolution sets distinct exec/technical names).
     target = ctx.pfh.ensure_writable_file(
         output_path,
         label=f"{report_type.capitalize()} Markdown Report",
@@ -164,7 +164,7 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
             f"{exploit_icon} | {kev_icon} | {cvss} | {occurrences:,} | {_risk_drivers(risk)} |\n"
         )
     
-    md += f"""
+    md += """
 
 ---
 
