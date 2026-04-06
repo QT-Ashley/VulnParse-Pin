@@ -20,6 +20,8 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 - [Mission Statement](Mission%20Statement.md)
 - [CVSS vs VulnParse Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)
 - [Value Proposition One Pager](Value_Proposition_One_Pager.md)
+- [CVSS vs VulnParse Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)
+- [Value Proposition One Pager](Value_Proposition_One_Pager.md)
 - [Licensing](Licensing.md)
 
 ## Technical internals
