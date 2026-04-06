@@ -76,11 +76,7 @@ Current status in registry:
 - XML parsers: `stable`
 - JSON parsers: `experimental` + `deprecated`
 
-<<<<<<< HEAD
 For roadmap timing and removal intent, see [Roadmap](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/ROADMAP.md).
-=======
-For roadmap timing and removal intent, see [Roadmap](../../ROADMAP.md).
->>>>>>> main
 
 ## Base parser utilities
 

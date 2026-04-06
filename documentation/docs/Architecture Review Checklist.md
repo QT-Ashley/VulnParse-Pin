@@ -65,8 +65,4 @@ Architecture Review Checklist
 
 - [ADR Workflow](ADR%20Workflow.md)
 - [Deprecation and Versioning Policy](Deprecation%20and%20Versioning%20Policy.md)
-<<<<<<< HEAD
 - [Contributing](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/CONTRIBUTING.md)
-=======
-- [Contributing](../../CONTRIBUTING.md)
->>>>>>> main

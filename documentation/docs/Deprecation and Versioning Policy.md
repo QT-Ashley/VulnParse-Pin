@@ -82,8 +82,4 @@ If cadence is shortened:
 - [ADR Workflow](ADR%20Workflow.md)
 - [Architecture Review Checklist](Architecture%20Review%20Checklist.md)
 - [Upgrade and Migration](Upgrade%20and%20Migration.md)
-<<<<<<< HEAD
 - [Roadmap](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/ROADMAP.md)
-=======
-- [Roadmap](../../ROADMAP.md)
->>>>>>> main

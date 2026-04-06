@@ -203,8 +203,4 @@ When extension behavior is architecture-impacting:
 - [Enrichment Seam Contract](Enrichment%20Seam%20Contract.md)
 - [Config Seam Contract](Config%20Seam%20Contract.md)
 - [Testing Guide](Testing%20Guide.md)
-<<<<<<< HEAD
 - [Contributing](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/CONTRIBUTING.md)
-=======
-- [Contributing](../../CONTRIBUTING.md)
->>>>>>> main

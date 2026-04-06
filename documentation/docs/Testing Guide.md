@@ -98,11 +98,7 @@ When executing large workloads, use reduced logging verbosity and document hardw
 
 ## Related Docs
 
-<<<<<<< HEAD
 - [Contributing](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/CONTRIBUTING.md)
-=======
-- [Contributing](../../CONTRIBUTING.md)
->>>>>>> main
 - [Usage](Usage.md)
 - [RunManifest Overview](RunManifest.md)
 - [Troubleshooting](Troubleshooting.md)
