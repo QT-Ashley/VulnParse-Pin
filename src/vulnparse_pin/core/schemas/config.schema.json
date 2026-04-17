@@ -104,6 +104,86 @@
       "properties": {
         "top_n_findings": { "type": "integer", "minimum": 1, "maximum": 500 }
       }
+    },
+    "enrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confidence"],
+      "properties": {
+        "ghsa_source": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "ghsa_online_prefetch_budget": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000
+        },
+        "ghsa_token_env": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+        },
+        "ghsa_cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sqlite_max_age_hours", "sqlite_max_rows"],
+          "properties": {
+            "sqlite_max_age_hours": { "type": "integer", "minimum": 1, "maximum": 100000 },
+            "sqlite_max_rows": { "type": "integer", "minimum": 1, "maximum": 100000000 }
+          }
+        },
+        "confidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model_version", "max_score", "base_scanner", "weights"],
+          "properties": {
+            "model_version": {
+              "type": "string",
+              "enum": ["v1"]
+            },
+            "max_score": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "base_scanner": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "weights": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["nvd", "kev", "epss", "exploitdb", "ghsa"],
+              "properties": {
+                "nvd": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "kev": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "epss": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "exploitdb": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "ghsa": { "type": "integer", "minimum": 0, "maximum": 100 }
+              }
+            },
+            "ghsa_signals": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "advisory_confidence_bonus",
+                "max_advisory_confidence_bonus",
+                "exploit_signal_on_high_severity",
+                "exploit_signal_confidence_bonus"
+              ],
+              "properties": {
+                "advisory_confidence_bonus": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "max_advisory_confidence_bonus": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "exploit_signal_on_high_severity": { "type": "boolean" },
+                "exploit_signal_confidence_bonus": { "type": "integer", "minimum": 0, "maximum": 100 }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

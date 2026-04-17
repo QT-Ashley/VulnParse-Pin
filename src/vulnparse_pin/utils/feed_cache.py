@@ -581,6 +581,7 @@ class FeedCacheManager:
         headers: Optional[Dict[str, str]] = None,
         extra_meta: Optional[Dict[str, Any]] = None,
         chunk_size: int = 1024 * 1024,
+        max_decompressed_bytes: int = 2 * 1024 * 1024 * 1024,
     ) -> Path:
         """
         Stream-download a gzip feed and atomically cache its *decompressed* bytes.
@@ -624,6 +625,11 @@ class FeedCacheManager:
                     chunk = gz.read(chunk_size)
                     if not chunk:
                         break
+                    if total_bytes + len(chunk) > max_decompressed_bytes:
+                        raise RuntimeError(
+                            f"Decompressed feed exceeds safety limit for {spec.label}. "
+                            f"Limit={max_decompressed_bytes} bytes"
+                        )
                     w.write(chunk)
                     h.update(chunk)
                     total_bytes += len(chunk)

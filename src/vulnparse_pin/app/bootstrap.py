@@ -21,6 +21,7 @@ from vulnparse_pin.core.classes.dataclass import FeedSpec, RunContext, Services
 from vulnparse_pin.core.classes.execution_manifest import LedgerService
 from vulnparse_pin.core.classes.pass_classes import PassRunner
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+from vulnparse_pin.core.passes.Nmap.nmap_adapter_pass import NmapAdapterPass
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.Summary.summary_pass import SummaryConfig, SummaryPass
 from vulnparse_pin.core.passes.TopN.TN_triage_config import TriageConfigLoadResult, load_tn_config
@@ -175,6 +176,23 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
     logger.print_info(f"Using config: {cfg_yaml_path.name}", label="Global Config")
     logger.print_info(f"Using scoring config: {cfg_score_path.name}", label="Scoring Weight Config")
     logger.print_info(f"Using TopN Pass Config: {cfg_topn_path.name}", label="TopN Pass Config")
+    enrichment_cfg = cfg_yaml.get("enrichment", {}) if isinstance(cfg_yaml, dict) else {}
+    ghsa_source = getattr(args, "ghsa", None)
+    confidence_cfg = enrichment_cfg.get("confidence") if isinstance(enrichment_cfg, dict) else None
+    if isinstance(confidence_cfg, dict):
+        model_version = confidence_cfg.get("model_version", "v1")
+        base_scanner = confidence_cfg.get("base_scanner", 35)
+        max_score = confidence_cfg.get("max_score", 100)
+        weights = confidence_cfg.get("weights", {})
+        logger.print_info(
+            f"Confidence model={model_version}; base_scanner={base_scanner}; max_score={max_score}; "
+            f"weights={weights}",
+            label="Enrichment Confidence",
+        )
+    logger.print_info(
+        f"GHSA source: {ghsa_source if ghsa_source else 'disabled'}",
+        label="GHSA Config",
+    )
     logger.debug("\n%s", pfh.describe_policy(), extra={"vp_label": "PFH Policy"})
 
     summary_cfg = cfg_yaml.get("summary", {}) if isinstance(cfg_yaml, dict) else {}
@@ -183,6 +201,7 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
         summary_top_n = 1
 
     passesList = [
+        NmapAdapterPass(getattr(args, "nmap_ctx", None)),
         ScoringPass(ctx.services.scoring_config),
         TopNPass(ctx.services.topn_config),
         SummaryPass(SummaryConfig(include_top_risks=summary_top_n)),

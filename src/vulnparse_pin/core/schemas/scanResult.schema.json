@@ -230,6 +230,26 @@
           "type": ["string", "null"],
           "description": "CVE from which enrichment data (EPSS, KEV, etc.) was sourced"
         },
+        "enrichment_sources": {
+          "type": ["array", "null"],
+          "description": "Ordered list of enrichment sources that contributed to this finding",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "type": ["integer", "null"],
+          "description": "Confidence score percentage for enrichment quality",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "confidence_evidence": {
+          "type": ["object", "null"],
+          "description": "Applied confidence factors and weights used for auditability",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
         "raw_risk_score": {
           "type": ["number", "null"],
           "description": "Initial risk score calculated by scoring pass before adjustments",

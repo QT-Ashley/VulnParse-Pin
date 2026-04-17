@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) where practical.
 
+## [Unreleased]
+
+### Added
+
+- GHSA CLI-first activation contract: `--ghsa` is now the explicit opt-in path, with bare flag meaning online mode and `--ghsa <path>` meaning offline local advisory source.
+- GHSA online lookup budget override via CLI (`--ghsa-budget`) with config default support through `enrichment.ghsa_online_prefetch_budget`.
+- GHSA GitHub token env configuration (`enrichment.ghsa_token_env`) now defaults to `VP_GHSA_TK` with fallback to `GITHUB_TOKEN` for authenticated advisory API sessions.
+- Qualys parser integration (`qualys_parser.py`) with detector wiring and regression coverage in `test_qualys_parser.py`.
+- Nmap parser scaffold (`nmap_parser.py`) added as an experimental foundation path for future enrichment/context signals.
+- GHSA enrichment metadata on findings (`enrichment_sources`, `confidence`, `confidence_evidence`) with schema coverage updates.
+- Global packaged enrichment config support for GHSA source selection and confidence policy tuning (`resources/config.yaml` + config schema).
+- Enrichment seam flow completion across source loading, application, and post-enrichment handoff/indexing boundaries.
+- GHSA offline file I/O governed by `ctx.pfh` (`ensure_readable_file`, `ensure_readable_dir`, `open_for_read`) matching the existing PFH contract; regression test added to `test_ghsa_enrichment.py`.
+- GHSA SQLite warm-cache (`ghsa_cache.sqlite3`) keyed on `(cve_id, advisory_id)`: target CVE hydration on warm runs skips full advisory-directory rescan entirely.
+- GHSA SQLite signature/quarantine hardening: SHA-256 digest with optional HMAC-SHA-256 (`VP_SQLITE_HMAC_KEY` env var), tamper-detected files are quarantined with a timestamp suffix and a clean index is rebuilt automatically — mirrors the NVD `nvd_cache.sqlite3` pattern.
+- GHSA SQLite permission hardening: POSIX `0o600` enforcement and world-writable rejection; Windows PFH readability check.
+- `_is_valid_cve_id()` validator on `GHSAEnrichmentSource` — CVE IDs are validated before use in SQL queries to prevent unexpected query behaviour from malformed input.
+- Parallel advisory JSON reads during cold GHSA directory parse (`ThreadPoolExecutor`, up to 8 workers) — I/O-bound phase is now multi-threaded.
+- GHSA SQLite upsert batch size increased 1 000 → 2 000; signature file is rewritten after every batch commit.
+- GHSA cache retention policy controls under `enrichment.ghsa_cache` with schema-validated keys: `sqlite_max_age_hours` and `sqlite_max_rows`.
+- GHSA online CVE advisory lookup added using GitHub advisories query endpoint (`/advisories?cve_id=...`) with per-CVE response caching.
+- GHSA SQLite prune telemetry counters added (`runs`, `age_deleted`, `cap_deleted`, `last_row_count`) with debug logging for retention observability.
+- GHSA pipeline online source mode enabled via `enrichment.ghsa_source: online`; loader now prefetches a bounded CVE set for run-time enrichment without local advisory files.
+- GHSA package-based fallback matching wired: findings now derive package tokens from title/description/plugin text and match against GHSA advisory package index when CVE-based GHSA misses.
+- GHSA confidence policy now supports advisory-derived signal tuning through `confidence.ghsa_signals`, including bounded advisory bonuses and optional high-severity exploitability promotion.
+
+### Changed
+
+- Security hardening stream completed for feed/download surfaces: decompression size caps, HTTPS-only feed override handling, and response-size guardrails for external threat-intel fetch paths.
+- PFH hardening and reliability updates landed, including chmod error-path handling and tighter policy enforcement behavior under protected write/read flows.
+- GHSA activation is now strict CLI-only at runtime: config no longer auto-enables GHSA when `--ghsa` is absent.
+- GHSA loader now supports advisory-database repository layout directly (`advisories/github-reviewed/...`) for local offline enrichment operations.
+- GHSA source loader in `enrichment_source_loader.py` now passes scan target CVEs and `force_reindex` flag into `load_offline()` for focused SQLite hydration.
+- All GHSA SQLite operations (`_sqlite_has_rows`, `_sqlite_hydrate_targets`, `_sqlite_upsert_rows`, `_sqlite_clear`) now verify signature before acting and quarantine on failure.
+- `_extract_cves` normalisation tightened: `strip()` applied before `upper()` to handle whitespace-padded alias strings.
+- GHSA SQLite now prunes stale and excess rows using config-driven retention policy during init and post-upsert cycles.
+- GHSA `enrich_finding(..., online=True)` now performs real CVE-based GHSA API lookup when offline maps miss, then indexes returned advisories for subsequent cache hits.
+- Enrichment core now accepts and processes `ghsa_package_data` alongside `ghsa_data` so package-derived GHSA matches contribute references and confidence metadata.
+- GHSA online requests now build authenticated GitHub advisory headers when a token env var is present, without logging secret values.
+
+### Performance
+
+- GHSA cold vs warm loader benchmark on local advisory database (target set: 5,000 CVEs) showed `33.865s` cold vs `0.182s` warm (`~186x` speedup) using SQLite hydration path.
+- End-to-end online GHSA pass on 5k Nessus sample completed successfully with online prefetch (`25` CVEs queried) and `22` GHSA-attributed findings in output.
+
+### Fixed
+
+- GHSA SQLite signature write path now matches PFH open/write API contract, preventing cache-init disablement under strict handler validation.
+- GHSA test context fixture now roots cache paths under pytest temp roots, preventing false PFH root-policy failures during test runs.
+
+### Deferred
+
+- NVD + GHSA SQLite consolidation into a single database (separate tables). Deferred to allow independent lifecycle tuning and minimise blast radius.
+
 ## [1.1.1] - 2026-04-05 Governance and Architecture Hardening
 
 ### Added

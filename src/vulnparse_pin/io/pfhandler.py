@@ -418,9 +418,11 @@ class PermFileHandler:
         try:
             os.chmod(p, self.file_mode)
         except PermissionError:
-            self.logger.warning("Failed to apply file mode %o to %s"),
-            self.file_mode,
-            self.format_for_log(p)
+            self.logger.warning(
+                "Failed to apply file mode %o to %s",
+                self.file_mode,
+                self.format_for_log(p),
+            )
 
     def _apply_dir_mode(self, p: Path) -> None:
         if self.dir_mode is None:

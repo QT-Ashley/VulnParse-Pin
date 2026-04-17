@@ -103,6 +103,24 @@ class TopNPassOutput:
 
 
 # -------------------------------------------
+# Nmap Adapter Pass
+# -------------------------------------------
+
+@dataclass(frozen=True)
+class NmapAdapterPassOutput:
+    """
+    Derived Nmap adapter snapshot used by downstream scoring/TopN phases.
+    """
+    status: str
+    source_file: Optional[str]
+    host_count: int
+    matched_asset_count: int
+    unmatched_asset_ids: Tuple[str, ...] = ()
+    asset_open_ports: Dict[str, Tuple[int, ...]] = field(default_factory=dict)
+    nse_cves_by_asset: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+
+
+# -------------------------------------------
 # Summary Pass
 # -------------------------------------------
 

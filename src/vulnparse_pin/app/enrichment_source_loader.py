@@ -30,6 +30,10 @@ class EnrichmentSourcePlan:
     exploit_source: Optional[str]
     refresh_cache: bool
     allow_regen: bool
+    ghsa_enabled: bool = False
+    ghsa_source: Optional[str] = None
+    ghsa_budget: Optional[int] = None
+    ghsa_token_env: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,8 @@ class EnrichmentSourceResult:
     kev_data: Optional[dict]
     epss_data: Optional[dict]
     exploit_data: Optional[dict]
+    ghsa_data: Optional[dict]
+    ghsa_package_data: Optional[dict]
     nvd_status: str
     sources: dict  # Summary of source availability
 
@@ -77,15 +83,30 @@ class EnrichmentSourceLoader:
         kev_data = None
         epss_data = None
         exploit_data = None
+        ghsa_data = None
+        ghsa_package_data = None
+        ghsa_auth_token_rejections = 0
         nvd_status = "Enabled" if plan.nvd_enabled else "Disabled (--no-nvd)"
+
+        cves_in_scan = set()
+        for asset in scan.assets:
+            for finding in asset.findings:
+                if finding.cves:
+                    cves_in_scan.update(finding.cves)
 
         # Load Exploit-DB
         if plan.exploit_enabled and plan.exploit_source:
             print_section_header("Exploit-DB")
-            logger.print_info(
-                f"Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}{plan.exploit_source.upper()}{Style.RESET_ALL} source...",
-                label="Exploit-DB Loader",
-            )
+            if str(plan.exploit_source).lower() == "online":
+                logger.print_info(
+                    f"Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}ONLINE{Style.RESET_ALL} source...",
+                    label="Exploit-DB Loader",
+                )
+            else:
+                logger.print_info(
+                    f"Loading Exploit-DB data from {Fore.LIGHTYELLOW_EX}{ctx.pfh.format_for_log(plan.exploit_source)}{Style.RESET_ALL}...",
+                    label="Local Exploit-DB Cache",
+                )
             exploit_data = load_exploit_data(
                 ctx,
                 source=plan.exploit_source,
@@ -118,12 +139,6 @@ class EnrichmentSourceLoader:
                     )
                     nvd_status = "Enabled (Skipped)"
                 else:
-                    cves_in_scan = set()
-                    for asset in scan.assets:
-                        for finding in asset.findings:
-                            if finding.cves:
-                                cves_in_scan.update(finding.cves)
-
                     ctx.logger.print_info(
                         f"Scan contains {len(cves_in_scan)} unique CVEs; filtering NVD index...",
                         label="NVD Optimization",
@@ -165,11 +180,54 @@ class EnrichmentSourceLoader:
                 allow_regen=plan.allow_regen,
             )
 
+        # Load GHSA (offline local advisory database)
+        if plan.ghsa_enabled and plan.ghsa_source:
+            from vulnparse_pin.utils.ghsa_enrichment import GHSAEnrichmentSource
+
+            print_section_header("GitHub Security Advisories (GHSA)")
+            logger.print_info(
+                f"Loading GHSA advisories from {ctx.pfh.format_for_log(plan.ghsa_source)}",
+                label="GHSA Loader",
+            )
+            ghsa = GHSAEnrichmentSource(ctx, token_env_name=plan.ghsa_token_env)
+            ghsa_mode = str(plan.ghsa_source).strip().lower()
+            loaded_ok = False
+            if ghsa_mode == "online":
+                summary = ghsa.preload_online_for_cves(
+                    cves_in_scan,
+                    max_lookups=plan.ghsa_budget if plan.ghsa_budget is not None else 25,
+                )
+                loaded_ok = True
+                logger.print_info(
+                    f"Online prefetch queried {summary['queried']}/{summary['requested']} CVEs with {summary['hits']} hit(s).",
+                    label="GHSA Loader",
+                )
+            else:
+                loaded_ok = ghsa.load_offline(
+                    db_path=plan.ghsa_source,
+                    target_cves=cves_in_scan,
+                    force_reindex=plan.refresh_cache,
+                )
+
+            if loaded_ok:
+                ghsa_data = dict(ghsa.ghsa_by_cve)
+                ghsa_package_data = dict(ghsa.ghsa_by_package)
+                ghsa_auth_token_rejections = ghsa.token_rejection_count
+                logger.print_success(
+                    f"Loaded GHSA advisory mappings ({len(ghsa_data)} CVEs, {len(ghsa_package_data)} packages)",
+                    label="GHSA Loader",
+                )
+            else:
+                ghsa_auth_token_rejections = ghsa.token_rejection_count
+                logger.print_warning("GHSA load failed or returned no advisories.", label="GHSA Loader")
+
         # Build source summary
         sources_summary = {
             "exploitdb": plan.exploit_enabled and (exploit_data is not None),
             "kev": kev_data is not None,
             "epss": epss_data is not None,
+            "ghsa": ghsa_data is not None,
+            "ghsa_auth_token_rejections": int(ghsa_auth_token_rejections),
             "nvd": nvd_status,
         }
 
@@ -177,6 +235,8 @@ class EnrichmentSourceLoader:
             kev_data=kev_data,
             epss_data=epss_data,
             exploit_data=exploit_data,
+            ghsa_data=ghsa_data,
+            ghsa_package_data=ghsa_package_data,
             nvd_status=nvd_status,
             sources=sources_summary,
         )

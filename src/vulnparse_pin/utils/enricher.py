@@ -27,8 +27,57 @@ from vulnparse_pin import UA
 # ------------- Globals -----------------
 
 CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}$")
+PKG_TOKEN_RE = re.compile(r"[a-zA-Z0-9_.+-]{3,}")
+MAX_REMOTE_FEED_BYTES = 200 * 1024 * 1024
+
+DEFAULT_ENRICHMENT_CONFIDENCE_POLICY = {
+    "model_version": "v1",
+    "max_score": 100,
+    "base_scanner": 35,
+    "weights": {
+        "nvd": 25,
+        "kev": 15,
+        "epss": 10,
+        "exploitdb": 10,
+        "ghsa": 15,
+    },
+    "ghsa_signals": {
+        "advisory_confidence_bonus": 3,
+        "max_advisory_confidence_bonus": 9,
+        "exploit_signal_on_high_severity": False,
+        "exploit_signal_confidence_bonus": 5,
+    },
+}
 
 # ----------------------------------------
+
+def _is_https_url(url: str) -> bool:
+    return str(url).strip().lower().startswith("https://")
+
+
+def _response_content_length(resp: requests.Response) -> Optional[int]:
+    raw = resp.headers.get("Content-Length")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _assert_response_within_size_limit(resp: requests.Response, *, max_bytes: int, label: str) -> None:
+    content_len = _response_content_length(resp)
+    if content_len is not None and content_len > max_bytes:
+        raise RuntimeError(
+            f"{label} response exceeds configured size limit. "
+            f"Content-Length={content_len} bytes, limit={max_bytes} bytes."
+        )
+
+
+def _assert_https_redirect_target(resp: requests.Response, *, label: str) -> None:
+    final_url = str(getattr(resp, "url", "") or "")
+    if final_url and not _is_https_url(final_url):
+        raise RuntimeError(f"{label} request redirected to non-HTTPS URL: {final_url}")
 
 #'''TODO: def enrich_with_shodan(ip_address):
 #    Query Shodan with API Key
@@ -99,7 +148,7 @@ def load_epss(ctx: RunContext, *, path_url: str, force_refresh: bool, allow_rege
     # ----------------------------
     # Online Mode
     # ----------------------------
-    if path_url_str.startswith("http"):
+    if _is_https_url(path_url_str):
         if (not force_refresh) and cache_path.exists() and fc.is_fresh(key):
             ctx.logger.print_info("Using cached EPSS (TTL valid).", label="EPSS Loader")
             fc.ensure_feed_checksum(key, allow_regen = allow_regen)
@@ -229,7 +278,7 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
     # ----------------------------
     # Online Mode    (URL)
     # ----------------------------
-    if path_url_str.startswith('http'):
+    if _is_https_url(path_url_str):
         data_path, _, _ = fc.resolve(key)
 
 
@@ -252,7 +301,17 @@ def load_kev(ctx: RunContext, path_url: str, *, force_refresh: bool, allow_regen
         try:
             resp = requests.get(path_url_str, allow_redirects = True, timeout = timeout, headers = headers)
             resp.raise_for_status()
+            _assert_https_redirect_target(resp, label="KEV")
+            _assert_response_within_size_limit(resp, max_bytes=MAX_REMOTE_FEED_BYTES, label="KEV")
             raw = resp.content
+            if len(raw) > MAX_REMOTE_FEED_BYTES:
+                raise RuntimeError(
+                    f"KEV response exceeds configured size limit after download. "
+                    f"Received={len(raw)} bytes, limit={MAX_REMOTE_FEED_BYTES} bytes."
+                )
+        except RuntimeError:
+            # Security policy violations should fail closed.
+            raise
         except requests.RequestException as e:
             ctx.logger.exception(f"KEV Loader Failed to retrieve KEV feed: {e}")
 
@@ -403,10 +462,189 @@ def determine_risk_band(raw_risk_score):
 
 
 def update_enrichment_status(finding):
-    if finding.exploit_available or finding.epss_score or finding.cisa_kev:
+    extra_sources = set(getattr(finding, "enrichment_sources", []) or []) - {"scanner"}
+    if finding.exploit_available or finding.epss_score or finding.cisa_kev or bool(extra_sources):
         finding.enriched = True
     else:
         finding.enriched = False
+
+
+def _normalize_confidence_policy(policy: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    merged = {
+        "model_version": DEFAULT_ENRICHMENT_CONFIDENCE_POLICY["model_version"],
+        "max_score": int(DEFAULT_ENRICHMENT_CONFIDENCE_POLICY["max_score"]),
+        "base_scanner": int(DEFAULT_ENRICHMENT_CONFIDENCE_POLICY["base_scanner"]),
+        "weights": dict(DEFAULT_ENRICHMENT_CONFIDENCE_POLICY["weights"]),
+        "ghsa_signals": dict(DEFAULT_ENRICHMENT_CONFIDENCE_POLICY["ghsa_signals"]),
+    }
+
+    if not isinstance(policy, dict):
+        return merged
+
+    model_version = policy.get("model_version")
+    if isinstance(model_version, str) and model_version.strip():
+        merged["model_version"] = model_version.strip()
+
+    max_score = policy.get("max_score")
+    if isinstance(max_score, int):
+        merged["max_score"] = max(0, min(100, max_score))
+
+    base_scanner = policy.get("base_scanner")
+    if isinstance(base_scanner, int):
+        merged["base_scanner"] = max(0, min(100, base_scanner))
+
+    weights = policy.get("weights")
+    if isinstance(weights, dict):
+        for key in ("nvd", "kev", "epss", "exploitdb", "ghsa"):
+            val = weights.get(key)
+            if isinstance(val, int):
+                merged["weights"][key] = max(0, min(100, val))
+
+    ghsa_signals = policy.get("ghsa_signals")
+    if isinstance(ghsa_signals, dict):
+        for key in ("advisory_confidence_bonus", "max_advisory_confidence_bonus", "exploit_signal_confidence_bonus"):
+            val = ghsa_signals.get(key)
+            if isinstance(val, int):
+                merged["ghsa_signals"][key] = max(0, min(100, val))
+        exploit_signal = ghsa_signals.get("exploit_signal_on_high_severity")
+        if isinstance(exploit_signal, bool):
+            merged["ghsa_signals"]["exploit_signal_on_high_severity"] = exploit_signal
+
+    return merged
+
+
+def _ghsa_high_severity_exploit_signal(advisories: List[Dict[str, Any]]) -> bool:
+    for advisory in advisories:
+        if not isinstance(advisory, dict):
+            continue
+        if advisory.get("withdrawn_at"):
+            continue
+        severity = advisory.get("severity")
+        if not isinstance(severity, str):
+            database_specific = advisory.get("database_specific")
+            if isinstance(database_specific, dict):
+                severity = database_specific.get("severity")
+        if isinstance(severity, str) and severity.strip().upper() in {"HIGH", "CRITICAL"}:
+            return True
+    return False
+
+
+def _score_confidence_from_sources(
+    sources: List[str],
+    policy: Dict[str, Any],
+    *,
+    ghsa_advisory_count: int = 0,
+    ghsa_exploit_signal: bool = False,
+) -> tuple[int, Dict[str, int]]:
+    evidence: Dict[str, int] = {}
+    total = 0
+
+    if "scanner" in sources:
+        base = int(policy.get("base_scanner", DEFAULT_ENRICHMENT_CONFIDENCE_POLICY["base_scanner"]))
+        evidence["base_scanner"] = base
+        total += base
+
+    weights = policy.get("weights", {})
+    for src in ("nvd", "kev", "epss", "exploitdb", "ghsa"):
+        if src in sources:
+            weight = int(weights.get(src, 0)) if isinstance(weights, dict) else 0
+            evidence[src] = weight
+            total += weight
+
+    ghsa_signals = policy.get("ghsa_signals", {})
+    if "ghsa" in sources and ghsa_advisory_count > 0 and isinstance(ghsa_signals, dict):
+        bonus_each = int(ghsa_signals.get("advisory_confidence_bonus", 0))
+        bonus_cap = int(ghsa_signals.get("max_advisory_confidence_bonus", 0))
+        ghsa_bonus = max(0, min(bonus_cap, ghsa_advisory_count * max(0, bonus_each)))
+        if ghsa_bonus > 0:
+            evidence["ghsa_bonus"] = ghsa_bonus
+            total += ghsa_bonus
+
+    if ghsa_exploit_signal and isinstance(ghsa_signals, dict):
+        exploit_bonus = max(0, int(ghsa_signals.get("exploit_signal_confidence_bonus", 0)))
+        if exploit_bonus > 0:
+            evidence["ghsa_exploit_signal"] = exploit_bonus
+            total += exploit_bonus
+
+    max_score = int(policy.get("max_score", 100))
+    final_score = min(max_score, max(0, total))
+    evidence["max_score"] = max_score
+    evidence["final"] = final_score
+    return final_score, evidence
+
+
+def _apply_enrichment_metadata(
+    finding: Finding,
+    *,
+    nvd_hit: bool,
+    ghsa_hit: bool,
+    ghsa_advisory_count: int,
+    ghsa_exploit_signal: bool,
+    confidence_policy: Dict[str, Any],
+) -> None:
+    sources: set[str] = set()
+
+    # Scanner is the baseline signal when parser-derived finding context exists.
+    if getattr(finding, "vuln_id", None) or getattr(finding, "title", None):
+        sources.add("scanner")
+
+    if getattr(finding, "cisa_kev", False):
+        sources.add("kev")
+    if getattr(finding, "epss_score", None) is not None:
+        sources.add("epss")
+    if getattr(finding, "exploit_available", False):
+        sources.add("exploitdb")
+    if nvd_hit:
+        sources.add("nvd")
+    if ghsa_hit:
+        sources.add("ghsa")
+
+    sorted_sources = sorted(sources)
+    finding.enrichment_sources = sorted_sources
+    score, evidence = _score_confidence_from_sources(
+        sorted_sources,
+        confidence_policy,
+        ghsa_advisory_count=ghsa_advisory_count,
+        ghsa_exploit_signal=ghsa_exploit_signal,
+    )
+    finding.confidence = score
+    finding.confidence_evidence = evidence
+
+
+def _merge_ghsa_references(finding: Finding, advisories: List[Dict[str, Any]]) -> None:
+    existing = list(getattr(finding, "references", []) or [])
+    out: List[str] = [str(r) for r in existing if isinstance(r, str)]
+
+    for advisory in advisories:
+        if not isinstance(advisory, dict):
+            continue
+
+        primary_ref = advisory.get("html_url") or advisory.get("url")
+        if isinstance(primary_ref, str) and primary_ref:
+            out.append(primary_ref)
+
+        for ref in advisory.get("references", []) or []:
+            if isinstance(ref, str) and ref:
+                out.append(ref)
+            elif isinstance(ref, dict):
+                ref_url = ref.get("url")
+                if isinstance(ref_url, str) and ref_url:
+                    out.append(ref_url)
+
+    # Preserve order while deduping.
+    finding.references = list(dict.fromkeys(out))
+
+
+def _extract_package_tokens_for_finding(finding: Finding) -> set[str]:
+    fields = [
+        finding.title or "",
+        finding.description or "",
+        finding.solution or "",
+        finding.detection_plugin or "",
+        finding.plugin_output or "",
+    ]
+    text = "\n".join(fields)
+    return {tok.lower() for tok in PKG_TOKEN_RE.findall(text)}
 
 def prefer_vector(vectors):
     order = {"CVSS:3.1": 1, "CVSS:3.0": 2, "CVSS:2.0": 3}
@@ -520,8 +758,11 @@ def enrich_scan_results(
     results: ScanResult,
     kev_data: Optional[Dict[str, bool]] = None,
     epss_data: Optional[Dict[str, float]] = None,
+    ghsa_data: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    ghsa_package_data: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     offline_mode: bool = False,
     nvd_cache: Optional[Any] = None,
+    confidence_policy: Optional[Dict[str, Any]] = None,
 ) -> None:  # type: ignore
     '''
     Enrich the findings in a ScanResult object with EPSS Score, CISA KEV status, exploit indicators, and recalculate triage priority.
@@ -534,6 +775,8 @@ def enrich_scan_results(
         nvd_cache (Optional[Any]): Optional parameter, if supplied, will utilize NVD feed cache module for CVE data.
     '''
     miss_logger = EnrichmentMissLogger(ctx)
+    normalized_confidence_policy = _normalize_confidence_policy(confidence_policy)
+    ghsa_signal_policy = normalized_confidence_policy.get("ghsa_signals", {})
 
     baseline_risk_count = 0
 
@@ -550,6 +793,22 @@ def enrich_scan_results(
             continue
 
     nvd_get = getattr(nvd_cache, "get", None) if nvd_cache is not None else None
+    ghsa_lookup: Dict[str, List[Dict[str, Any]]] = {}
+    for cve, advisories in (ghsa_data or {}).items():
+        key = str(cve).upper().strip()
+        if not key:
+            continue
+        if isinstance(advisories, list):
+            ghsa_lookup[key] = advisories
+
+    ghsa_pkg_lookup: Dict[str, List[Dict[str, Any]]] = {}
+    for package_name, advisories in (ghsa_package_data or {}).items():
+        key = str(package_name).strip().lower()
+        if not key:
+            continue
+        if isinstance(advisories, list):
+            ghsa_pkg_lookup[key] = advisories
+
     nvd_record_cache: Dict[str, Any] = {}
     parsed_vector_score_cache: Dict[str, Optional[float]] = {}
     no_record = object()
@@ -562,6 +821,10 @@ def enrich_scan_results(
             enrichment_attempted = False
             any_kev_hit = False
             any_epss_hit = False
+            any_nvd_hit = False
+            any_ghsa_hit = False
+            ghsa_advisory_count = 0
+            ghsa_exploit_signal = False
             enrichment_map: Dict[str, Dict[str, Any]] = {}
 
             cves: List[str] = []
@@ -592,6 +855,13 @@ def enrich_scan_results(
 
                     nvd_vector = None
                     nvd_score = None
+                    ghsa_advisories = ghsa_lookup.get(cve, [])
+                    ghsa_hit = len(ghsa_advisories) > 0
+                    if ghsa_hit:
+                        any_ghsa_hit = True
+                        ghsa_advisory_count += len(ghsa_advisories)
+                        ghsa_exploit_signal = ghsa_exploit_signal or _ghsa_high_severity_exploit_signal(ghsa_advisories)
+
                     if nvd_get is not None:
                         record = nvd_record_cache.get(cve, no_record)
                         if record is no_record:
@@ -611,8 +881,10 @@ def enrich_scan_results(
                                 if score_cached is not None:
                                     nvd_vector = vector
                                     nvd_score = score_cached
+                                    any_nvd_hit = True
                             elif record.get("cvss_score") is not None:
                                 nvd_score = record.get("cvss_score")
+                                any_nvd_hit = True
 
                     enrichment_map[cve] = {
                         "epss_score": epss_score,
@@ -620,6 +892,7 @@ def enrich_scan_results(
                         "exploit_available": bool(getattr(finding, "exploit_available", False)),
                         "cvss_score": nvd_score,
                         "cvss_vector": nvd_vector,
+                        "ghsa_advisories": ghsa_advisories,
                     }
 
                 authoritative_cve = select_authoritative_cve(cves, enrichment_map)
@@ -641,6 +914,38 @@ def enrich_scan_results(
                     finding.exploit_available = bool(finding.exploit_references) or exploit_flag or kev_flag
                     finding.enrichment_source_cve = authoritative_cve
 
+                    ghsa_refs = best.get("ghsa_advisories", []) or []
+                    if ghsa_refs:
+                        _merge_ghsa_references(finding, ghsa_refs)
+                        if (
+                            bool(ghsa_signal_policy.get("exploit_signal_on_high_severity", False))
+                            and ghsa_exploit_signal
+                        ):
+                            finding.exploit_available = True
+
+            if (not any_ghsa_hit) and ghsa_pkg_lookup:
+                matched: List[Dict[str, Any]] = []
+                seen_ids: set[str] = set()
+                for token in _extract_package_tokens_for_finding(finding):
+                    for advisory in ghsa_pkg_lookup.get(token, []):
+                        aid = str(advisory.get("id") or advisory.get("ghsa_id") or "")
+                        if aid and aid in seen_ids:
+                            continue
+                        if aid:
+                            seen_ids.add(aid)
+                        matched.append(advisory)
+
+                if matched:
+                    any_ghsa_hit = True
+                    ghsa_advisory_count += len(matched)
+                    ghsa_exploit_signal = ghsa_exploit_signal or _ghsa_high_severity_exploit_signal(matched)
+                    _merge_ghsa_references(finding, matched)
+                    if (
+                        bool(ghsa_signal_policy.get("exploit_signal_on_high_severity", False))
+                        and ghsa_exploit_signal
+                    ):
+                        finding.exploit_available = True
+
             if finding.cvss_vector and not finding.cvss_vector.startswith("SENTINEL:"):
                 stats.cvss_vectors_assigned += 1
                 stats.cvss_vectors_validated += 1
@@ -656,7 +961,17 @@ def enrich_scan_results(
             finding.enriched = enrichment_attempted and (
                 any_kev_hit or
                 any_epss_hit or
+                any_ghsa_hit or
                 bool(finding.exploit_available)
+            )
+
+            _apply_enrichment_metadata(
+                finding,
+                nvd_hit=any_nvd_hit,
+                ghsa_hit=any_ghsa_hit,
+                ghsa_advisory_count=ghsa_advisory_count,
+                ghsa_exploit_signal=ghsa_exploit_signal,
+                confidence_policy=normalized_confidence_policy,
             )
 
             if finding_counter <= 20 or finding_counter % 100000 == 0:

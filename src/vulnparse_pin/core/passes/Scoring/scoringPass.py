@@ -34,6 +34,7 @@ def _score_components_from_policy(
     exploit = bool(attrs.get("exploit", False))
     cvss = attrs.get("cvss", None)
     epss = attrs.get("epss", None)
+    nmap_open_port = bool(attrs.get("nmap_open_port", False))
 
     if not kev and not exploit and cvss is None and epss is None:
         return None
@@ -75,6 +76,9 @@ def _score_components_from_policy(
     if exploit:
         raw += float(policy_values["exploit_evd"]) * float(policy_values["w_exploit"])
         reasons.append("Exploit Available")
+
+    if nmap_open_port:
+        reasons.append("Nmap Port Observed")
 
     max_raw_risk = float(policy_values["max_raw_risk"])
     max_op_risk = float(policy_values["max_op_risk"])
@@ -165,13 +169,14 @@ class ScoringPass(Pass):
                     assets_by_id[asset_id] = asset
 
         # Pre-compute plugin attributes once (smart caching)
-        plugin_cache = self._build_plugin_cache(findings_with_context)
+        nmap_open_ports = self._get_nmap_open_ports_by_asset(scan)
+        plugin_cache = self._build_plugin_cache(findings_with_context, nmap_open_ports)
 
         # Parallel execution for medium+ workloads
         use_parallel = len(findings_with_context) > self.parallel_threshold
 
         # Shared memo for repeated score signatures (thread-safe in parallel mode)
-        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]] = {}
+        score_memo: Dict[Tuple[bool, bool, Any, Any, bool], Optional[Tuple[float, float, str, str]]] = {}
         
         if use_parallel and (os.cpu_count() or 1) > 1:
             if len(findings_with_context) >= self.process_pool_threshold:
@@ -367,19 +372,63 @@ class ScoringPass(Pass):
             if asset is not None:
                 asset.criticality = criticality
 
-    def _build_plugin_cache(self, findings_with_context: List[Tuple[Any, str, str]]) -> Dict[str, Dict[str, Any]]:
+    def _get_nmap_open_ports_by_asset(self, scan: "ScanResult") -> Dict[str, set[int]]:
+        """Load Nmap adapter open-port index from derived context, if available."""
+        try:
+            derived = scan.derived.get("nmap_adapter@1.0")
+        except (AttributeError, TypeError):
+            return {}
+
+        if derived is None or not isinstance(getattr(derived, "data", None), dict):
+            return {}
+
+        data = derived.data
+        if str(data.get("status", "")).lower() != "enabled":
+            return {}
+
+        raw_ports = data.get("asset_open_ports", {})
+        if not isinstance(raw_ports, dict):
+            return {}
+
+        out: Dict[str, set[int]] = {}
+        for asset_id, ports in raw_ports.items():
+            if not isinstance(asset_id, str):
+                continue
+            if not isinstance(ports, (list, tuple)):
+                continue
+            normalized: set[int] = set()
+            for port in ports:
+                try:
+                    normalized.add(int(port))
+                except (TypeError, ValueError):
+                    continue
+            if normalized:
+                out[asset_id] = normalized
+        return out
+
+    def _build_plugin_cache(
+        self,
+        findings_with_context: List[Tuple[Any, str, str]],
+        nmap_open_ports: Dict[str, set[int]],
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Pre-compute plugin attributes once to avoid repeated getattr() calls.
         Secure design: read-only access to findings, no modifications.
         Returns: {finding_id -> {kev, exploit, cvss, epss}}
         """
         cache = {}
-        for finding, _, _ in findings_with_context:
+        for finding, asset_id, _ in findings_with_context:
+            finding_port = getattr(finding, "affected_port", None)
+            has_nmap_open_port = False
+            if isinstance(finding_port, int):
+                has_nmap_open_port = finding_port in nmap_open_ports.get(asset_id, set())
+
             cache[finding.finding_id] = {
                 "kev": bool(getattr(finding, "cisa_kev", False)),
                 "exploit": bool(getattr(finding, "exploit_available", False)),
                 "cvss": getattr(finding, "cvss_score", None),
                 "epss": getattr(finding, "epss_score", None),
+                "nmap_open_port": has_nmap_open_port,
             }
         return cache
 
@@ -387,7 +436,7 @@ class ScoringPass(Pass):
         self, 
         findings_with_context: List[Tuple[Any, str, str]],
         plugin_cache: Dict[str, Dict[str, Any]],
-        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
+        score_memo: Dict[Tuple[bool, bool, Any, Any, bool], Optional[Tuple[float, float, str, str]]]
     ) -> Tuple[Dict[str, ScoredFinding], Dict[str, float]]:
         """Score findings sequentially (fallback or small workloads)."""
         scored_findings: Dict[str, ScoredFinding] = {}
@@ -481,7 +530,7 @@ class ScoringPass(Pass):
                 exc,
                 extra={"vp_label": "ScoringPass"},
             )
-            score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]] = {}
+            score_memo: Dict[Tuple[bool, bool, Any, Any, bool], Optional[Tuple[float, float, str, str]]] = {}
             return self._score_parallel(ctx, findings_with_context, plugin_cache, score_memo)
 
     def _score_parallel(
@@ -489,7 +538,7 @@ class ScoringPass(Pass):
         _ctx: "RunContext",
         findings_with_context: List[Tuple[Any, str, str]],
         plugin_cache: Dict[str, Dict[str, Any]],
-        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
+        score_memo: Dict[Tuple[bool, bool, Any, Any, bool], Optional[Tuple[float, float, str, str]]]
     ) -> Tuple[Dict[str, ScoredFinding], Dict[str, float]]:
         """
         Score findings in parallel using ThreadPoolExecutor.
@@ -535,7 +584,7 @@ class ScoringPass(Pass):
         start_idx: int,
         end_idx: int,
         plugin_cache: Dict[str, Dict[str, Any]],
-        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
+        score_memo: Dict[Tuple[bool, bool, Any, Any, bool], Optional[Tuple[float, float, str, str]]]
     ) -> Tuple[Dict[str, ScoredFinding], Dict[str, float]]:
         """
         Score a batch of findings (thread worker function).
@@ -586,7 +635,7 @@ class ScoringPass(Pass):
         f: "Finding",
         asset_id: str,
         attrs: Dict[str, Any],
-        score_memo: Dict[Tuple[bool, bool, Any, Any], Optional[Tuple[float, float, str, str]]]
+        score_memo: Dict[Tuple[bool, bool, Any, Any, bool], Optional[Tuple[float, float, str, str]]]
     ) -> Optional[ScoredFinding]:
         """Score a finding using signature memoization for repeated attribute sets."""
         signature = self._score_signature(attrs)
@@ -612,13 +661,14 @@ class ScoringPass(Pass):
             reason=reason,
         )
 
-    def _score_signature(self, attrs: Dict[str, Any]) -> Tuple[bool, bool, Any, Any]:
+    def _score_signature(self, attrs: Dict[str, Any]) -> Tuple[bool, bool, Any, Any, bool]:
         """Build deterministic memoization key from cached scoring inputs."""
         return (
             bool(attrs.get("kev", False)),
             bool(attrs.get("exploit", False)),
             attrs.get("cvss", None),
             attrs.get("epss", None),
+            bool(attrs.get("nmap_open_port", False)),
         )
 
     def _calculate_score_components(
@@ -632,6 +682,7 @@ class ScoringPass(Pass):
         exploit = attrs["exploit"]
         cvss = attrs["cvss"]
         epss = attrs["epss"]
+        nmap_open_port = bool(attrs.get("nmap_open_port", False))
 
         # Gate: if no enrichment data, no score
         if not kev and not exploit and cvss is None and epss is None:
@@ -679,6 +730,10 @@ class ScoringPass(Pass):
         if exploit:
             raw += pol.exploit_evd * pol.w_exploit
             reasons.append("Exploit Available")
+
+        # NMAP Component
+        if nmap_open_port:
+            reasons.append("Nmap Port Observed")
 
         score = (raw / pol.max_raw_risk) * pol.max_op_risk
         score = max(0.0, min(score, pol.max_op_risk))

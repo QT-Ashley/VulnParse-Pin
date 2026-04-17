@@ -2,6 +2,8 @@ import os
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 import pytest
 
 from vulnparse_pin.io.pfhandler import PermFileHandler, FilePathError
@@ -158,3 +160,24 @@ def test_banner_section_header(capsys):
     print_section_header("ABC", width=20)
     captured = capsys.readouterr()
     assert "ABC" in captured.out
+
+
+def test_apply_file_mode_logs_warning_on_permission_error(tmp_path, monkeypatch):
+    logger = make_logger(tmp_path)
+    logger.warning = Mock()
+    pfh = PermFileHandler(logger, file_mode=0o600)
+
+    target = tmp_path / "mode_test.txt"
+    target.write_text("x", encoding="utf-8")
+
+    def _raise_perm(_path, _mode):
+        raise PermissionError("no chmod")
+
+    monkeypatch.setattr(
+        "vulnparse_pin.io.pfhandler.os",
+        SimpleNamespace(name="posix", chmod=_raise_perm),
+    )
+
+    pfh._apply_file_mode(target)
+
+    logger.warning.assert_called_once()

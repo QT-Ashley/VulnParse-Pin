@@ -101,6 +101,7 @@ class TopNPass(Pass):
             return DerivedPassResult(meta=meta, data=data)
 
         # 1 Build lookup index
+        nmap_open_ports_by_asset = self._get_nmap_open_ports_by_asset(scan)
         asset_to_findings = self._index_findings_by_asset(scan)     # { asset_id: [fid, fid, fid] }
         # Count total findings
         total_findings = sum(len(fids) for fids in asset_to_findings.values())
@@ -119,6 +120,7 @@ class TopNPass(Pass):
                 scoring=scoring,
                 asset_to_findings=asset_to_findings,
                 rank_basis=rank_basis,
+                nmap_open_ports_by_asset=nmap_open_ports_by_asset,
             )
         else:
             # 2 Compute inference per asset
@@ -140,6 +142,7 @@ class TopNPass(Pass):
                     rank_basis=rank_basis,
                     ctx=ctx,
                     max_findings=self.cfg.topn.max_findings_per_asset,
+                    nmap_confirmed_ports=nmap_open_ports_by_asset.get(asset_id, set()),
                 )
                 findings_by_asset_ranked[asset_id] = ranked
 
@@ -151,6 +154,7 @@ class TopNPass(Pass):
                 inference_by_asset=inference_by_asset,
                 rank_basis=rank_basis,
                 ctx=ctx,
+                nmap_open_ports_by_asset=nmap_open_ports_by_asset,
             )
 
             # trim to max_assets
@@ -165,7 +169,8 @@ class TopNPass(Pass):
                     asset_to_findings=asset_to_findings,
                     rank_basis=rank_basis,
                     ctx=ctx,
-                    max_findings=self.cfg.topn.global_top_findings
+                    max_findings=self.cfg.topn.global_top_findings,
+                    nmap_open_ports_by_asset=nmap_open_ports_by_asset,
                 )
 
         output = TopNPassOutput(
@@ -248,6 +253,7 @@ class TopNPass(Pass):
         scoring: "DerivedPassResult",
         asset_to_findings: Dict[str, List[str]],
         rank_basis: str,
+        nmap_open_ports_by_asset: Dict[str, set] = {},
     ) -> Tuple[
         Dict[str, ExposureInference],
         Dict[str, Tuple[RankedFindingRef, ...]],
@@ -433,6 +439,7 @@ class TopNPass(Pass):
                     rank_basis=rank_basis,
                     ctx=ctx,
                     max_findings=self.cfg.topn.max_findings_per_asset,
+                    nmap_confirmed_ports=nmap_open_ports_by_asset.get(asset_id, set()),
                 )
 
             ranked_assets = self._rank_assets(
@@ -442,6 +449,7 @@ class TopNPass(Pass):
                 inference_by_asset=inference_by_asset,
                 rank_basis=rank_basis,
                 ctx=ctx,
+                nmap_open_ports_by_asset=nmap_open_ports_by_asset,
             )
             ranked_assets = ranked_assets[: self.cfg.topn.max_assets]
 
@@ -454,6 +462,7 @@ class TopNPass(Pass):
                     rank_basis=rank_basis,
                     ctx=ctx,
                     max_findings=self.cfg.topn.global_top_findings,
+                    nmap_open_ports_by_asset=nmap_open_ports_by_asset,
                 )
             return inference_by_asset, findings_by_asset_ranked, ranked_assets, global_top
 
@@ -502,6 +511,22 @@ class TopNPass(Pass):
     # -------------------------------------------
     # Core Plugs
     # -------------------------------------------
+
+    def _get_nmap_open_ports_by_asset(self, scan: "ScanResult") -> Dict[str, set]:
+        """Load Nmap adapter open-port data keyed by asset_id. Returns {} if unavailable."""
+        try:
+            result = scan.derived.passes.get("nmap_adapter@1.0")
+            if result is None:
+                return {}
+            data = getattr(result, "data", None)
+            if not isinstance(data, dict) or data.get("status") != "enabled":
+                return {}
+            raw = data.get("asset_open_ports", {})
+            if not isinstance(raw, dict):
+                return {}
+            return {aid: set(ports) for aid, ports in raw.items()}
+        except (AttributeError, TypeError, KeyError):
+            return {}
 
     def _get_scoring_output(self, scan: "ScanResult") -> DerivedPassResult | None:
         try:
@@ -632,10 +657,11 @@ class TopNPass(Pass):
         finding_ids: List[str],
         rank_basis: str,
         ctx: Optional["RunContext"] = None,
-        max_findings: int,
+        max_findings: int = 0,
+        nmap_confirmed_ports: set = frozenset(),
     ) -> tuple[RankedFindingRef, ...]:
 
-        rows: List[Tuple[float, str, RankedFindingRef]] = []
+        rows: List[Tuple[float, int, str, RankedFindingRef]] = []
 
 
         for fid in finding_ids:
@@ -667,13 +693,14 @@ class TopNPass(Pass):
                 proto=str(proto) if proto is not None else None,
                 plugin_id=str(plugin_id) if plugin_id is not None else None
             )
-            # Sort ley: score descending, then fid
-            rows.append((score, fid, ref))
+            # Sort key: score descending, nmap-confirmed descending, then fid ascending
+            nmap_hit = 1 if isinstance(port, int) and port in nmap_confirmed_ports else 0
+            rows.append((score, nmap_hit, fid, ref))
 
-        rows.sort(key=lambda x: (-x[0], x[1]))
+        rows.sort(key=lambda x: (-x[0], -x[1], x[2]))
 
         output: List[RankedFindingRef] = []
-        for i, (_, _, ref) in enumerate(rows[:max_findings], start=1):
+        for i, (_, _, _, ref) in enumerate(rows[:max_findings], start=1):
             output.append(_replace_rank(ref, i))
         return tuple(output)
 
@@ -801,11 +828,12 @@ class TopNPass(Pass):
         inference_by_asset: Dict[str, ExposureInference],
         rank_basis: str,
         ctx: Optional["RunContext"] = None,
+        nmap_open_ports_by_asset: Dict[str, set] = {},
     ) -> List[RankedAssetRef]:
         decay = self.cfg.topn.decay
         k = self.cfg.topn.k
 
-        rows: List[Tuple[float, int, int, int, str, RankedAssetRef]] = []
+        rows: List[Tuple[float, int, int, int, int, str, RankedAssetRef]] = []
 
 
         for asset_id, fids, in asset_to_findings.items():
@@ -849,13 +877,14 @@ class TopNPass(Pass):
                 inference=inference_by_asset.get(asset_id)
             )
 
-            # tie-break: asset_score desc, band count desc, scorable count desc, asset id asc
-            rows.append((asset_score, crit_high, crit_rank, scorable_count, asset_id, ref))
+            # tie-break: score desc, band count desc, crit_rank desc, scorable count desc, nmap confirmed desc, asset id asc
+            nmap_confirmed = 1 if nmap_open_ports_by_asset.get(asset_id) else 0
+            rows.append((asset_score, crit_high, crit_rank, scorable_count, nmap_confirmed, asset_id, ref))
 
-        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], x[4]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], x[5]))
 
         output: List[RankedAssetRef] = []
-        for i, (_, _, _, _, _, ref) in enumerate(rows, start=1):
+        for i, (_, _, _, _, _, _, ref) in enumerate(rows, start=1):
             output.append(_replace_rank(ref, i))
         return output
 
@@ -868,10 +897,11 @@ class TopNPass(Pass):
         asset_to_findings: Dict[str, List[str]],
         rank_basis: str,
         ctx: Optional["RunContext"] = None,
-        max_findings: int,
+        max_findings: int = 0,
+        nmap_open_ports_by_asset: Dict[str, set] = {},
     ) -> Tuple[RankedFindingRef, ...]:
 
-        rows: List[Tuple[float, str, str, RankedFindingRef]] = []
+        rows: List[Tuple[float, int, str, str, RankedFindingRef]] = []
 
 
         for asset_id, fids in asset_to_findings.items():
@@ -904,12 +934,14 @@ class TopNPass(Pass):
                     plugin_id=str(plugin_id) if plugin_id is not None else None,
                 )
 
-                rows.append((score, asset_id, fid, ref))
+                nmap_ports = nmap_open_ports_by_asset.get(asset_id, set())
+                nmap_hit = 1 if isinstance(port, int) and port in nmap_ports else 0
+                rows.append((score, nmap_hit, asset_id, fid, ref))
 
-        rows.sort(key=lambda x: (-x[0], x[1], x[2]))
+        rows.sort(key=lambda x: (-x[0], -x[1], x[2], x[3]))
 
         output: List[RankedFindingRef] = []
-        for i, (_, _, _, ref) in enumerate(rows[:max_findings], start=1):
+        for i, (_, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
             output.append(_replace_rank(ref, i))
         return tuple(output)
 

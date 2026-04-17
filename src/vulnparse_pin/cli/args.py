@@ -75,6 +75,23 @@ def valid_input_file(path: PathLikeSimple) -> Path:
     return Path(path)
 
 
+def valid_existing_path(path: PathLikeSimple) -> Path:
+    if not os.path.exists(path):
+        raise argparse.ArgumentTypeError(f"Path: '{path}' does not exist.")
+    if not (os.path.isfile(path) or os.path.isdir(path)):
+        raise argparse.ArgumentTypeError(f"Path: '{path}' must be a file or directory.")
+    if not os.access(path, os.R_OK):
+        raise argparse.ArgumentTypeError(f"Path: '{path}' is not readable.")
+    return Path(path)
+
+
+def valid_nmap_adapter_file(path: PathLikeSimple) -> Path:
+    resolved = valid_input_file(path)
+    if resolved.suffix.lower() != ".xml":
+        raise argparse.ArgumentTypeError("Nmap adapter source must be an .xml file.")
+    return resolved
+
+
 def valid_log_level(level):
     levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     lvl = level.upper()
@@ -105,6 +122,9 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     enrich_group.add_argument("--exploit-source", "-es", choices=['online', 'offline'], default='online', help="Select if you want to pull exploit dataset from an online or offline source.")
     enrich_group.add_argument("--kev-feed", type=str, help="Optional KEV feed override (URL or local path).")
     enrich_group.add_argument("--epss-feed", type=str, help="Optional EPSS feed override (URL or local path).")
+    enrich_group.add_argument("--ghsa", nargs="?", const="online", default=None, metavar="[PATH|online]", help="Enable GHSA enrichment. Use --ghsa for online mode or --ghsa <path> for an offline local advisory source.")
+    enrich_group.add_argument("--ghsa-budget", type=int, default=None, metavar="COUNT", help="Optional GHSA online lookup budget override. Applies only to online GHSA mode.")
+    enrich_group.add_argument("--nmap-ctx", "-nmap", type=valid_nmap_adapter_file, default=None, metavar="PATH", help="Optional Nmap XML adapter source used to enrich derived attack-surface context.")
     output_group.add_argument("--output", "-o", metavar="FILE", help="File to output results to. Output is in JSON")
     output_group.add_argument(
         "--verify-runmanifest",
@@ -217,5 +237,23 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     if (not args.no_exploit) and (args.exploit_source == "offline") and (not args.exploit_db):
         parser.error("Offline exploit source requires --exploit-db to be set.")
+
+    if args.ghsa is not None:
+        ghsa_value = str(args.ghsa).strip()
+        if not ghsa_value:
+            args.ghsa = "online"
+        elif ghsa_value.lower() == "online":
+            args.ghsa = "online"
+        else:
+            args.ghsa = valid_existing_path(ghsa_value)
+
+    if args.ghsa_budget is not None and args.ghsa_budget < 1:
+        parser.error("--ghsa-budget must be a positive integer.")
+
+    if args.ghsa_budget is not None and args.ghsa != "online":
+        parser.error("--ghsa-budget requires online GHSA mode (--ghsa or --ghsa online).")
+
+    if args.nmap_ctx is not None:
+        args.nmap_ctx = valid_nmap_adapter_file(args.nmap_ctx)
 
     return args

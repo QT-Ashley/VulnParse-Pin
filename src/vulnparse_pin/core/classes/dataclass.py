@@ -52,6 +52,9 @@ class Finding:
     triage_priority: Optional[str] = None
     enriched: Optional[bool] = False
     enrichment_source_cve: Optional[str] = None
+    enrichment_sources: List[str] = field(default_factory=list)
+    confidence: int = 0
+    confidence_evidence: Dict[str, int] = field(default_factory=dict)
     asset_id: Optional[str] = None
 
 @dataclass

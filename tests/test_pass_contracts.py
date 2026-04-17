@@ -13,6 +13,7 @@ from vulnparse_pin.core.classes.dataclass import (
     Services,
 )
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+from vulnparse_pin.core.passes.Nmap.nmap_adapter_pass import NmapAdapterPass
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
 from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
@@ -175,6 +176,22 @@ def test_topn_references_exist_in_truth(tmp_path):
     for fid, frec in data.get("findings_by_asset", {}).items():
         for f in frec:
             assert f.get("finding_id") in truth_ids
+
+
+def test_nmap_adapter_pass_can_run_before_scoring_and_topn(tmp_path):
+    ctx = make_ctx(tmp_path)
+    scan = make_sample_scan()
+
+    nmap = NmapAdapterPass(None)
+    scoring = ScoringPass(get_policy())
+    topn = TopNPass(_safe_fallback_config())
+    runner = PassRunner([nmap, scoring, topn])
+
+    out = runner.run_all(ctx, scan)
+
+    assert out.derived.get("nmap_adapter@1.0") is not None
+    assert out.derived.get("Scoring@1.0") is not None
+    assert out.derived.get("TopN@1.0") is not None
 
 
 # ---------- determinism and dependency tests ----------

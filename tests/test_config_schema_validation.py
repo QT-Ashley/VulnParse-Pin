@@ -126,3 +126,144 @@ def test_config_validation_unsupported_global_version_fails():
 
     with pytest.raises(RuntimeError, match="Global config schema validation failed at version"):
         ConfigValidator.validate(ctx, payloads)
+
+
+def test_global_config_schema_accepts_enrichment_block():
+    payloads = _load_default_payloads()
+    payloads = RawConfigPayloads(
+        global_config={
+            **payloads.global_config,
+            "enrichment": {
+                "ghsa_source": "C:/data/ghsa/advisory-database",
+                "ghsa_online_prefetch_budget": 25,
+                "ghsa_token_env": "GHSA_PAT",
+                "ghsa_cache": {
+                    "sqlite_max_age_hours": 336,
+                    "sqlite_max_rows": 500000,
+                },
+                "confidence": {
+                    "model_version": "v1",
+                    "max_score": 100,
+                    "base_scanner": 30,
+                    "weights": {
+                        "nvd": 25,
+                        "kev": 15,
+                        "epss": 10,
+                        "exploitdb": 10,
+                        "ghsa": 20,
+                    },
+                    "ghsa_signals": {
+                        "advisory_confidence_bonus": 3,
+                        "max_advisory_confidence_bonus": 9,
+                        "exploit_signal_on_high_severity": True,
+                        "exploit_signal_confidence_bonus": 5,
+                    },
+                },
+            },
+        },
+        scoring_config=payloads.scoring_config,
+        topn_config=payloads.topn_config,
+    )
+    ctx = _DummyCtx()
+
+    result = ConfigValidator.validate(ctx, payloads)
+    assert result.ok is True
+
+
+def test_global_config_schema_rejects_invalid_confidence_weight():
+    payloads = _load_default_payloads()
+    invalid = {
+        **payloads.global_config,
+        "enrichment": {
+            "ghsa_source": None,
+            "confidence": {
+                "model_version": "v1",
+                "max_score": 100,
+                "base_scanner": 35,
+                "weights": {
+                    "nvd": 25,
+                    "kev": 15,
+                    "epss": 10,
+                    "exploitdb": 10,
+                    "ghsa": 250,
+                },
+                "ghsa_signals": {
+                    "advisory_confidence_bonus": 3,
+                    "max_advisory_confidence_bonus": 9,
+                    "exploit_signal_on_high_severity": False,
+                    "exploit_signal_confidence_bonus": 5,
+                },
+            },
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="Global config schema validation failed"):
+        ConfigValidator._validate_schema(invalid, "config.schema.json", label="Global config")
+
+
+def test_global_config_schema_rejects_invalid_ghsa_cache_settings():
+    payloads = _load_default_payloads()
+    invalid = {
+        **payloads.global_config,
+        "enrichment": {
+            "ghsa_source": None,
+            "ghsa_cache": {
+                "sqlite_max_age_hours": 0,
+                "sqlite_max_rows": 500000,
+            },
+            "confidence": {
+                "model_version": "v1",
+                "max_score": 100,
+                "base_scanner": 35,
+                "weights": {
+                    "nvd": 25,
+                    "kev": 15,
+                    "epss": 10,
+                    "exploitdb": 10,
+                    "ghsa": 15,
+                },
+                "ghsa_signals": {
+                    "advisory_confidence_bonus": 3,
+                    "max_advisory_confidence_bonus": 9,
+                    "exploit_signal_on_high_severity": False,
+                    "exploit_signal_confidence_bonus": 5,
+                },
+            },
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="Global config schema validation failed"):
+        ConfigValidator._validate_schema(invalid, "config.schema.json", label="Global config")
+
+
+def test_global_config_schema_rejects_invalid_ghsa_budget():
+    payloads = _load_default_payloads()
+    invalid = {
+        **payloads.global_config,
+        "enrichment": {
+            "ghsa_source": None,
+            "ghsa_online_prefetch_budget": 0,
+            "ghsa_token_env": "GITHUB_TOKEN",
+            "confidence": {
+                "model_version": "v1",
+                "max_score": 100,
+                "base_scanner": 35,
+                "weights": {
+                    "nvd": 25,
+                    "kev": 15,
+                    "epss": 10,
+                    "exploitdb": 10,
+                    "ghsa": 15,
+                },
+                "ghsa_signals": {
+                    "advisory_confidence_bonus": 3,
+                    "max_advisory_confidence_bonus": 9,
+                    "exploit_signal_on_high_severity": False,
+                    "exploit_signal_confidence_bonus": 5,
+                },
+            },
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="Global config schema validation failed"):
+        ConfigValidator._validate_schema(invalid, "config.schema.json", label="Global config")

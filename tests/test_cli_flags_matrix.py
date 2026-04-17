@@ -18,6 +18,9 @@ CLI_FLAG_CASES: list[tuple[str, list[str]]] = [
     ("epss-source-offline", ["--epss-source", "offline"]),
     ("kev-feed-url", ["--kev-feed", "https://example.org/kev.json"]),
     ("epss-feed-url", ["--epss-feed", "https://example.org/epss.csv.gz"]),
+    ("ghsa-online", ["--ghsa"]),
+    ("ghsa-online-with-budget", ["--ghsa", "--ghsa-budget", "12"]),
+    ("nmap-ctx", ["--nmap-ctx", "nmap.xml"]),
     ("output-json", ["--output", "out.json"]),
     ("pretty-print", ["--pretty-print"]),
     ("log-file", ["--log-file", "test.log"]),
@@ -59,9 +62,15 @@ def _build_base_argv(tmp_path: Path) -> list[str]:
 def _materialize_paths(tmp_path: Path, fragment: list[str]) -> list[str]:
     result: list[str] = []
     for token in fragment:
-        if token in {"out.json", "test.log", "out.csv", "summary.md", "technical.md", "exploit.csv"}:
+        if token in {"out.json", "test.log", "out.csv", "summary.md", "technical.md", "exploit.csv", "ghsa.json", "nmap.xml", "nmap.txt"}:
             if token == "exploit.csv":
                 (tmp_path / token).write_text("id,cve\n1,CVE-2024-0001\n", encoding="utf-8")
+            elif token == "ghsa.json":
+                (tmp_path / token).write_text("[]", encoding="utf-8")
+            elif token == "nmap.xml":
+                (tmp_path / token).write_text("<nmaprun></nmaprun>", encoding="utf-8")
+            elif token == "nmap.txt":
+                (tmp_path / token).write_text("not xml", encoding="utf-8")
             token = str(tmp_path / token)
         result.append(token)
     return result
@@ -125,6 +134,49 @@ def test_no_csv_sanitize_requires_output_csv_without_sys_argv_dependency(tmp_pat
 
 def test_offline_exploit_source_requires_exploit_db_without_sys_argv_dependency(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     argv = _build_base_argv(tmp_path) + ["--exploit-source", "offline"]
+    monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        get_args(argv)
+
+    assert excinfo.value.code == 2
+
+
+def test_ghsa_flag_without_value_enables_online_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    argv = _build_base_argv(tmp_path) + ["--ghsa"]
+    monkeypatch.setattr(sys, "argv", ["vulnparse-pin", *argv])
+
+    args = get_args(argv)
+
+    assert args.ghsa == "online"
+    assert args.ghsa_budget is None
+
+
+def test_ghsa_flag_with_path_enables_offline_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text("[]", encoding="utf-8")
+    argv = _build_base_argv(tmp_path) + ["--ghsa", str(ghsa_path)]
+    monkeypatch.setattr(sys, "argv", ["vulnparse-pin", *argv])
+
+    args = get_args(argv)
+
+    assert args.ghsa == ghsa_path
+
+
+def test_ghsa_budget_requires_online_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text("[]", encoding="utf-8")
+    argv = _build_base_argv(tmp_path) + ["--ghsa", str(ghsa_path), "--ghsa-budget", "5"]
+    monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        get_args(argv)
+
+    assert excinfo.value.code == 2
+
+
+def test_nmap_adapter_requires_xml_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    argv = _build_base_argv(tmp_path) + _materialize_paths(tmp_path, ["--nmap-ctx", "nmap.txt"])
     monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
 
     with pytest.raises(SystemExit) as excinfo:

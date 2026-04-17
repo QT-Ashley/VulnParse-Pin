@@ -91,7 +91,7 @@ class TestPluginCaching:
         findings_with_context = [(f, f.asset_id, "192.168.1.1") for f in findings]
         
         # Cache should have all attributes for all findings
-        cache = scoring._build_plugin_cache(findings_with_context)
+        cache = scoring._build_plugin_cache(findings_with_context, {})
         
         assert len(cache) == 3
         assert cache["f1"]["cvss"] == 7.5
@@ -114,7 +114,7 @@ class TestPluginCaching:
         )
         
         findings_with_context = [(finding, "asset-1", "192.168.1.1")]
-        cache = scoring._build_plugin_cache(findings_with_context)
+        cache = scoring._build_plugin_cache(findings_with_context, {})
         
         # Score using cache
         sf = scoring._score_one_cached(finding, "asset-1", cache["f1"])

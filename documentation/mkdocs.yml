@@ -39,6 +39,7 @@ nav:
     - Features: Features.md
     - Extension Playbooks: Extension Playbooks.md
     - Enrichment Seam Contract: Enrichment Seam Contract.md
+    - Enrichment Deep Dive: Enrichment Deep Dive.md
     - Config Seam Contract: Config Seam Contract.md
     - ADR Workflow: ADR Workflow.md
     - ADR Template: adr/ADR-Template.md

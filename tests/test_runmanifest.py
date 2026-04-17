@@ -244,6 +244,35 @@ def test_runmanifest_populates_pass_metrics_and_mode(tmp_path: Path):
     assert metrics_by_name["Summary"]["total_assets"] == 2
 
 
+def test_runmanifest_enrichment_stats_include_ghsa_auth_rejections(tmp_path: Path):
+    ctx = _make_context(tmp_path)
+    scan_result = _make_scan_result()
+    scanner_input = tmp_path / "input.nessus"
+    scanner_input.write_text("dummy", encoding="utf-8")
+
+    manifest = build_runmanifest(
+        ctx=ctx,
+        _args=SimpleNamespace(),
+        scan_result=scan_result,
+        sources={
+            "exploitdb": False,
+            "kev": True,
+            "epss": True,
+            "nvd": "Enabled",
+            "stats": {
+                "kev_hits": 1,
+                "epss_hits": 1,
+                "exploit_hits": 0,
+                "ghsa_auth_token_rejections": 2,
+            },
+        },
+        scanner_input=scanner_input,
+        output_paths={"json": None, "csv": None, "md": None, "md_technical": None},
+    )
+
+    assert manifest["enrichment_summary"]["stats"]["ghsa_auth_token_rejections"] == 2
+
+
 def test_runmanifest_topn_skipped_artifact_metrics(tmp_path: Path):
     ctx = _make_context(tmp_path)
     scan = _make_scan_result()

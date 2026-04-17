@@ -3,6 +3,8 @@ from .nessus_parser import NessusParser
 from .openvas_parser import OpenVASParser
 from .openvasXML_parser import OpenVASXMLParser
 from .nessusXML_parser import NessusXMLParser
+from .qualys_parser import QualysXMLParser
+from .nmap_parser import NmapXMLParser
 
 PARSER_SPECS = [
     ParserSpec(name="openvas-xml", parser_cls=OpenVASXMLParser,
@@ -10,6 +12,15 @@ PARSER_SPECS = [
 
     ParserSpec(name="nessus-xml", parser_cls=NessusXMLParser,
                formats=("xml", "nessus"), scanner="nessus", priority=20),
+
+    ParserSpec(name="qualys-xml", parser_cls=QualysXMLParser,
+               formats=("xml",), scanner="qualys", priority=15,
+               stability="stable"),
+
+    ParserSpec(name="nmap-xml", parser_cls=NmapXMLParser,
+               formats=("xml",), scanner="nmap", priority=25,
+               stability="experimental",
+               deprecation_notice="Nmap parser is scaffolded and will be completed in v1.2.1"),
 
     ParserSpec(name="openvas-json", parser_cls=OpenVASParser,
                formats=("json",), scanner="openvas", priority=10,

@@ -36,3 +36,26 @@ feed_cache:
 summary:
   top_n_findings: 20
 
+enrichment:
+  ghsa_source: null
+  ghsa_online_prefetch_budget: 25
+  ghsa_token_env: VP_GHSA_TK
+  ghsa_cache:
+    sqlite_max_age_hours: 336
+    sqlite_max_rows: 500000
+  confidence:
+    model_version: v1
+    max_score: 100
+    base_scanner: 35
+    weights:
+      nvd: 25
+      kev: 15
+      epss: 10
+      exploitdb: 10
+      ghsa: 15
+    ghsa_signals:
+      advisory_confidence_bonus: 3
+      max_advisory_confidence_bonus: 9
+      exploit_signal_on_high_severity: false
+      exploit_signal_confidence_bonus: 5
+

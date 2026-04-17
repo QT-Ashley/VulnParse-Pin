@@ -138,12 +138,21 @@ def resolve_io_paths_and_modes(args, runtime: RuntimeBootstrapState, kev_feed: s
             label="CSV-Sanitization",
         )
 
+    def _is_http_url(value: str) -> bool:
+        v = str(value).strip().lower()
+        return v.startswith("http://") or v.startswith("https://")
+
+    def _is_https_url(value: str) -> bool:
+        return str(value).strip().lower().startswith("https://")
+
     kev_source = None
     if not args.no_kev:
         kev_override = getattr(args, "kev_feed", None)
         if kev_override:
-            if args.kev_source == "offline" and str(kev_override).startswith("http"):
+            if args.kev_source == "offline" and _is_http_url(str(kev_override)):
                 raise ValueError("--kev-source offline does not allow HTTP/HTTPS KEV overrides.")
+            if args.kev_source == "online" and (not _is_https_url(str(kev_override))):
+                raise ValueError("--kev-source online requires an HTTPS URL override.")
             kev_source = pfh.ensure_readable_file(kev_override, label="KEV Local Cache File") if args.kev_source == "offline" else kev_override
         else:
             kev_source = kev_path if args.kev_source == "offline" else kev_feed
@@ -152,8 +161,10 @@ def resolve_io_paths_and_modes(args, runtime: RuntimeBootstrapState, kev_feed: s
     if not args.no_epss:
         epss_override = getattr(args, "epss_feed", None)
         if epss_override:
-            if args.epss_source == "offline" and str(epss_override).startswith("http"):
+            if args.epss_source == "offline" and _is_http_url(str(epss_override)):
                 raise ValueError("--epss-source offline does not allow HTTP/HTTPS EPSS overrides.")
+            if args.epss_source == "online" and (not _is_https_url(str(epss_override))):
+                raise ValueError("--epss-source online requires an HTTPS URL override.")
             epss_source = pfh.ensure_readable_file(epss_override, label="EPSS Local Cache File") if args.epss_source == "offline" else epss_override
         else:
             epss_source = epss_path if args.epss_source == "offline" else epss_feed
