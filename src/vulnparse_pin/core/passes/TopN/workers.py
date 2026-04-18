@@ -5,6 +5,51 @@ import ipaddress
 from typing import Any, Dict, List, Tuple
 
 
+def _score_trace_priority_signals(rec: Dict[str, Any]) -> Tuple[int, int, int]:
+    trace = rec.get("score_trace", {}) if isinstance(rec, dict) else {}
+    if not isinstance(trace, dict):
+        trace = {}
+
+    contributors = trace.get("contributors")
+    if not isinstance(contributors, list):
+        contributors = []
+
+    cve_count = trace.get("cve_count")
+    try:
+        cve_count_int = int(cve_count)
+    except (TypeError, ValueError):
+        cve_count_int = len(contributors)
+    cve_count_int = max(0, cve_count_int)
+
+    exploitable_cve_count = 0
+    kev_cve_count = 0
+    for contributor in contributors:
+        if not isinstance(contributor, dict):
+            continue
+        if bool(contributor.get("exploit_available", False)):
+            exploitable_cve_count += 1
+        if bool(contributor.get("cisa_kev", False)):
+            kev_cve_count += 1
+
+    union_flags = trace.get("union_flags")
+    if not isinstance(union_flags, dict):
+        union_flags = {}
+
+    if exploitable_cve_count == 0 and bool(union_flags.get("exploit", False)):
+        exploitable_cve_count = 1
+    if kev_cve_count == 0 and bool(union_flags.get("kev", False)):
+        kev_cve_count = 1
+
+    return exploitable_cve_count, kev_cve_count, cve_count_int
+
+
+def _split_reason_text(reason_value: Any) -> Tuple[str, ...]:
+    reason_text = str(reason_value or "").strip()
+    if not reason_text:
+        return tuple()
+    return tuple(part.strip() for part in reason_text.split(";") if part.strip())
+
+
 def _is_private_ip(ip: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip)
@@ -34,7 +79,7 @@ def _rank_findings_chunk_worker(
     results: Dict[str, List[Dict[str, Any]]] = {}
 
     for asset_id, rank_basis, finding_ids in chunk:
-        rows: List[Tuple[float, str, Dict[str, Any]]] = []
+        rows: List[Tuple[float, int, int, int, str, Dict[str, Any]]] = []
 
         for fid in finding_ids:
             rec = scoring_data.get(fid)
@@ -46,7 +91,8 @@ def _rank_findings_chunk_worker(
             score = raw if rank_basis == "raw" else op
 
             band = str(rec.get("risk_band", "unknown"))
-            reasons = tuple(rec.get("reason", "").strip().split(";"))
+            reasons = _split_reason_text(rec.get("reason", ""))
+            exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
 
             attrs = finding_attrs.get(fid, {})
             port = attrs.get("port")
@@ -66,12 +112,12 @@ def _rank_findings_chunk_worker(
                 "plugin_id": str(plugin_id) if plugin_id is not None else None,
             }
 
-            rows.append((score, fid, ref_dict))
+            rows.append((score, exploit_count, kev_count, cve_count, fid, ref_dict))
 
-        rows.sort(key=lambda x: (-x[0], x[1]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], x[4]))
 
         ranked = []
-        for i, (_, _, ref_dict) in enumerate(rows[:max_findings], start=1):
+        for i, (_, _, _, _, _, ref_dict) in enumerate(rows[:max_findings], start=1):
             ref_dict["rank"] = i
             ranked.append(ref_dict)
 
@@ -172,8 +218,8 @@ def _topn_asset_chunk_worker(
 ) -> Dict[str, Any]:
     out_inference: Dict[str, Dict[str, Any]] = {}
     out_findings: Dict[str, List[Dict[str, Any]]] = {}
-    out_assets: List[Tuple[float, int, int, int, str, Tuple[float, ...]]] = []
-    global_heap: List[Tuple[float, str, str, int, Dict[str, Any]]] = []
+    out_assets: List[Tuple[float, int, int, int, int, int, int, str, Tuple[float, ...]]] = []
+    global_heap: List[Tuple[float, str, str, int, int, int, int, Dict[str, Any]]] = []
     entry_counter = 0
 
     for asset_id, finding_ids in chunk:
@@ -182,10 +228,13 @@ def _topn_asset_chunk_worker(
         crit_label = str(obs.get("criticality") or "").strip().lower()
         crit_rank = {"extreme": 4, "high": 3, "medium": 2, "low": 1}.get(crit_label, 0)
 
-        rows: List[Tuple[float, str, Dict[str, Any]]] = []
+        rows: List[Tuple[float, int, int, int, str, Dict[str, Any]]] = []
         asset_scores: List[float] = []
         crit_high = 0
         scorable_count = 0
+        exploitable_findings = 0
+        kev_findings = 0
+        cve_breadth = 0
 
         for fid in finding_ids:
             rec = scoring_data.get(fid)
@@ -196,8 +245,8 @@ def _topn_asset_chunk_worker(
             op = float(rec.get("operational_score", raw))
             score = raw if rank_basis == "raw" else op
             band = str(rec.get("risk_band", "unknown"))
-            reason_text = rec.get("reason", "")
-            reasons = tuple(str(reason_text).strip().split(";")) if str(reason_text).strip() else tuple()
+            reasons = _split_reason_text(rec.get("reason", ""))
+            exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
 
             attrs = finding_attrs.get(fid, {})
             port = attrs.get("port")
@@ -217,26 +266,38 @@ def _topn_asset_chunk_worker(
                 "plugin_id": str(plugin_id) if plugin_id is not None else None,
             }
 
-            rows.append((score, fid, ref_dict))
+            rows.append((score, exploit_count, kev_count, cve_count, fid, ref_dict))
             asset_scores.append(score)
             scorable_count += 1
             if band.lower() in ("critical", "high"):
                 crit_high += 1
+            if exploit_count > 0:
+                exploitable_findings += 1
+            if kev_count > 0:
+                kev_findings += 1
+            cve_breadth += cve_count
 
             if include_global_top:
-                key = (score, asset_id, fid)
+                key = (score, exploit_count, kev_count, cve_count, asset_id, fid)
                 if len(global_heap) < global_top_max:
-                    heapq.heappush(global_heap, (key[0], key[1], key[2], entry_counter, ref_dict))
+                    heapq.heappush(global_heap, (key[0], key[4], key[5], key[1], key[2], key[3], entry_counter, ref_dict))
                     entry_counter += 1
                 else:
-                    min_key = (global_heap[0][0], global_heap[0][1], global_heap[0][2])
+                    min_key = (
+                        global_heap[0][0],
+                        global_heap[0][3],
+                        global_heap[0][4],
+                        global_heap[0][5],
+                        global_heap[0][1],
+                        global_heap[0][2],
+                    )
                     if key > min_key:
-                        heapq.heapreplace(global_heap, (key[0], key[1], key[2], entry_counter, ref_dict))
+                        heapq.heapreplace(global_heap, (key[0], key[4], key[5], key[1], key[2], key[3], entry_counter, ref_dict))
                         entry_counter += 1
 
-        rows.sort(key=lambda x: (-x[0], x[1]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], x[4]))
         ranked_findings: List[Dict[str, Any]] = []
-        for i, (_, _, ref_dict) in enumerate(rows[:max_findings_per_asset], start=1):
+        for i, (_, _, _, _, _, ref_dict) in enumerate(rows[:max_findings_per_asset], start=1):
             ref_dict["rank"] = i
             ranked_findings.append(ref_dict)
         out_findings[asset_id] = ranked_findings
@@ -248,11 +309,23 @@ def _topn_asset_chunk_worker(
             if i < len(decay):
                 asset_score += float(value) * float(decay[i])
 
-        out_assets.append((asset_score, crit_high, crit_rank, scorable_count, asset_id, top_scores))
+        out_assets.append(
+            (
+                asset_score,
+                crit_high,
+                exploitable_findings,
+                kev_findings,
+                cve_breadth,
+                crit_rank,
+                scorable_count,
+                asset_id,
+                top_scores,
+            )
+        )
 
     global_candidates = [
-        (score, asset_id, fid, ref_dict)
-        for score, asset_id, fid, _, ref_dict in global_heap
+        (score, asset_id, fid, exploit_count, kev_count, cve_count, entry_order, ref_dict)
+        for score, asset_id, fid, exploit_count, kev_count, cve_count, entry_order, ref_dict in global_heap
     ]
 
     return {

@@ -134,6 +134,63 @@ class SummaryPass(Pass):
             for finding in asset.findings:
                 finding_map[finding.finding_id] = finding
         return finding_map
+
+    @staticmethod
+    def _coerce_score_trace(scored_data: Dict[str, Any]) -> Dict[str, Any]:
+        trace = scored_data.get("score_trace", {}) if isinstance(scored_data, dict) else {}
+        return trace if isinstance(trace, dict) else {}
+
+    @staticmethod
+    def _score_trace_union_flags(scored_data: Dict[str, Any]) -> Dict[str, bool]:
+        trace = SummaryPass._coerce_score_trace(scored_data)
+        union = trace.get("union_flags", {})
+        if not isinstance(union, dict):
+            union = {}
+        return {
+            "kev": bool(union.get("kev", False)),
+            "exploit": bool(union.get("exploit", False)),
+        }
+
+    @staticmethod
+    def _score_trace_contributor_stats(scored_data: Dict[str, Any]) -> Dict[str, int]:
+        trace = SummaryPass._coerce_score_trace(scored_data)
+        contributors = trace.get("contributors", [])
+        if not isinstance(contributors, list):
+            contributors = []
+
+        cve_count = trace.get("cve_count")
+        try:
+            cve_count_int = int(cve_count)
+        except (TypeError, ValueError):
+            cve_count_int = len(contributors)
+        cve_count_int = max(0, cve_count_int)
+
+        exploitable_cve_count = 0
+        kev_cve_count = 0
+        for contributor in contributors:
+            if not isinstance(contributor, dict):
+                continue
+            if bool(contributor.get("exploit_available", False)):
+                exploitable_cve_count += 1
+            if bool(contributor.get("cisa_kev", False)):
+                kev_cve_count += 1
+
+        return {
+            "cve_count": cve_count_int,
+            "exploitable_cve_count": exploitable_cve_count,
+            "kev_cve_count": kev_cve_count,
+        }
+
+    @staticmethod
+    def _score_trace_display_cve(scored_data: Dict[str, Any]) -> Optional[str]:
+        trace = SummaryPass._coerce_score_trace(scored_data)
+        display_cve = trace.get("display_cve")
+        if display_cve:
+            return str(display_cve)
+        primary_cve = trace.get("primary_cve")
+        if primary_cve:
+            return str(primary_cve)
+        return None
     
     def _generate_overview(self, scan: "ScanResult", scoring: Any) -> Dict[str, Any]:
         """
@@ -145,13 +202,17 @@ class SummaryPass(Pass):
         exploit_findings = 0
         kev_findings = 0
         
+        scored_findings = scoring.get("scored_findings", {}) if isinstance(scoring, dict) else {}
+
         # Single-pass aggregation
         for asset in scan.assets:
             total_findings += len(asset.findings)
             for finding in asset.findings:
-                if getattr(finding, 'exploit_available', False):
+                scored_data = scored_findings.get(getattr(finding, "finding_id", ""), {}) if isinstance(scored_findings, dict) else {}
+                union_flags = self._score_trace_union_flags(scored_data)
+                if getattr(finding, 'exploit_available', False) or union_flags["exploit"]:
                     exploit_findings += 1
-                if getattr(finding, 'cisa_kev', False):
+                if getattr(finding, 'cisa_kev', False) or union_flags["kev"]:
                     kev_findings += 1
         
         avg_risk = scoring.get('avg_scored_risk', 0.0) if isinstance(scoring, dict) else 0.0
@@ -210,8 +271,6 @@ class SummaryPass(Pass):
             top_cve = "N/A"
             top_raw = float("-inf")
             for f in asset.findings:
-                if not getattr(f, "cves", None):
-                    continue
                 frec = scored_findings.get(getattr(f, "finding_id", ""), {}) if isinstance(scored_findings, dict) else {}
                 raw_val = frec.get("raw_score") if isinstance(frec, dict) else None
                 try:
@@ -220,7 +279,11 @@ class SummaryPass(Pass):
                     raw = float("-inf")
                 if raw > top_raw:
                     top_raw = raw
-                    top_cve = str(getattr(f, "enrichment_source_cve", None) or f.cves[0])
+                    top_cve = str(
+                        self._score_trace_display_cve(frec)
+                        or getattr(f, "enrichment_source_cve", None)
+                        or (f.cves[0] if getattr(f, "cves", None) else "N/A")
+                    )
             
             asset_entry = {
                 "asset_id": asset_id,
@@ -322,7 +385,13 @@ class SummaryPass(Pass):
                 continue
 
             risk_score = float(scored_data.get('raw_score', 0.0) or 0.0)
-            cve_display = getattr(finding, "enrichment_source_cve", None) or (finding.cves[0] if finding.cves else finding_id)
+            cve_display = (
+                self._score_trace_display_cve(scored_data)
+                or getattr(finding, "enrichment_source_cve", None)
+                or (finding.cves[0] if finding.cves else finding_id)
+            )
+            contributor_stats = self._score_trace_contributor_stats(scored_data)
+            union_flags = self._score_trace_union_flags(scored_data)
 
             existing = best_by_cve.get(cve_display)
             if existing is None:
@@ -330,10 +399,19 @@ class SummaryPass(Pass):
                     "cve": cve_display,
                     "finding_risk_score": round(risk_score, 2),
                     "risk_band": scored_data.get('risk_band', 'Informational'),
-                    "exploit_available": getattr(finding, 'exploit_available', False),
-                    "kev_listed": getattr(finding, 'cisa_kev', False),
+                    "exploit_available": getattr(finding, 'exploit_available', False) or union_flags["exploit"],
+                    "kev_listed": getattr(finding, 'cisa_kev', False) or union_flags["kev"],
                     "epss_score": getattr(finding, 'epss_score', None),
                     "cvss_base_score": getattr(finding, 'cvss_score', None),
+                    "aggregated_cve_count": contributor_stats["cve_count"],
+                    "aggregated_exploitable_cve_count": max(
+                        contributor_stats["exploitable_cve_count"],
+                        1 if union_flags["exploit"] else 0,
+                    ),
+                    "aggregated_kev_cve_count": max(
+                        contributor_stats["kev_cve_count"],
+                        1 if union_flags["kev"] else 0,
+                    ),
                     "occurrence_count": 1,
                 }
             else:
@@ -342,10 +420,19 @@ class SummaryPass(Pass):
                     existing.update({
                         "finding_risk_score": round(risk_score, 2),
                         "risk_band": scored_data.get('risk_band', 'Informational'),
-                        "exploit_available": getattr(finding, 'exploit_available', False),
-                        "kev_listed": getattr(finding, 'cisa_kev', False),
+                        "exploit_available": getattr(finding, 'exploit_available', False) or union_flags["exploit"],
+                        "kev_listed": getattr(finding, 'cisa_kev', False) or union_flags["kev"],
                         "epss_score": getattr(finding, 'epss_score', None),
                         "cvss_base_score": getattr(finding, 'cvss_score', None),
+                        "aggregated_cve_count": contributor_stats["cve_count"],
+                        "aggregated_exploitable_cve_count": max(
+                            contributor_stats["exploitable_cve_count"],
+                            1 if union_flags["exploit"] else 0,
+                        ),
+                        "aggregated_kev_cve_count": max(
+                            contributor_stats["kev_cve_count"],
+                            1 if union_flags["kev"] else 0,
+                        ),
                     })
 
         # Use min-heap to efficiently maintain top-k CVE entries by finding-level raw score.
@@ -415,11 +502,16 @@ class SummaryPass(Pass):
                 continue
             
             band = scored_data.get('risk_band', 'Informational')
-            kev = getattr(finding, 'cisa_kev', False)
-            exploit = getattr(finding, 'exploit_available', False)
+            union_flags = self._score_trace_union_flags(scored_data)
+            kev = getattr(finding, 'cisa_kev', False) or union_flags["kev"]
+            exploit = getattr(finding, 'exploit_available', False) or union_flags["exploit"]
             
             # Get CVE for display
-            cve_display = getattr(finding, "enrichment_source_cve", None) or (finding.cves[0] if finding.cves else finding_id)
+            cve_display = (
+                self._score_trace_display_cve(scored_data)
+                or getattr(finding, "enrichment_source_cve", None)
+                or (finding.cves[0] if finding.cves else finding_id)
+            )
             
             if band == "Critical" and (kev or exploit):
                 immediate.append(cve_display)

@@ -31,6 +31,7 @@ VulnParse-Pin also supports additional options to customize the analysis process
 ### General Options
 
 #### --demo
+
 - `--demo`: This option runs the tool in demo mode, which uses a predefined dataset to demonstrate the capabilities of VulnParse-Pin. Use it like this:
 
 ```bash
@@ -226,6 +227,26 @@ vpp -f <input_file> --output <output_file>
 ```bash
 vpp -f <input_file> --output-csv <csv_file>
 ```
+
+#### --csv-profile
+
+- `--csv-profile <full|analyst|audit>`: Selects the CSV presentation profile.
+  - `full` (default): backward-compatible full schema for existing pipelines.
+  - `analyst`: triage-focused view with high-value operational fields.
+  - `audit`: traceability-focused view with contributor and aggregation context.
+
+```bash
+# Full legacy-compatible output
+vpp -f <input_file> --output-csv out.csv --csv-profile full
+
+# Analyst triage sheet
+vpp -f <input_file> --output-csv out_analyst.csv --csv-profile analyst
+
+# Audit traceability sheet
+vpp -f <input_file> --output-csv out_audit.csv --csv-profile audit
+```
+
+Note: non-default profiles require `--output-csv`.
 
 #### --output-md
 

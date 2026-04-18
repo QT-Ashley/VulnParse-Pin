@@ -32,6 +32,7 @@ CLI_FLAG_CASES: list[tuple[str, list[str]]] = [
     ("allow-regen", ["--allow_regen"]),
     ("no-nvd", ["--no-nvd"]),
     ("output-csv", ["--output-csv", "out.csv"]),
+    ("csv-profile-analyst", ["--output-csv", "out.csv", "--csv-profile", "analyst"]),
     ("output-md", ["--output-md", "summary.md"]),
     ("output-md-technical", ["--output-md-technical", "technical.md"]),
     ("allow-large", ["--allow-large"]),
@@ -124,6 +125,16 @@ def test_overlay_mode_requires_presentation_without_sys_argv_dependency(tmp_path
 
 def test_no_csv_sanitize_requires_output_csv_without_sys_argv_dependency(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     argv = _build_base_argv(tmp_path) + ["--no-csv-sanitize"]
+    monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        get_args(argv)
+
+    assert excinfo.value.code == 2
+
+
+def test_csv_profile_requires_output_csv_without_sys_argv_dependency(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    argv = _build_base_argv(tmp_path) + ["--csv-profile", "analyst"]
     monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
 
     with pytest.raises(SystemExit) as excinfo:

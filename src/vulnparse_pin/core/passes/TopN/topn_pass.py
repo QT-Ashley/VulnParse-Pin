@@ -34,6 +34,53 @@ if TYPE_CHECKING:
     from vulnparse_pin.core.passes.TopN.TN_triage_semantics import ConfidenceThreshold
 
 
+def _coerce_score_trace(rec: Dict[str, Any]) -> Dict[str, Any]:
+    trace = rec.get("score_trace", {}) if isinstance(rec, dict) else {}
+    return trace if isinstance(trace, dict) else {}
+
+
+def _score_trace_priority_signals(rec: Dict[str, Any]) -> Tuple[int, int, int]:
+    trace = _coerce_score_trace(rec)
+    contributors = trace.get("contributors")
+    if not isinstance(contributors, list):
+        contributors = []
+
+    cve_count = trace.get("cve_count")
+    try:
+        cve_count_int = int(cve_count)
+    except (TypeError, ValueError):
+        cve_count_int = len(contributors)
+    cve_count_int = max(0, cve_count_int)
+
+    exploitable_cve_count = 0
+    kev_cve_count = 0
+    for contributor in contributors:
+        if not isinstance(contributor, dict):
+            continue
+        if bool(contributor.get("exploit_available", False)):
+            exploitable_cve_count += 1
+        if bool(contributor.get("cisa_kev", False)):
+            kev_cve_count += 1
+
+    union_flags = trace.get("union_flags")
+    if not isinstance(union_flags, dict):
+        union_flags = {}
+
+    if exploitable_cve_count == 0 and bool(union_flags.get("exploit", False)):
+        exploitable_cve_count = 1
+    if kev_cve_count == 0 and bool(union_flags.get("kev", False)):
+        kev_cve_count = 1
+
+    return exploitable_cve_count, kev_cve_count, cve_count_int
+
+
+def _split_reason_text(reason_value: Any) -> Tuple[str, ...]:
+    reason_text = str(reason_value or "").strip()
+    if not reason_text:
+        return tuple()
+    return tuple(part.strip() for part in reason_text.split(";") if part.strip())
+
+
 # -------------------------------------------
 # TopN Pass
 # -------------------------------------------
@@ -256,13 +303,15 @@ class TopNPass(Pass):
         scoring: "DerivedPassResult",
         asset_to_findings: Dict[str, List[str]],
         rank_basis: str,
-        nmap_open_ports_by_asset: Dict[str, set] = {},
+        nmap_open_ports_by_asset: Optional[Dict[str, set]] = None,
     ) -> Tuple[
         Dict[str, ExposureInference],
         Dict[str, Tuple[RankedFindingRef, ...]],
         List[RankedAssetRef],
         Tuple[RankedFindingRef, ...],
     ]:
+        nmap_open_ports_by_asset = nmap_open_ports_by_asset or {}
+
         cpu_total = os.cpu_count() or 1
         worker_cap = self.process_workers if self.process_workers is not None else cpu_total
         num_workers = max(1, min(worker_cap, cpu_total))
@@ -281,6 +330,7 @@ class TopNPass(Pass):
                     "operational_score": rec.get("operational_score", 0.0),
                     "risk_band": rec.get("risk_band", "unknown"),
                     "reason": rec.get("reason", ""),
+                    "score_trace": rec.get("score_trace", {}),
                 }
 
         finding_attrs: Dict[str, Dict[str, Any]] = {}
@@ -362,8 +412,8 @@ class TopNPass(Pass):
 
         inference_by_asset: Dict[str, ExposureInference] = {}
         findings_by_asset_ranked: Dict[str, Tuple[RankedFindingRef, ...]] = {}
-        asset_rows: List[Tuple[float, int, int, int, str, Tuple[float, ...]]] = []
-        global_candidates: List[Tuple[float, str, str, Dict[str, Any]]] = []
+        asset_rows: List[Tuple[float, int, int, int, int, int, int, str, Tuple[float, ...]]] = []
+        global_candidates: List[Tuple[float, str, str, int, int, int, int, Dict[str, Any]]] = []
 
         try:
             with cf.ProcessPoolExecutor(max_workers=num_workers) as executor:
@@ -469,9 +519,19 @@ class TopNPass(Pass):
                 )
             return inference_by_asset, findings_by_asset_ranked, ranked_assets, global_top
 
-        asset_rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], x[4]))
+        asset_rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], -x[6], x[7]))
         ranked_assets: List[RankedAssetRef] = []
-        for i, (asset_score, _crit_high, _crit_rank, scorable_count, asset_id, top_scores) in enumerate(
+        for i, (
+            asset_score,
+            _crit_high,
+            _exploitable_findings,
+            _kev_findings,
+            _cve_breadth,
+            _crit_rank,
+            scorable_count,
+            asset_id,
+            top_scores,
+        ) in enumerate(
             asset_rows[: self.cfg.topn.max_assets],
             start=1,
         ):
@@ -489,10 +549,10 @@ class TopNPass(Pass):
 
         global_top: Tuple[RankedFindingRef, ...] = ()
         if self.cfg.topn.include_global_top_findings:
-            global_candidates.sort(key=lambda x: (-x[0], x[1], x[2]))
+            global_candidates.sort(key=lambda x: (-x[0], -x[3], -x[4], -x[5], -x[6], x[1], x[2]))
             selected = global_candidates[: self.cfg.topn.global_top_findings]
             refs: List[RankedFindingRef] = []
-            for i, (_, _, _, d) in enumerate(selected, start=1):
+            for i, (_, _, _, _, _, _, _, d) in enumerate(selected, start=1):
                 refs.append(
                     RankedFindingRef(
                         finding_id=d["finding_id"],
@@ -664,7 +724,7 @@ class TopNPass(Pass):
         nmap_confirmed_ports: set = frozenset(),
     ) -> tuple[RankedFindingRef, ...]:
 
-        rows: List[Tuple[float, int, str, RankedFindingRef]] = []
+        rows: List[Tuple[float, int, int, int, int, str, RankedFindingRef]] = []
 
 
         for fid in finding_ids:
@@ -677,7 +737,8 @@ class TopNPass(Pass):
             score = raw if rank_basis == "raw" else op
 
             band = str(rec.get("risk_band", "unknown"))
-            reasons = tuple(rec.get("reason", ()).strip().split(";"))
+            reasons = _split_reason_text(rec.get("reason", ""))
+            exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
 
             f = self._get_finding_by_id(scan, fid, ctx)
             port = getattr(f, "affected_port", None) if f else None
@@ -696,14 +757,14 @@ class TopNPass(Pass):
                 proto=str(proto) if proto is not None else None,
                 plugin_id=str(plugin_id) if plugin_id is not None else None
             )
-            # Sort key: score descending, nmap-confirmed descending, then fid ascending
+            # Sort key: score, combined-CVE exploit/KEV breadth, nmap confirmation, then stable ID.
             nmap_hit = 1 if isinstance(port, int) and port in nmap_confirmed_ports else 0
-            rows.append((score, nmap_hit, fid, ref))
+            rows.append((score, exploit_count, kev_count, cve_count, nmap_hit, fid, ref))
 
-        rows.sort(key=lambda x: (-x[0], -x[1], x[2]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], x[5]))
 
         output: List[RankedFindingRef] = []
-        for i, (_, _, _, ref) in enumerate(rows[:max_findings], start=1):
+        for i, (_, _, _, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
             output.append(_replace_rank(ref, i))
         return tuple(output)
 
@@ -739,6 +800,7 @@ class TopNPass(Pass):
                     "operational_score": rec.get("operational_score", 0.0),
                     "risk_band": rec.get("risk_band", "unknown"),
                     "reason": rec.get("reason", ""),
+                    "score_trace": rec.get("score_trace", {}),
                 }
         
         # Prepare finding attributes (port, proto, plugin_id)
@@ -831,18 +893,22 @@ class TopNPass(Pass):
         inference_by_asset: Dict[str, ExposureInference],
         rank_basis: str,
         ctx: Optional["RunContext"] = None,
-        nmap_open_ports_by_asset: Dict[str, set] = {},
+        nmap_open_ports_by_asset: Optional[Dict[str, set]] = None,
     ) -> List[RankedAssetRef]:
+        nmap_open_ports_by_asset = nmap_open_ports_by_asset or {}
         decay = self.cfg.topn.decay
         k = self.cfg.topn.k
 
-        rows: List[Tuple[float, int, int, int, int, str, RankedAssetRef]] = []
+        rows: List[Tuple[float, int, int, int, int, int, int, int, str, RankedAssetRef]] = []
 
 
         for asset_id, fids, in asset_to_findings.items():
             scores: List[float] = []
             crit_high = 0
             scorable_count = 0
+            exploitable_findings = 0
+            kev_findings = 0
+            cve_breadth = 0
 
             for fid in fids:
                 rec = self._get_finding_score_record(scoring, fid)
@@ -858,6 +924,13 @@ class TopNPass(Pass):
                 band = str(rec.get("risk_band", "unknown")).lower()
                 if band in ("critical", "high"):
                     crit_high += 1
+
+                exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
+                if exploit_count > 0:
+                    exploitable_findings += 1
+                if kev_count > 0:
+                    kev_findings += 1
+                cve_breadth += cve_count
 
             obs = self._collect_asset_observation(scan, asset_id, finding_ids=fids, ctx=ctx)
             crit_label = (obs.criticality or "").strip().lower() if obs else ""
@@ -880,14 +953,28 @@ class TopNPass(Pass):
                 inference=inference_by_asset.get(asset_id)
             )
 
-            # tie-break: score desc, band count desc, crit_rank desc, scorable count desc, nmap confirmed desc, asset id asc
+            # tie-break: score desc, high/critical count, combined-CVE exploit/KEV breadth,
+            # criticality rank, scored count, nmap confirmation, then asset ID asc.
             nmap_confirmed = 1 if nmap_open_ports_by_asset.get(asset_id) else 0
-            rows.append((asset_score, crit_high, crit_rank, scorable_count, nmap_confirmed, asset_id, ref))
+            rows.append(
+                (
+                    asset_score,
+                    crit_high,
+                    exploitable_findings,
+                    kev_findings,
+                    cve_breadth,
+                    crit_rank,
+                    scorable_count,
+                    nmap_confirmed,
+                    asset_id,
+                    ref,
+                )
+            )
 
-        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], x[5]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], -x[6], -x[7], x[8]))
 
         output: List[RankedAssetRef] = []
-        for i, (_, _, _, _, _, _, ref) in enumerate(rows, start=1):
+        for i, (_, _, _, _, _, _, _, _, _, ref) in enumerate(rows, start=1):
             output.append(_replace_rank(ref, i))
         return output
 
@@ -901,10 +988,11 @@ class TopNPass(Pass):
         rank_basis: str,
         ctx: Optional["RunContext"] = None,
         max_findings: int = 0,
-        nmap_open_ports_by_asset: Dict[str, set] = {},
+        nmap_open_ports_by_asset: Optional[Dict[str, set]] = None,
     ) -> Tuple[RankedFindingRef, ...]:
+        nmap_open_ports_by_asset = nmap_open_ports_by_asset or {}
 
-        rows: List[Tuple[float, int, str, str, RankedFindingRef]] = []
+        rows: List[Tuple[float, int, int, int, int, str, str, RankedFindingRef]] = []
 
 
         for asset_id, fids in asset_to_findings.items():
@@ -917,7 +1005,8 @@ class TopNPass(Pass):
                 op = float(rec.get("operational_score", raw))
                 score = raw if rank_basis == "raw" else op
                 band = str(rec.get("risk_band", "unknown"))
-                reasons = tuple(rec.get("reason", ()).strip().split(";"))
+                reasons = _split_reason_text(rec.get("reason", ""))
+                exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
 
                 f = self._get_finding_by_id(scan, fid, ctx)
                 port = getattr(f, "affected_port", None) if f else None
@@ -939,12 +1028,12 @@ class TopNPass(Pass):
 
                 nmap_ports = nmap_open_ports_by_asset.get(asset_id, set())
                 nmap_hit = 1 if isinstance(port, int) and port in nmap_ports else 0
-                rows.append((score, nmap_hit, asset_id, fid, ref))
+                rows.append((score, exploit_count, kev_count, cve_count, nmap_hit, asset_id, fid, ref))
 
-        rows.sort(key=lambda x: (-x[0], -x[1], x[2], x[3]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], x[5], x[6]))
 
         output: List[RankedFindingRef] = []
-        for i, (_, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
+        for i, (_, _, _, _, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
             output.append(_replace_rank(ref, i))
         return tuple(output)
 

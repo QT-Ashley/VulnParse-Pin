@@ -26,6 +26,130 @@ SENTINEL_SCORE = -1.0
 
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0B\x0E-\x1F\x7F]")
 
+CSV_PROFILES = {"full", "analyst", "audit"}
+
+FULL_PROFILE_COLUMNS = [
+    "asset_id",
+    "asset_hostname",
+    "asset_ip",
+    "asset_criticality",
+    "asset_avg_risk_score",
+    "finding_id",
+    "vuln_id",
+    "title",
+    "severity",
+    "authoritative_cve",
+    "cves",
+    "cvss_score",
+    "cvss_vector",
+    "epss_score",
+    "cisa_kev",
+    "exploit_available",
+    "exploit_ids",
+    "exploit_titles",
+    "exploit_urls",
+    "affected_port",
+    "protocol",
+    "solution",
+    "description",
+    "raw_score",
+    "operational_score",
+    "risk_band",
+    "score_reason(s)",
+    "topn_rank_basis",
+    "topn_asset_rank",
+    "topn_weighted_asset_score",
+    "topn_finding_rank",
+    "topn_global_rank",
+    "topn_exposure_score",
+    "topn_exposure_confidence",
+    "topn_externally_facing_inferred",
+    "topn_public_service_ports_inferred",
+    "topn_inference_evidence",
+]
+
+ANALYST_PROFILE_COLUMNS = [
+    "scan_source",
+    "scan_timestamp",
+    "asset_id",
+    "asset_hostname",
+    "asset_ip",
+    "asset_criticality",
+    "finding_id",
+    "vuln_id",
+    "title",
+    "severity",
+    "authoritative_cve",
+    "display_cve",
+    "raw_score",
+    "operational_score",
+    "risk_band",
+    "exploit_available_union",
+    "kev_union",
+    "cvss_score",
+    "epss_score",
+    "affected_port",
+    "protocol",
+    "topn_asset_rank",
+    "topn_finding_rank",
+    "topn_global_rank",
+    "topn_externally_facing_inferred",
+    "topn_exposure_confidence",
+    "remediation_bucket",
+]
+
+AUDIT_PROFILE_COLUMNS = ANALYST_PROFILE_COLUMNS + [
+    "aggregation_mode",
+    "decay_factor",
+    "aggregated_cve_count",
+    "included_contributors",
+    "aggregated_exploitable_cve_count",
+    "aggregated_kev_cve_count",
+    "primary_cve",
+    "nmap_open_port_union",
+    "score_reason(s)",
+    "top_contributor_1_cve",
+    "top_contributor_1_raw_contribution",
+    "top_contributor_2_cve",
+    "top_contributor_2_raw_contribution",
+    "topn_inference_evidence",
+]
+
+
+def _profile_columns(csv_profile: str) -> List[str]:
+    if csv_profile == "full":
+        return list(FULL_PROFILE_COLUMNS)
+    if csv_profile == "analyst":
+        return list(ANALYST_PROFILE_COLUMNS)
+    if csv_profile == "audit":
+        return list(AUDIT_PROFILE_COLUMNS)
+    raise ValueError(f"Unknown csv_profile '{csv_profile}'. Expected one of {sorted(CSV_PROFILES)}")
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _remediation_bucket(risk_band: str, kev_union: bool, exploit_union: bool) -> str:
+    band = str(risk_band or "").strip().lower()
+    if band == "critical" and (kev_union or exploit_union):
+        return "immediate"
+    if band in ("critical", "high"):
+        return "high"
+    if band == "medium":
+        return "medium"
+    return "low"
+
 def _flatten_exploits(exploit_refs: Any) -> tuple[str, str, str]:
     """
     Flatten exploit refs into semicolon-separated strings.
@@ -128,7 +252,14 @@ def _resolve_pass(scan: ScanResult, prefix: str) -> Optional[Dict[str, DerivedPa
         if isinstance(k, str) and k.startswith(prefix):
             return v
 
-def export_to_csv(ctx: "RunContext", scan_result: ScanResult, *, csv_path: str | Path, csv_sanitization: bool = True) -> None:
+def export_to_csv(
+    ctx: "RunContext",
+    scan_result: ScanResult,
+    *,
+    csv_path: str | Path,
+    csv_sanitization: bool = True,
+    csv_profile: str = "full",
+) -> None:
     """
     Export scan findings to a CSV file with streaming output.
 
@@ -136,14 +267,18 @@ def export_to_csv(ctx: "RunContext", scan_result: ScanResult, *, csv_path: str |
         scan_result (ScanResult): Parsed & enriched results
         csv_path (str): Destination CSV file path
         csv_sanitization (bool): Whether to sanitize CSV cells for Excel compatibility
+        csv_profile (str): CSV view profile. One of: full, analyst, audit
     """
+
+    profile = str(csv_profile or "full").strip().lower()
+    if profile not in CSV_PROFILES:
+        raise ValueError(f"Unknown csv_profile '{csv_profile}'. Expected one of {sorted(CSV_PROFILES)}")
 
     # ------- derived overlays --------
     scoring_pass = _resolve_pass(scan_result, "Scoring@")
     topn_pass = _resolve_pass(scan_result, "TopN@")
 
     scored_findings: Dict[str, ScoredFinding] = {}
-    asset_scores: Dict[str, float] = {}
 
     if scoring_pass:
         data = getattr(scoring_pass, "data", {})
@@ -151,9 +286,6 @@ def export_to_csv(ctx: "RunContext", scan_result: ScanResult, *, csv_path: str |
             sf = data.get("scored_findings")
             if isinstance(sf, dict):
                 scored_findings = sf
-            a = data.get("asset_scores")
-            if isinstance(a, dict):
-                asset_scores = a
 
     topn_asset_rank: Dict[str, Dict[str, Any]] = {}
     topn_finding_rank: Dict[str, Dict[str, Any]] = {}
@@ -173,7 +305,7 @@ def export_to_csv(ctx: "RunContext", scan_result: ScanResult, *, csv_path: str |
 
             fba = data.get("findings_by_asset", {})
             if isinstance(fba, dict):
-                for aid, flist in fba.items():
+                for _, flist in fba.items():
                     if not isinstance(flist, Sequence):
                         continue
                     for frec in flist:
@@ -195,21 +327,32 @@ def export_to_csv(ctx: "RunContext", scan_result: ScanResult, *, csv_path: str |
 
     ctx.logger.debug(f"Streaming CSV export for {total_findings} findings", extra={"vp_label": "CSV Exporter"})
 
+    fieldnames = _profile_columns(profile)
+    scan_metadata = getattr(scan_result, "scan_metadata", None)
+    scan_source = getattr(scan_metadata, "source", "") if scan_metadata is not None else ""
+    scan_timestamp_raw = getattr(scan_metadata, "scan_date", None) if scan_metadata is not None else None
+    scan_timestamp = str(scan_timestamp_raw) if scan_timestamp_raw is not None else ""
+
     # Stream CSV output - write header first, then process findings one by one
     with ctx.pfh.open_for_write(csv_path, mode = "w", encoding = "utf-8", label = "CSV-Output") as f:
-        writer = None
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
         rows_written = 0
 
         for asset in scan_result.assets:
             for finding in asset.findings:
                 # Build row data for this finding
-                row = _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_finding_rank, global_rank, topn_rank_basis)
-
-                # Initialize writer with fieldnames on first row
-                if writer is None:
-                    fieldnames = list(row.keys())
-                    writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-                    writer.writeheader()
+                row = _build_csv_row(
+                    asset,
+                    finding,
+                    scored_findings,
+                    topn_asset_rank,
+                    topn_finding_rank,
+                    global_rank,
+                    topn_rank_basis,
+                    scan_source,
+                    scan_timestamp,
+                )
 
                 # Write the row immediately
                 sanitized_row = _sanitize_csv_row(row) if csv_sanitization else row
@@ -223,7 +366,17 @@ def export_to_csv(ctx: "RunContext", scan_result: ScanResult, *, csv_path: str |
     ctx.logger.print_success(f"Results exported to CSV: {csv_path.name} ({rows_written} rows)")
 
 
-def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_finding_rank, global_rank, topn_rank_basis):
+def _build_csv_row(
+    asset,
+    finding,
+    scored_findings,
+    topn_asset_rank,
+    topn_finding_rank,
+    global_rank,
+    topn_rank_basis,
+    scan_source: str,
+    scan_timestamp: str,
+):
     """
     Build a single CSV row dictionary for a finding.
     Extracted for clarity and to enable streaming.
@@ -248,6 +401,44 @@ def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_findin
     operational_score = round(operational_score_val if operational_score_val is not None else SENTINEL_SCORE, 4)
     risk_band = srec.get("risk_band") if isinstance(srec, dict) else ""
     score_reason = srec.get("reason") if isinstance(srec, dict) else ""
+    score_trace = srec.get("score_trace", {}) if isinstance(srec, dict) else {}
+    if not isinstance(score_trace, dict):
+        score_trace = {}
+    union_flags = score_trace.get("union_flags", {})
+    if not isinstance(union_flags, dict):
+        union_flags = {}
+    contributors = score_trace.get("contributors", [])
+    if not isinstance(contributors, list):
+        contributors = []
+
+    display_cve = (
+        score_trace.get("display_cve")
+        or getattr(finding, "enrichment_source_cve", "")
+        or (getattr(finding, "cves", [""])[0] if getattr(finding, "cves", None) else "")
+    )
+    primary_cve = score_trace.get("primary_cve") or ""
+    aggregation_mode = score_trace.get("aggregation_mode") or ""
+    decay_factor = score_trace.get("decay_factor")
+    aggregated_cve_count = _to_int(score_trace.get("cve_count"), default=0)
+    included_contributors = _to_int(score_trace.get("included_contributors"), default=0)
+    exploit_count = 0
+    kev_count = 0
+    for c in contributors:
+        if not isinstance(c, dict):
+            continue
+        if bool(c.get("exploit_available", False)):
+            exploit_count += 1
+        if bool(c.get("cisa_kev", False)):
+            kev_count += 1
+
+    exploit_union = bool(getattr(finding, "exploit_available", False) or union_flags.get("exploit", False))
+    kev_union = bool(getattr(finding, "cisa_kev", False) or union_flags.get("kev", False))
+
+    aggregated_exploitable_cve_count = exploit_count if exploit_count > 0 else (1 if exploit_union else 0)
+    aggregated_kev_cve_count = kev_count if kev_count > 0 else (1 if kev_union else 0)
+
+    top_contrib_1 = contributors[0] if len(contributors) > 0 and isinstance(contributors[0], dict) else {}
+    top_contrib_2 = contributors[1] if len(contributors) > 1 and isinstance(contributors[1], dict) else {}
 
     # TopN Overlay
     topn_asset_rank_v = topn_arec.get("rank") if isinstance(topn_arec, dict) else None
@@ -270,6 +461,10 @@ def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_findin
     _epss = getattr(finding, "epss_score", None)
 
     return {
+        # ----- Scan Context -----
+        "scan_source": scan_source,
+        "scan_timestamp": scan_timestamp,
+
         # ----- Asset Truth -----
         "asset_id": aid,
         "asset_hostname": getattr(asset, "hostname", "") or "",
@@ -283,12 +478,15 @@ def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_findin
         "title": getattr(finding, "title", "") or "",
         "severity": getattr(finding, "severity", "") or "",
         "authoritative_cve": getattr(finding, "enrichment_source_cve", "") or "",
+        "display_cve": display_cve,
         "cves": ";".join(map(str, getattr(finding, "cves", []) or [])),
         "cvss_score": _cvss if _cvss is not None else SENTINEL_SCORE,
         "cvss_vector": getattr(finding, "cvss_vector", "") or "",
         "epss_score": _epss if _epss is not None else SENTINEL_SCORE,
         "cisa_kev": bool(getattr(finding, "cisa_kev", False)),
         "exploit_available": bool(getattr(finding, "exploit_available", False) or getattr(finding, "cisa_kev", False)),
+        "kev_union": kev_union,
+        "exploit_available_union": exploit_union,
         "exploit_ids": exploit_ids,
         "exploit_titles": exploit_titles,
         "exploit_urls": exploit_urls,
@@ -303,6 +501,19 @@ def _build_csv_row(asset, finding, scored_findings, topn_asset_rank, topn_findin
         "operational_score": operational_score,
         "risk_band": risk_band,
         "score_reason(s)": score_reason,
+        "aggregation_mode": aggregation_mode,
+        "decay_factor": _to_float(decay_factor, default=0.0) if decay_factor is not None else SENTINEL_SCORE,
+        "aggregated_cve_count": aggregated_cve_count,
+        "included_contributors": included_contributors,
+        "aggregated_exploitable_cve_count": aggregated_exploitable_cve_count,
+        "aggregated_kev_cve_count": aggregated_kev_cve_count,
+        "primary_cve": primary_cve,
+        "nmap_open_port_union": bool(union_flags.get("nmap_open_port", False)),
+        "top_contributor_1_cve": top_contrib_1.get("cve_id", ""),
+        "top_contributor_1_raw_contribution": _to_float(top_contrib_1.get("raw_contribution"), default=SENTINEL_SCORE),
+        "top_contributor_2_cve": top_contrib_2.get("cve_id", ""),
+        "top_contributor_2_raw_contribution": _to_float(top_contrib_2.get("raw_contribution"), default=SENTINEL_SCORE),
+        "remediation_bucket": _remediation_bucket(risk_band, kev_union, exploit_union),
 
         # ---- TopN Overlay ----
         "topn_rank_basis": topn_rank_basis,

@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD024 -->
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -44,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Services.nmap_ctx_config`: passes the runtime `nmap_ctx` config dict to all passes without re-reading config files.
 - Decision ledger events for all four `NmapAdapterPass` execution paths (`NMAP_CTX_DISABLED`, `NMAP_CTX_ENABLED`, `NMAP_CTX_FAILED`, `NMAP_CTX_INVALID_FORMAT`) with structured evidence fields (host count, matched asset count, join rate, source file, error text).
 - `DecisionReasonCodes` extended with four new nmap_ctx reason codes.
+- CSV output presentation profiles via `--csv-profile` (`full`, `analyst`, `audit`) with default backward-compatible schema preserved under `full`.
+- Markdown report enrichment to surface aggregated whole-of-CVEs context in top-risk sections (Agg CVEs, Agg Exploitable, Agg KEV).
 
 ### Changed
 
@@ -62,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `policy_values` dict in `_score_parallel` extended with `nmap_port_bonus` key so the process-pool scoring path stays in sync with the inline path.
 - Packaged scoring config advanced to `version: v2` to reflect whole-of-CVEs scoring semantics.
 - `ScoringPass` now writes `raw_risk_score`, `risk_score`, `risk_band`, and `score_trace` back onto mutable finding objects so vulnerability-level JSON output carries the same audit trace as the derived scoring artifact.
+- TopN ranking tie-breakers now account for whole-of-CVEs breadth signals from scoring traces (exploitable contributor count, KEV contributor count, and total contributor count) before falling back to stable IDs.
+- Summary metrics now consume `Scoring@2.0` trace union flags and contributor metadata so overview counts, top-risk entries, and remediation priority buckets reflect aggregated CVE context rather than only finding-level booleans.
+- Output orchestration now threads `--csv-profile` through CSV export generation.
 
 ### Performance
 

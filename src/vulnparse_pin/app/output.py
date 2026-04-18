@@ -54,7 +54,13 @@ def run_output_and_summary(
         else:
             write_output_fn(ctx, data=scan_result, file_path=json_output, pretty_print=args.pretty_print)
         # CSV
-        export_to_csv(ctx, scan_result, csv_path=csv_output, csv_sanitization=csv_sanitization_enabled)
+        export_to_csv(
+            ctx,
+            scan_result,
+            csv_path=csv_output,
+            csv_sanitization=csv_sanitization_enabled,
+            csv_profile=getattr(args, "csv_profile", "full"),
+        )
         
         # Markdown Exec
         generate_markdown_report(ctx, scan_result, md_output, report_type="executive")
@@ -72,7 +78,13 @@ def run_output_and_summary(
                 write_output_fn(ctx, data=scan_result, file_path=json_output, pretty_print=args.pretty_print)
 
         if args.output_csv:
-            export_to_csv(ctx, scan_result, csv_path=csv_output, csv_sanitization=csv_sanitization_enabled)
+            export_to_csv(
+                ctx,
+                scan_result,
+                csv_path=csv_output,
+                csv_sanitization=csv_sanitization_enabled,
+                csv_profile=getattr(args, "csv_profile", "full"),
+            )
 
         if md_output:
             generate_markdown_report(ctx, scan_result, md_output, report_type="executive")

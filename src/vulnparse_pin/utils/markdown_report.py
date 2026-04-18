@@ -142,6 +142,9 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
     
     for i, cve in enumerate(remediation['immediate_cves'][:5], 1):
         md += f"{i}. `{cve}`\n"
+
+    if not remediation['immediate_cves']:
+        md += "- No immediate-action CVEs detected in this scan window.\n"
     
     md += f"""
 
@@ -149,8 +152,8 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
 
 ## 📈 Top {len(top_risks)} Highest Risk CVEs (De-duplicated, Derived Risk)
 
-| CVE | Finding Risk (Raw) | Band | Exploit? | KEV? | CVSS | Occurrences | Primary Drivers |
-|-----|---------------------|------|----------|------|------|-------------|-----------------|
+| CVE | Finding Risk (Raw) | Band | Exploit? | KEV? | Agg CVEs | Agg Exploitable | Agg KEV | CVSS | Occurrences | Primary Drivers |
+|-----|---------------------|------|----------|------|----------|-----------------|---------|------|-------------|-----------------|
 """
     
     for risk in top_risks:
@@ -158,10 +161,14 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
         kev_icon = "✅" if risk['kev_listed'] else "❌"
         cvss = risk.get('cvss_base_score', 'N/A')
         occurrences = risk.get('occurrence_count', 1)
+        agg_count = int(risk.get('aggregated_cve_count', 1) or 1)
+        agg_exploit = int(risk.get('aggregated_exploitable_cve_count', 0) or 0)
+        agg_kev = int(risk.get('aggregated_kev_cve_count', 0) or 0)
         
         md += (
             f"| {risk['cve']} | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
-            f"{exploit_icon} | {kev_icon} | {cvss} | {occurrences:,} | {_risk_drivers(risk)} |\n"
+            f"{exploit_icon} | {kev_icon} | {agg_count:,} | {agg_exploit:,} | {agg_kev:,} | "
+            f"{cvss} | {occurrences:,} | {_risk_drivers(risk)} |\n"
         )
     
     md += """
@@ -210,6 +217,7 @@ These are the recommended most vulnerable assets to target first for patching ba
 3. **Patch Management:** Implement a regular patching cycle for the {remediation['high_priority']} high-priority findings
 4. **Monitoring:** Deploy detection rules for CVEs listed in CISA KEV catalog
 5. **Interpretation Note:** Treat scanner severity as input signal; use derived risk band and raw score to break ties within large critical buckets
+6. **Aggregation Context:** Where Agg CVEs > 1, prioritize remediation by addressing primary shared root-cause components first
 
 ---
 
@@ -342,8 +350,8 @@ Use this distribution for remediation prioritization and queue ordering.
 
 ### Top {len(top_risks)} CVEs by Finding Risk Score (Raw, Derived)
 
-| # | CVE | Finding Risk (Raw) | Band | CVSS | EPSS | Exploit | KEV | Occurrences | Primary Drivers |
-|---|-----|---------------------|------|------|------|---------|-----|-------------|-----------------|
+| # | CVE | Finding Risk (Raw) | Band | CVSS | EPSS | Exploit | KEV | Agg CVEs | Agg Exploitable | Agg KEV | Occurrences | Primary Drivers |
+|---|-----|---------------------|------|------|------|---------|-----|----------|-----------------|---------|-------------|-----------------|
 """
     
     for i, risk in enumerate(top_risks, 1):
@@ -352,10 +360,14 @@ Use this distribution for remediation prioritization and queue ordering.
         epss = f"{risk.get('epss_score', 0.0):.4f}" if risk.get('epss_score') else "N/A"
         cvss = risk.get('cvss_base_score', 'N/A')
         occurrences = risk.get('occurrence_count', 1)
+        agg_count = int(risk.get('aggregated_cve_count', 1) or 1)
+        agg_exploit = int(risk.get('aggregated_exploitable_cve_count', 0) or 0)
+        agg_kev = int(risk.get('aggregated_kev_cve_count', 0) or 0)
         
         md += (
             f"| {i} | `{risk['cve']}` | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
-            f"{cvss} | {epss} | {exploit} | {kev} | {occurrences:,} | {_risk_drivers(risk)} |\n"
+            f"{cvss} | {epss} | {exploit} | {kev} | {agg_count:,} | {agg_exploit:,} | {agg_kev:,} | "
+            f"{occurrences:,} | {_risk_drivers(risk)} |\n"
         )
     
     md += f"""
@@ -388,6 +400,7 @@ Use this distribution for remediation prioritization and queue ordering.
 - Scanner severity and derived risk band are intentionally shown separately to reduce prioritization ambiguity
 - Findings with CVSS v3.1 scores are prioritized; v2.0 used as fallback
 - Exploit availability indicates public proof-of-concept code exists
+- "Agg CVEs" fields indicate whole-of-CVEs aggregation breadth from score_trace contributors
 
 ---
 

@@ -411,3 +411,105 @@ def test_runmanifest_overwrite_replaces_tampered_file(tmp_path: Path):
     assert verified["manifest_version"] == "1.0"
     assert "TAMPERED_BY_TEST" not in manifest_path.read_text(encoding="utf-8")
     assert baseline_hash != manifest_path.read_bytes()
+
+
+def test_runmanifest_captures_whole_cve_alignment_metrics(tmp_path: Path):
+    ctx = _make_context(tmp_path)
+    scan = _make_scan_result()
+    scanner_input = tmp_path / "input.nessus"
+    scanner_input.write_text("dummy", encoding="utf-8")
+
+    scoring = DerivedPassResult(
+        meta=PassMeta(name="Scoring", version="2.0", created_at_utc="2026-03-29T00:00:00Z"),
+        data={
+            "coverage": {"total_findings": 2, "scored_findings": 2, "coverage_ratio": 1.0},
+            "scored_findings": {
+                "F1": {
+                    "raw_score": 9.1,
+                    "operational_score": 9.1,
+                    "risk_band": "Critical",
+                    "reason": "Whole-of-CVEs Aggregated",
+                    "score_trace": {
+                        "aggregation_mode": "stacked_decay",
+                        "union_flags": {"exploit": True, "kev": False},
+                    },
+                },
+                "F2": {
+                    "raw_score": 8.2,
+                    "operational_score": 8.2,
+                    "risk_band": "High",
+                    "reason": "Whole-of-CVEs Aggregated",
+                    "score_trace": {
+                        "aggregation_mode": "stacked_decay",
+                        "union_flags": {"exploit": False, "kev": True},
+                    },
+                },
+            },
+        },
+    )
+
+    topn = DerivedPassResult(
+        meta=PassMeta(name="TopN", version="1.0", created_at_utc="2026-03-29T00:00:01Z"),
+        data={
+            "rank_basis": "raw",
+            "k": 3,
+            "decay": [1.0, 0.7, 0.4],
+            "assets": [{"asset_id": "asset-a", "rank": 1}],
+            "findings_by_asset": {
+                "asset-a": [
+                    {"finding_id": "F1", "rank": 1, "reasons": ["Whole-of-CVEs Aggregated", "Nmap Port Observed"]},
+                    {"finding_id": "F2", "rank": 2, "reasons": ["Whole-of-CVEs Aggregated"]},
+                ]
+            },
+            "global_top_findings": [{"finding_id": "F1", "rank": 1}],
+        },
+    )
+
+    summary = DerivedPassResult(
+        meta=PassMeta(name="Summary", version="1.0", created_at_utc="2026-03-29T00:00:02Z"),
+        data={
+            "overview": {"total_assets": 1, "total_findings": 2},
+            "top_risks": [
+                {
+                    "cve": "CVE-2026-5000",
+                    "finding_risk_score": 9.1,
+                    "aggregated_cve_count": 3,
+                    "aggregated_exploitable_cve_count": 1,
+                }
+            ],
+            "remediation_priorities": {
+                "immediate_action": 1,
+                "high_priority": 1,
+                "medium_priority": 0,
+            },
+        },
+    )
+
+    scan.derived = DerivedContext(
+        passes={
+            "Scoring@2.0": scoring,
+            "TopN@1.0": topn,
+            "Summary@1.0": summary,
+        }
+    )
+
+    manifest = build_runmanifest(
+        ctx=ctx,
+        _args=SimpleNamespace(),
+        scan_result=scan,
+        sources={"exploitdb": False, "kev": False, "epss": False, "nvd": "Disabled", "stats": {}},
+        scanner_input=scanner_input,
+        output_paths={"json": None, "csv": None, "md": None, "md_technical": None},
+    )
+
+    metrics_by_name = {p["name"]: p["metrics"] for p in manifest["pass_summaries"]}
+
+    assert metrics_by_name["Scoring"]["whole_cve_trace_findings"] == 2
+    assert metrics_by_name["Scoring"]["union_exploit_findings"] == 1
+    assert metrics_by_name["Scoring"]["union_kev_findings"] == 1
+
+    assert metrics_by_name["TopN"]["whole_cve_reason_mentions"] == 2
+
+    assert metrics_by_name["Summary"]["top_risks_with_aggregated_context"] == 1
+    assert metrics_by_name["Summary"]["immediate_action"] == 1
+    assert metrics_by_name["Summary"]["high_priority"] == 1

@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD009 MD026 MD032 MD033 MD041 MD045 -->
+
 <p align="center">
   <img src="/assets/logos/vpp_logo_pack_transparent/logo.svg" width="420">
 </p>
@@ -210,6 +212,16 @@ After installation, you can run VulnParse-Pin with your own scanner exports:
 
 ```bash
 vpp -f path/to/your_scan.[nessus|xml] -o <output_file>.json -pp -oC <output_file>.csv -oM <output_file>.md -oMT <output_file>_technical.md --output-runmanifest <output_file>_runmanifest.json
+```
+
+CSV profile examples for reporting workflows:
+
+```bash
+# Analyst-facing triage CSV
+vpp -f path/to/your_scan.[nessus|xml] --output-csv <output_file>_analyst.csv --csv-profile analyst
+
+# Audit-facing traceability CSV
+vpp -f path/to/your_scan.[nessus|xml] --output-csv <output_file>_audit.csv --csv-profile audit
 ```
 
 Verify a previously generated runmanifest artifact without rerunning the pipeline:

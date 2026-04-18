@@ -141,6 +141,12 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     enrich_group.add_argument("--allow_regen", action="store_true", help="Allows regeneration of cache meta and checksum if missing using 'best-effort'.", default=False)
     enrich_group.add_argument("--no-nvd", action="store_true", help="Disables NVD Enrichment module[No NVD enrichment processing]")
     output_group.add_argument("--output-csv", "-oC", type=str, metavar="PATH", help="Path to save enriched results in CSV format (optional)")
+    output_group.add_argument(
+        "--csv-profile",
+        choices=["full", "analyst", "audit"],
+        default="full",
+        help="CSV output profile. 'full' preserves legacy columns; 'analyst' and 'audit' provide focused triage/reporting views.",
+    )
     output_group.add_argument("--output-md", "-oM", type=str, metavar="PATH", help="Generate executive summary Markdown report")
     output_group.add_argument("--output-md-technical", "-oMT", type=str, metavar="PATH", help="Generate detailed technical Markdown report")
     output_group.add_argument("--output-runmanifest", "-oRM", type=str, metavar="PATH", help="Generate run manifest JSON artifact with embedded decision ledger")
@@ -234,6 +240,9 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     if (not args.output_csv) and args.no_csv_sanitize:
         parser.error("[Security Warning] --no-csv-sanitize requires --output-csv")
+
+    if args.csv_profile != "full" and not args.output_csv:
+        parser.error("--csv-profile requires --output-csv when using non-default profiles.")
 
     if (not args.no_exploit) and (args.exploit_source == "offline") and (not args.exploit_db):
         parser.error("Offline exploit source requires --exploit-db to be set.")

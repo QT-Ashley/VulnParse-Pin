@@ -89,6 +89,7 @@ Key mechanics:
 - Decay-weighted top-k finding contribution per asset
 - Configurable ranking basis (`raw` / policy-defined basis)
 - Predicate-driven exposure inference confidence levels
+- Combined-CVE tie-break alignment with `Scoring@2.0` traces (exploitable/KEV contributor breadth before deterministic ID fallback)
 
 ## Phase 4: Summary pass (`Summary@1.0`)
 
@@ -114,6 +115,7 @@ Typical summary output includes:
 - Risk-band distribution
 - Top-N high-risk finding list
 - Remediation-priority breakdown
+- Aggregated-CVE context fields pulled from `score_trace` (display CVE, contributor breadth, union KEV/exploit flags)
 
 ## Phase 5: Output shaping
 
