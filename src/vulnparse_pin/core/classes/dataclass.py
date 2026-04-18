@@ -167,6 +167,7 @@ class Services:
     post_enrichment_index: Optional[PostEnrichmentIndex] = None
     ledger: Optional["LedgerService"] = None
     runmanifest_mode: str = "compact"
+    nmap_ctx_config: Optional[dict] = None
 
 @dataclass(frozen = True)
 class RunContext:

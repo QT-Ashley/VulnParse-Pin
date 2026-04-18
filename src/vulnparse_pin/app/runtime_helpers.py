@@ -76,7 +76,7 @@ def select_years(ctx, years_seen: set[int]) -> set[int]:
         raise RuntimeError("Unable to normalize years. Killswitching for failure mode.")
 
 
-def load_score_policy(config: dict) -> ScoringPolicyV1:
+def load_score_policy(config: dict, nmap_port_bonus: float = 0.0) -> ScoringPolicyV1:
     epss = config.get("epss", {})
     evp = config.get("evidence_points", {})
     bands = config.get("bands", {})
@@ -101,6 +101,7 @@ def load_score_policy(config: dict) -> ScoringPolicyV1:
         w_exploit = float(weights.get("exploit", 2)),
         max_raw_risk = float(risk_ceiling.get("max_raw_risk", 15)),
         max_op_risk = float(risk_ceiling.get("max_operational_risk", 10.0)),
+        nmap_port_bonus = float(nmap_port_bonus),
     )
 
 

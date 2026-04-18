@@ -32,3 +32,4 @@ class ScoringPolicyV1:
 
     max_raw_risk: float
     max_op_risk: float
+    nmap_port_bonus: float = 0.0

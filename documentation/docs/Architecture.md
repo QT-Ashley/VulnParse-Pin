@@ -36,7 +36,7 @@ At runtime, the orchestrator does the following:
 3. Validate input and detect schema/parser
 4. Parse input into normalized `ScanResult`
 5. Enrich findings using configured feed/cache strategy
-6. Execute derived passes (`ScoringPass`, `TopNPass`, `SummaryPass`)
+6. Execute derived passes (`NmapAdapterPass`, `ScoringPass`, `TopNPass`, `SummaryPass`)
 7. Emit output artifacts (JSON and optional CSV)
 
 ## Architectural invariants
@@ -59,7 +59,8 @@ At runtime, the orchestrator does the following:
 1. [Detection and Parsing](Detection%20and%20Parsing.md)
 2. [Pipeline System](Pipeline%20System.md)
 3. [Pass Phases](Pass%20Phases.md)
-4. [Performance Optimizations](Performance%20Optimizations.md)
-5. [Caching Deep Dive](Caching%20Deep%20Dive.md)
-6. [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
-7. [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)
+4. [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md)
+5. [Performance Optimizations](Performance%20Optimizations.md)
+6. [Caching Deep Dive](Caching%20Deep%20Dive.md)
+7. [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
+8. [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)

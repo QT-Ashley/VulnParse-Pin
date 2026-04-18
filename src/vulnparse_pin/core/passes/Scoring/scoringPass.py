@@ -78,6 +78,9 @@ def _score_components_from_policy(
         reasons.append("Exploit Available")
 
     if nmap_open_port:
+        nmap_bonus = float(policy_values.get("nmap_port_bonus", 0.0))
+        if nmap_bonus > 0:
+            raw += nmap_bonus
         reasons.append("Nmap Port Observed")
 
     max_raw_risk = float(policy_values["max_raw_risk"])
@@ -483,6 +486,7 @@ class ScoringPass(Pass):
             "band_high": self.policy.band_high,
             "band_medium": self.policy.band_medium,
             "band_low": self.policy.band_low,
+            "nmap_port_bonus": self.policy.nmap_port_bonus,
         }
 
         work_items: List[Tuple[str, str, Dict[str, Any]]] = []
@@ -733,6 +737,8 @@ class ScoringPass(Pass):
 
         # NMAP Component
         if nmap_open_port:
+            if pol.nmap_port_bonus > 0:
+                raw += pol.nmap_port_bonus
             reasons.append("Nmap Port Observed")
 
         score = (raw / pol.max_raw_risk) * pol.max_op_risk

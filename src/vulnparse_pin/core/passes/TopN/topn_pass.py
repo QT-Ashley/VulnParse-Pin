@@ -101,7 +101,10 @@ class TopNPass(Pass):
             return DerivedPassResult(meta=meta, data=data)
 
         # 1 Build lookup index
-        nmap_open_ports_by_asset = self._get_nmap_open_ports_by_asset(scan)
+        nmap_ctx_cfg = getattr(getattr(ctx, "services", None), "nmap_ctx_config", None) or {}
+        nmap_open_ports_by_asset: Dict[str, set] = {}
+        if nmap_ctx_cfg.get("port_tiebreak_enabled", True):
+            nmap_open_ports_by_asset = self._get_nmap_open_ports_by_asset(scan)
         asset_to_findings = self._index_findings_by_asset(scan)     # { asset_id: [fid, fid, fid] }
         # Count total findings
         total_findings = sum(len(fids) for fids in asset_to_findings.values())

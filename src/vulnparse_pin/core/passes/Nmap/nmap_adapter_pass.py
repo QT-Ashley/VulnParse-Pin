@@ -17,6 +17,7 @@ from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from defusedxml.ElementTree import fromstring
 
+from vulnparse_pin.core.classes.decision_reasons import DecisionReasonCodes
 from vulnparse_pin.core.classes.pass_classes import DerivedPassResult, Pass, PassMeta
 from vulnparse_pin.core.passes.types import NmapAdapterPassOutput
 
@@ -52,6 +53,18 @@ class NmapAdapterPass(Pass):
                 asset_open_ports={},
                 nse_cves_by_asset={},
             )
+            services = getattr(ctx, "services", None)
+            ledger = getattr(services, "ledger", None)
+            if ledger is not None:
+                ledger.append_event(
+                    component="nmap_adapter",
+                    event_type="decision",
+                    subject_ref="nmap_ctx:summary",
+                    reason_code=DecisionReasonCodes.NMAP_CTX_DISABLED,
+                    reason_text="Nmap context adapter disabled (no source provided).",
+                    factor_refs=["--nmap-ctx"],
+                    evidence={"status": "disabled"},
+                )
             return DerivedPassResult(
                 meta=PassMeta(
                     name=self.name,
@@ -77,6 +90,18 @@ class NmapAdapterPass(Pass):
                 asset_open_ports={},
                 nse_cves_by_asset={},
             )
+            services = getattr(ctx, "services", None)
+            ledger = getattr(services, "ledger", None)
+            if ledger is not None:
+                ledger.append_event(
+                    component="nmap_adapter",
+                    event_type="decision",
+                    subject_ref="nmap_ctx:summary",
+                    reason_code=DecisionReasonCodes.NMAP_CTX_FAILED,
+                    reason_text="Nmap context adapter source could not be read or parsed.",
+                    factor_refs=["--nmap-ctx"],
+                    evidence={"status": "error", "error": str(e), "source_file": str(self.nmap_source)},
+                )
             return DerivedPassResult(
                 meta=PassMeta(
                     name=self.name,
@@ -97,6 +122,18 @@ class NmapAdapterPass(Pass):
                 asset_open_ports={},
                 nse_cves_by_asset={},
             )
+            services = getattr(ctx, "services", None)
+            ledger = getattr(services, "ledger", None)
+            if ledger is not None:
+                ledger.append_event(
+                    component="nmap_adapter",
+                    event_type="decision",
+                    subject_ref="nmap_ctx:summary",
+                    reason_code=DecisionReasonCodes.NMAP_CTX_INVALID_FORMAT,
+                    reason_text="Nmap context adapter source is not valid nmaprun XML.",
+                    factor_refs=["--nmap-ctx"],
+                    evidence={"status": "invalid_format", "root_tag": str(root.tag), "source_file": str(source_file)},
+                )
             return DerivedPassResult(
                 meta=PassMeta(
                     name=self.name,
@@ -143,6 +180,28 @@ class NmapAdapterPass(Pass):
             output.matched_asset_count,
             extra={"vp_label": "NmapAdapterPass"},
         )
+
+        services = getattr(ctx, "services", None)
+        ledger = getattr(services, "ledger", None)
+        if ledger is not None:
+            total_assets = len(asset_keys)
+            join_rate = round(output.matched_asset_count / total_assets, 4) if total_assets > 0 else 0.0
+            ledger.append_event(
+                component="nmap_adapter",
+                event_type="decision",
+                subject_ref="nmap_ctx:summary",
+                reason_code=DecisionReasonCodes.NMAP_CTX_ENABLED,
+                reason_text="Nmap context adapter parsed and matched against scan assets.",
+                factor_refs=["--nmap-ctx", "nmap_ctx.port_tiebreak_enabled"],
+                evidence={
+                    "status": "enabled",
+                    "source_file": str(source_file),
+                    "host_count": output.host_count,
+                    "matched_asset_count": output.matched_asset_count,
+                    "unmatched_asset_count": len(output.unmatched_asset_ids),
+                    "join_rate": join_rate,
+                },
+            )
 
         return DerivedPassResult(
             meta=PassMeta(

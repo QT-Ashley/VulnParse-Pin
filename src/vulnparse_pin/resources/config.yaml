@@ -59,3 +59,7 @@ enrichment:
       exploit_signal_on_high_severity: false
       exploit_signal_confidence_bonus: 5
 
+nmap_ctx:
+  port_tiebreak_enabled: true
+  scoring_port_bonus: 0.0
+

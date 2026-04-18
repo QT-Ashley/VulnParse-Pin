@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GHSA pipeline online source mode enabled via `enrichment.ghsa_source: online`; loader now prefetches a bounded CVE set for run-time enrichment without local advisory files.
 - GHSA package-based fallback matching wired: findings now derive package tokens from title/description/plugin text and match against GHSA advisory package index when CVE-based GHSA misses.
 - GHSA confidence policy now supports advisory-derived signal tuning through `confidence.ghsa_signals`, including bounded advisory bonuses and optional high-severity exploitability promotion.
+- `NmapAdapterPass` (`nmap_adapter@1.0`) wired as a derived-context pass: parses Nmap XML output, maps open ports and NSE CVEs to scan asset IDs, and writes a `DerivedPassResult` that downstream passes consume without mutating findings.
+- `--nmap-ctx` / `-nmap` CLI flag: accepts a path to a Nmap XML file (`.xml` extension enforced); opt-in only, `None` by default.
+- TopN ranking tiebreak on Nmap-confirmed open ports: equal-score findings and assets that have a confirmed open port rank higher than those without, producing deterministic ordering without changing numeric scores.
+- `nmap_ctx` config section in `config.yaml` and `config.schema.json` with two policy knobs:
+  - `port_tiebreak_enabled` (bool, default `true`): gates the TopN ranking tiebreak.
+  - `scoring_port_bonus` (float, 0.0–5.0, default `0.0`): optional raw-score addend applied when an Nmap open port is confirmed on a finding's service port.
+- `ScoringPolicyV1.nmap_port_bonus` field: sourced from `nmap_ctx.scoring_port_bonus`; propagated through both inline and process-pool scoring paths.
+- `Services.nmap_ctx_config`: passes the runtime `nmap_ctx` config dict to all passes without re-reading config files.
+- Decision ledger events for all four `NmapAdapterPass` execution paths (`NMAP_CTX_DISABLED`, `NMAP_CTX_ENABLED`, `NMAP_CTX_FAILED`, `NMAP_CTX_INVALID_FORMAT`) with structured evidence fields (host count, matched asset count, join rate, source file, error text).
+- `DecisionReasonCodes` extended with four new nmap_ctx reason codes.
 
 ### Changed
 
@@ -44,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GHSA `enrich_finding(..., online=True)` now performs real CVE-based GHSA API lookup when offline maps miss, then indexes returned advisories for subsequent cache hits.
 - Enrichment core now accepts and processes `ghsa_package_data` alongside `ghsa_data` so package-derived GHSA matches contribute references and confidence metadata.
 - GHSA online requests now build authenticated GitHub advisory headers when a token env var is present, without logging secret values.
+- `load_score_policy` in `runtime_helpers.py` now accepts `nmap_port_bonus` kwarg and threads it through to `ScoringPolicyV1`.
+- `policy_values` dict in `_score_parallel` extended with `nmap_port_bonus` key so the process-pool scoring path stays in sync with the inline path.
 
 ### Performance
 

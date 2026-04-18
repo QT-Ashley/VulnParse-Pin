@@ -37,6 +37,7 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 - [Pipeline System](Pipeline%20System.md)
 - [Pass Phases](Pass%20Phases.md)
 - [Identity Contract](Identity%20Contract.md)
+- [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md)
 
 ## Security and governance
 
@@ -53,7 +54,6 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 ## Operations and performance
 
 - [Configs](Configs.md)
-- [Testing Guide](Testing%20Guide.md)
 - [Testing Guide](Testing%20Guide.md)
 - [Performance Optimizations](Performance%20Optimizations.md)
 - [Benchmarks](Benchmarks.md)

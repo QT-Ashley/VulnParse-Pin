@@ -27,7 +27,7 @@ Default pass order:
 
 ## Scoring policy model
 
-`ScoringPolicyV1` is loaded from `scoring.json` using `load_score_policy(...)`.
+`ScoringPolicyV1` is loaded from `scoring.json` using `load_score_policy(...)` and supplemented by `nmap_ctx.scoring_port_bonus` from `config.yaml`.
 
 Core policy groups:
 
@@ -36,6 +36,7 @@ Core policy groups:
 - band thresholds (`critical`, `high`, `medium`, `low`)
 - weights (`epss_high`, `epss_medium`, `kev`, `exploit`)
 - risk ceiling (`max_raw_risk`, `max_operational_risk`)
+- Nmap context (`nmap_port_bonus`, default `0.0`)
 
 Bootstrap validates monotonic bands and non-negative constraints before pass execution.
 
@@ -48,6 +49,7 @@ Scoring computation in `scoringPass.py`:
 3. Apply EPSS high or medium multipliers based on EPSS threshold tiers.
 4. Add KEV evidence contribution when KEV is present.
 5. Add exploit evidence contribution when exploit signal is present.
+6. Add Nmap port bonus when a confirmed open port matches the finding's service port and `scoring_port_bonus > 0`.
 
 `raw_score` is the composite pre-normalization score.
 
@@ -98,6 +100,18 @@ TopN policy is loaded from `tn_triage.json` and normalized into `TNTriageConfig`
 - rule set
 
 Semantic validation enforces invariants and rejects invalid structures.
+
+## Nmap context tiebreak
+
+When `nmap_ctx.port_tiebreak_enabled` is `true` (default), TopN ranking injects an `nmap_hit` flag into all three sort key positions:
+
+- Finding sort within asset: `(-score, -nmap_hit, finding_id)`
+- Asset sort: `(-score, -crit_high, -crit_rank, -scorable_count, -nmap_confirmed, asset_id)`
+- Global finding sort: `(-score, -nmap_hit, asset_id, finding_id)`
+
+This promotes findings and assets with confirmed open ports within equal-score groups without altering numeric scores. The tiebreak is disabled when the pass returns an empty port index (no `--nmap-ctx` provided, or `port_tiebreak_enabled: false`).
+
+See [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md) for full configuration details and operational guidance.
 
 ## TopN ranking flow
 
@@ -167,4 +181,5 @@ Derived outputs are append-only under versioned pass keys.
 - [Configs](Configs.md)
 - [Pass Phases](Pass%20Phases.md)
 - [Pipeline System](Pipeline%20System.md)
+- [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md)
 - [CVSS vs VulnParse-Pin: Technical Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)

@@ -105,7 +105,9 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
 
     topn_pol: TriageConfigLoadResult = load_tn_config(ctx, topn_cfg)
 
-    score_pol: ScoringPolicyV1 = load_score_policy(scoring_cfg)
+    nmap_ctx_cfg = cfg_yaml.get("nmap_ctx", {}) or {}
+    nmap_port_bonus = float(nmap_ctx_cfg.get("scoring_port_bonus", 0.0))
+    score_pol: ScoringPolicyV1 = load_score_policy(scoring_cfg, nmap_port_bonus=nmap_port_bonus)
     try:
         _require(score_pol.w_epss_high >= 0, "w_epss_high must be >= 0")
         _require(score_pol.w_epss_medium >= 0, "w_epss_medium must be >= 0")
@@ -153,6 +155,7 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
         topn_config=topn_pol.config,
         ledger=LedgerService(),
         runmanifest_mode=getattr(args, "runmanifest_mode", "compact"),
+        nmap_ctx_config=nmap_ctx_cfg,
     )
     ctx = RunContext(paths=paths, pfh=pfh, logger=logger, services=services)
 

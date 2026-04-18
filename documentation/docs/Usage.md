@@ -83,6 +83,16 @@ Enrichment defaults to enabled + online for KEV, EPSS, and Exploit-DB.
 
 Use disable flags to turn a source off, and source flags to switch to offline cache/file mode.
 
+#### --nmap-ctx
+
+- `--nmap-ctx [-nmap] <path>`: Supply a Nmap XML file as supplementary attack-surface context. When provided, the Nmap adapter pass maps confirmed open ports to scan assets and makes port evidence available to downstream scoring and ranking passes. This flag is opt-in only; omitting it disables the adapter entirely.
+
+```bash
+vpp -f scan.nessus -o results.json --nmap-ctx nmap_results.xml
+```
+
+The file must have a `.xml` extension and be a valid Nmap `nmaprun` XML file. Policy controls for this feature are in `config.yaml` under `nmap_ctx`. See [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md) for full details.
+
 #### --no-kev
 
 - `--no-kev`: Disable KEV enrichment.
@@ -153,6 +163,26 @@ vpp -f <input_file> -o <output_file> --exploit-source online
 
 ```bash
 vpp -f <input_file> -o <output_file> --exploit-db /path/to/exploit-db
+```
+
+#### --ghsa
+
+- `--ghsa [PATH|online]`: Enable GitHub Security Advisory (GHSA) enrichment. Use bare `--ghsa` for online mode (queries the GitHub Advisories API) or `--ghsa <path>` for offline mode pointing to a local advisory database directory. GHSA enrichment is disabled by default — this flag is the only activation path at runtime.
+
+```bash
+# Online mode
+vpp -f scan.nessus -o results.json --ghsa
+
+# Offline mode
+vpp -f scan.nessus -o results.json --ghsa /path/to/advisory-database
+```
+
+#### --ghsa-budget
+
+- `--ghsa-budget <COUNT>`: Override the online GHSA prefetch CVE budget. Applies only when `--ghsa` is in online mode. Must be a positive integer. Config default is `25` (set via `enrichment.ghsa_online_prefetch_budget` in `config.yaml`).
+
+```bash
+vpp -f scan.nessus -o results.json --ghsa --ghsa-budget 50
 ```
 
 #### --refresh-cache
