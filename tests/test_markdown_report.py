@@ -109,3 +109,24 @@ def test_technical_report_includes_aggregated_risk_columns() -> None:
     assert "Agg Exploitable" in md
     assert "Agg KEV" in md
     assert "whole-of-CVEs aggregation breadth" in md
+
+
+def test_markdown_reports_include_ghsa_visibility_metrics() -> None:
+    summary = _build_summary(immediate_cves=["CVE-2026-0001"])
+    scan = SimpleNamespace(
+        assets=[
+            SimpleNamespace(
+                findings=[
+                    SimpleNamespace(references=["https://github.com/advisories/GHSA-abcd-1234-efgh"]),
+                    SimpleNamespace(references=[]),
+                ]
+            )
+        ]
+    )
+
+    executive = _generate_executive_report(_scan=scan, summary=summary)
+    technical = _generate_technical_report(_scan=scan, summary=summary)
+
+    assert "GHSA Advisory Matches" in executive
+    assert "GHSA Advisory Matches" in technical
+    assert "GitHub Security Advisories (GHSA)" in technical

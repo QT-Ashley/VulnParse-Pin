@@ -52,6 +52,22 @@ Profiles:
 2. `analyst`: focused on triage/ranking (`risk_band`, `topn_*`, union exploit/KEV context, remediation bucket).
 3. `audit`: analyst fields plus scoring traceability (`aggregation_mode`, contributor counts, top contributor CVEs).
 
+Recommended profile by workflow:
+
+1. SOC triage queues: use `analyst` for compact, high-signal sorting and ticket creation.
+2. IR or vulnerability engineering deep dives: use `audit` when you need contributor-level traceability.
+3. Existing integrations expecting legacy headers: keep `full` to avoid breaking downstream parsers.
+
+Example commands:
+
+```bash
+# Fast analyst triage sheet
+vpp -f <input_file> --output-csv triage.csv --csv-profile analyst
+
+# Traceability/evidence sheet for audits and post-incident review
+vpp -f <input_file> --output-csv evidence.csv --csv-profile audit
+```
+
 Tips:
 
 1. Sort by derived risk-related columns first, not scanner severity alone.

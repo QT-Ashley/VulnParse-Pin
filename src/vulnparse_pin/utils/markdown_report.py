@@ -20,6 +20,25 @@ if TYPE_CHECKING:
     from vulnparse_pin.io.pfhandler import PathLike
 
 
+def _ghsa_reference_metrics(scan: Any) -> tuple[int, int]:
+    """Return (findings_with_ghsa_reference, total_ghsa_references)."""
+    if scan is None:
+        return 0, 0
+
+    findings_with_ghsa = 0
+    total_ghsa_refs = 0
+    assets = getattr(scan, "assets", []) or []
+    for asset in assets:
+        findings = getattr(asset, "findings", []) or []
+        for finding in findings:
+            refs = getattr(finding, "references", []) or []
+            ghsa_refs = [r for r in refs if "GHSA-" in str(r)]
+            if ghsa_refs:
+                findings_with_ghsa += 1
+                total_ghsa_refs += len(ghsa_refs)
+    return findings_with_ghsa, total_ghsa_refs
+
+
 def generate_markdown_report(
     ctx: "RunContext",
     scan: "ScanResult",
@@ -83,6 +102,7 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
     top_risks = summary.top_risks
     remediation = summary.remediation_priorities
     asset_summary = summary.asset_summary
+    ghsa_findings, ghsa_refs = _ghsa_reference_metrics(_scan)
 
     def _risk_drivers(risk: Any) -> str:
         drivers: list[str] = []
@@ -113,6 +133,7 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
 | **Average Asset Risk Score** | {overview['average_asset_risk']:.2f} |
 | **Exploitable Vulnerabilities** | {overview['exploitable_findings']:,} |
 | **CISA KEV Listed** | {overview['kev_listed_findings']:,} |
+| **GHSA Advisory Matches** | {ghsa_findings:,} findings ({ghsa_refs:,} references) |
 
 ---
 
@@ -243,6 +264,7 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
     risk_dist = summary.risk_distribution
     top_risks = summary.top_risks
     enrichment = summary.enrichment_metrics
+    ghsa_findings, ghsa_refs = _ghsa_reference_metrics(_scan)
 
     def _risk_drivers(risk: Any) -> str:
         drivers: list[str] = []
@@ -285,6 +307,7 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 | Average Risk Score | {overview['average_asset_risk']:.2f} |
 | Exploitable (Public PoC) | {overview['exploitable_findings']:,} |
 | CISA KEV Listed | {overview['kev_listed_findings']:,} |
+| GHSA Advisory Matches | {ghsa_findings:,} findings ({ghsa_refs:,} references) |
 | Scan Timestamp | {overview.get('scan_timestamp', 'N/A')} |
 
 ---
@@ -388,6 +411,7 @@ Use this distribution for remediation prioritization and queue ordering.
 - ✅ CISA Known Exploited Vulnerabilities (KEV)
 - ✅ FIRST Exploit Prediction Scoring System (EPSS)
 - ✅ Exploit-DB Public Exploits
+- ✅ GitHub Security Advisories (GHSA)
 - ✅ National Vulnerability Database (NVD)
 
 ---

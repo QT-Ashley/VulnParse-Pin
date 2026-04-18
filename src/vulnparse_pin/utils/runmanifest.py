@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -44,8 +44,29 @@ def _file_sha256(path: Optional[Path]) -> Optional[str]:
     return _sha256_bytes(path.read_bytes())
 
 
+def _coerce_mapping(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if is_dataclass(value):
+        coerced = asdict(value)
+        return coerced if isinstance(coerced, dict) else {}
+    if hasattr(value, "__dict__"):
+        return dict(getattr(value, "__dict__", {}))
+    return {}
+
+
+def _sequence_len(value: Any) -> int:
+    if isinstance(value, (str, bytes, bytearray)):
+        return 0
+    try:
+        return len(value)
+    except TypeError:
+        return 0
+
+
 def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
-    if not isinstance(data, dict):
+    data = _coerce_mapping(data)
+    if not data:
         return {}
 
     name = str(pass_name or "").lower()
@@ -99,7 +120,7 @@ def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
         whole_cve_reason_mentions = 0
         if isinstance(findings_by_asset, dict):
             for ranked in findings_by_asset.values():
-                if not isinstance(ranked, list):
+                if not isinstance(ranked, (list, tuple)):
                     continue
                 for finding in ranked:
                     if not isinstance(finding, dict):
@@ -114,10 +135,10 @@ def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
             "status": data.get("status", "ok"),
             "error_code": error_block.get("code"),
             "k": data.get("k"),
-            "decay_weights": len(data.get("decay", [])) if isinstance(data.get("decay"), list) else 0,
-            "ranked_assets": len(assets) if isinstance(assets, list) else 0,
+            "decay_weights": _sequence_len(data.get("decay")),
+            "ranked_assets": _sequence_len(assets),
             "assets_with_ranked_findings": len(findings_by_asset) if isinstance(findings_by_asset, dict) else 0,
-            "global_top_findings": len(global_top) if isinstance(global_top, list) else 0,
+            "global_top_findings": _sequence_len(global_top),
             "whole_cve_reason_mentions": whole_cve_reason_mentions,
         }
 
@@ -126,7 +147,7 @@ def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
         top_risks = data.get("top_risks")
         remediation = data.get("remediation_priorities", {}) if isinstance(data.get("remediation_priorities"), dict) else {}
         aggregated_top_risks = 0
-        if isinstance(top_risks, list):
+        if isinstance(top_risks, (list, tuple)):
             for item in top_risks:
                 if not isinstance(item, dict):
                     continue
@@ -135,7 +156,7 @@ def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
         return {
             "total_assets": int(overview.get("total_assets", 0) or 0),
             "total_findings": int(overview.get("total_findings", 0) or 0),
-            "top_risks": len(top_risks) if isinstance(top_risks, list) else 0,
+            "top_risks": _sequence_len(top_risks),
             "top_risks_with_aggregated_context": aggregated_top_risks,
             "immediate_action": int(remediation.get("immediate_action", 0) or 0),
             "high_priority": int(remediation.get("high_priority", 0) or 0),

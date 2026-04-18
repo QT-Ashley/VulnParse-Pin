@@ -21,6 +21,7 @@ from vulnparse_pin.utils.schema_validate import validate_runmanifest_schema
 class _PfhStub:
     @contextmanager
     def open_for_write(self, output_path: Path, mode: str = "w", encoding: str = "utf-8", label: str = ""):
+        del label
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open(mode=mode, encoding=encoding) as handle:
             yield handle
@@ -513,3 +514,60 @@ def test_runmanifest_captures_whole_cve_alignment_metrics(tmp_path: Path):
     assert metrics_by_name["Summary"]["top_risks_with_aggregated_context"] == 1
     assert metrics_by_name["Summary"]["immediate_action"] == 1
     assert metrics_by_name["Summary"]["high_priority"] == 1
+
+
+def test_runmanifest_handles_tuple_and_namespace_pass_payloads(tmp_path: Path):
+    ctx = _make_context(tmp_path)
+    scan = _make_scan_result()
+    scanner_input = tmp_path / "input.nessus"
+    scanner_input.write_text("dummy", encoding="utf-8")
+
+    topn = DerivedPassResult(
+        meta=PassMeta(name="TopN", version="1.0", created_at_utc="2026-03-29T00:00:01Z"),
+        data={
+            "rank_basis": "raw",
+            "k": 5,
+            "decay": (1.0, 0.7, 0.4),
+            "assets": ({"asset_id": "asset-a", "rank": 1},),
+            "findings_by_asset": {
+                "asset-a": (
+                    {"finding_id": "F1", "rank": 1, "reasons": ("Whole-of-CVEs Aggregated",)},
+                )
+            },
+            "global_top_findings": ({"finding_id": "F1", "rank": 1},),
+        },
+    )
+
+    summary_data = SimpleNamespace(
+        overview={"total_assets": 1, "total_findings": 2},
+        top_risks=(
+            {
+                "cve": "CVE-2026-5000",
+                "finding_risk_score": 9.1,
+                "aggregated_cve_count": 2,
+            },
+        ),
+        remediation_priorities={"immediate_action": 1, "high_priority": 1, "medium_priority": 0},
+    )
+    summary = DerivedPassResult(
+        meta=PassMeta(name="Summary", version="1.0", created_at_utc="2026-03-29T00:00:02Z"),
+        data=summary_data,
+    )
+
+    scan.derived = DerivedContext(passes={"TopN@1.0": topn, "Summary@1.0": summary})
+
+    manifest = build_runmanifest(
+        ctx=ctx,
+        _args=SimpleNamespace(),
+        scan_result=scan,
+        sources={"exploitdb": False, "kev": False, "epss": False, "nvd": "Disabled", "stats": {}},
+        scanner_input=scanner_input,
+        output_paths={"json": None, "csv": None, "md": None, "md_technical": None},
+    )
+
+    metrics_by_name = {p["name"]: p["metrics"] for p in manifest["pass_summaries"]}
+    assert metrics_by_name["TopN"]["decay_weights"] == 3
+    assert metrics_by_name["TopN"]["ranked_assets"] == 1
+    assert metrics_by_name["TopN"]["global_top_findings"] == 1
+    assert metrics_by_name["Summary"]["total_assets"] == 1
+    assert metrics_by_name["Summary"]["top_risks"] == 1

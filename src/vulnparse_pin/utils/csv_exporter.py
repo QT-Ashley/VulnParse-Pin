@@ -86,6 +86,8 @@ ANALYST_PROFILE_COLUMNS = [
     "risk_band",
     "exploit_available_union",
     "kev_union",
+    "ghsa_advisory_match",
+    "ghsa_reference_count",
     "cvss_score",
     "epss_score",
     "affected_port",
@@ -112,6 +114,7 @@ AUDIT_PROFILE_COLUMNS = ANALYST_PROFILE_COLUMNS + [
     "top_contributor_1_raw_contribution",
     "top_contributor_2_cve",
     "top_contributor_2_raw_contribution",
+    "ghsa_references",
     "topn_inference_evidence",
 ]
 
@@ -459,6 +462,9 @@ def _build_csv_row(
     _avg_risk = getattr(asset, "avg_risk_score", None)
     _cvss = getattr(finding, "cvss_score", None)
     _epss = getattr(finding, "epss_score", None)
+    finding_refs = getattr(finding, "references", []) or []
+    ghsa_refs = [str(r) for r in finding_refs if "GHSA-" in str(r)]
+    ghsa_match = len(ghsa_refs) > 0
 
     return {
         # ----- Scan Context -----
@@ -487,6 +493,8 @@ def _build_csv_row(
         "exploit_available": bool(getattr(finding, "exploit_available", False) or getattr(finding, "cisa_kev", False)),
         "kev_union": kev_union,
         "exploit_available_union": exploit_union,
+        "ghsa_advisory_match": ghsa_match,
+        "ghsa_reference_count": len(ghsa_refs),
         "exploit_ids": exploit_ids,
         "exploit_titles": exploit_titles,
         "exploit_urls": exploit_urls,
@@ -513,6 +521,7 @@ def _build_csv_row(
         "top_contributor_1_raw_contribution": _to_float(top_contrib_1.get("raw_contribution"), default=SENTINEL_SCORE),
         "top_contributor_2_cve": top_contrib_2.get("cve_id", ""),
         "top_contributor_2_raw_contribution": _to_float(top_contrib_2.get("raw_contribution"), default=SENTINEL_SCORE),
+        "ghsa_references": ";".join(ghsa_refs),
         "remediation_bucket": _remediation_bucket(risk_band, kev_union, exploit_union),
 
         # ---- TopN Overlay ----

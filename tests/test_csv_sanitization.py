@@ -302,3 +302,44 @@ def test_csv_profile_audit_includes_traceability_columns(tmp_path):
     assert header == AUDIT_PROFILE_COLUMNS
     assert "aggregation_mode" in header
     assert "top_contributor_1_cve" in header
+
+
+def test_csv_profiles_surface_ghsa_visibility_fields(tmp_path):
+    from datetime import datetime
+    import csv
+    from vulnparse_pin.core.classes.dataclass import ScanResult, ScanMetaData, Asset, Finding, RunContext, AppPaths
+    from vulnparse_pin.utils.csv_exporter import export_to_csv
+    from vulnparse_pin.utils.logger import LoggerWrapper
+    from vulnparse_pin.io.pfhandler import PermFileHandler
+
+    logger = LoggerWrapper(log_file=str(tmp_path / "test.log"))
+    pfh = PermFileHandler(logger, root_dir=tmp_path, allowed_roots=[tmp_path])
+    ctx = RunContext(paths=AppPaths.resolve(portable=True), pfh=pfh, logger=logger)
+
+    meta = ScanMetaData(source="unit", scan_date=datetime.now(), asset_count=1, vulnerability_count=1)
+    finding = Finding(
+        finding_id="FGHSA",
+        vuln_id="VGHSA",
+        title="GHSA Finding",
+        description="desc",
+        severity="Medium",
+        cves=["CVE-2026-1234"],
+        asset_id="AGHSA",
+    )
+    finding.references = ["https://github.com/advisories/GHSA-xxxx-yyyy-zzzz"]
+
+    asset = Asset(hostname="host-ghsa", ip_address="10.0.9.9", findings=[finding])
+    scan = ScanResult(scan_metadata=meta, assets=[asset])
+
+    analyst_csv = tmp_path / "analyst_ghsa.csv"
+    export_to_csv(ctx, scan, csv_path=analyst_csv, csv_profile="analyst")
+    with analyst_csv.open("r", encoding="utf-8", newline="") as fh:
+        row = next(csv.DictReader(fh))
+    assert row["ghsa_advisory_match"] == "True"
+    assert row["ghsa_reference_count"] == "1"
+
+    audit_csv = tmp_path / "audit_ghsa.csv"
+    export_to_csv(ctx, scan, csv_path=audit_csv, csv_profile="audit")
+    with audit_csv.open("r", encoding="utf-8", newline="") as fh:
+        row = next(csv.DictReader(fh))
+    assert "GHSA-xxxx-yyyy-zzzz" in row["ghsa_references"]
