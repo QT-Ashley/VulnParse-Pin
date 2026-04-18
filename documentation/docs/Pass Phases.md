@@ -45,7 +45,7 @@ Typical enrichment sources:
 
 Outputs of enrichment feed later scoring and operational decisioning.
 
-## Phase 2: Scoring pass (`Scoring@1.0`)
+## Phase 2: Scoring pass (`Scoring@2.0`)
 
 Implemented in `src/vulnparse_pin/core/passes/Scoring/scoringPass.py`.
 
@@ -53,6 +53,7 @@ Purpose:
 
 - Compute raw and operational risk values
 - Apply configurable weighting policy
+- Aggregate all retained CVE contributors for a finding when `cve_analysis` is available
 - Generate coverage metrics and asset-level summaries
 
 Core policy inputs come from `src/vulnparse_pin/resources/scoring.json`:
@@ -64,6 +65,7 @@ Core policy inputs come from `src/vulnparse_pin/resources/scoring.json`:
 Typical scoring output includes:
 
 - Per-finding scored records
+- Per-finding `score_trace` audit payloads
 - Asset max risk map
 - Coverage ratio (scored vs total)
 - High-level scoring aggregates

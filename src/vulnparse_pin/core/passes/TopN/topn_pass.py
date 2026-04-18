@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 class TopNPass(Pass):
     name = "TopN"
     version: str = "1.0"
-    requires_passes: tuple[str, ...] = ("Scoring@1.0",)
+    requires_passes: tuple[str, ...] = ("Scoring@2.0",)
 
     def __init__(
         self, 
@@ -71,9 +71,9 @@ class TopNPass(Pass):
                     event_type="decision",
                     subject_ref="topn:summary",
                     reason_code=DecisionReasonCodes.TOPN_SKIPPED_MISSING_SCORING,
-                    reason_text="TopN skipped because Scoring@1.0 output was missing.",
-                    factor_refs=["dependency:Scoring@1.0"],
-                    evidence={"status": "skipped", "missing_dependency": "Scoring@1.0"},
+                    reason_text="TopN skipped because Scoring@2.0 output was missing.",
+                    factor_refs=["dependency:Scoring@2.0"],
+                    evidence={"status": "skipped", "missing_dependency": "Scoring@2.0"},
                 )
 
             output = TopNPassOutput(
@@ -88,8 +88,8 @@ class TopNPass(Pass):
             data["status"] = "skipped"
             data["error"] = {
                 "code": "missing_dependency",
-                "message": "Scoring@1.0 output not found; TopN ranking not executed.",
-                "missing": ["Scoring@1.0"],
+                "message": "Scoring@2.0 output not found; TopN ranking not executed.",
+                "missing": ["Scoring@2.0"],
             }
 
             meta = PassMeta(
@@ -533,7 +533,7 @@ class TopNPass(Pass):
 
     def _get_scoring_output(self, scan: "ScanResult") -> DerivedPassResult | None:
         try:
-            return scan.derived.passes["Scoring@1.0"]
+            return scan.derived.passes["Scoring@2.0"]
         except (AttributeError, TypeError, KeyError):
             return None
 

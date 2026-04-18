@@ -529,6 +529,36 @@ def _ghsa_high_severity_exploit_signal(advisories: List[Dict[str, Any]]) -> bool
     return False
 
 
+def _ghsa_max_severity(advisories: List[Dict[str, Any]]) -> Optional[str]:
+    ranks = {
+        "LOW": 1,
+        "MODERATE": 2,
+        "MEDIUM": 2,
+        "HIGH": 3,
+        "CRITICAL": 4,
+    }
+    best: Optional[str] = None
+    best_rank = -1
+
+    for advisory in advisories:
+        if not isinstance(advisory, dict):
+            continue
+        severity = advisory.get("severity")
+        if not isinstance(severity, str):
+            database_specific = advisory.get("database_specific")
+            if isinstance(database_specific, dict):
+                severity = database_specific.get("severity")
+        if not isinstance(severity, str):
+            continue
+        normalized = severity.strip().upper()
+        rank = ranks.get(normalized, 0)
+        if rank > best_rank:
+            best_rank = rank
+            best = normalized
+
+    return best
+
+
 def _score_confidence_from_sources(
     sources: List[str],
     policy: Dict[str, Any],
@@ -826,6 +856,7 @@ def enrich_scan_results(
             ghsa_advisory_count = 0
             ghsa_exploit_signal = False
             enrichment_map: Dict[str, Dict[str, Any]] = {}
+            cve_analysis: List[Dict[str, Any]] = []
 
             cves: List[str] = []
             for raw_cve in getattr(finding, "cves", []) or []:
@@ -838,6 +869,11 @@ def enrich_scan_results(
                 stats.total_cves += len(cves)
 
                 for cve in cves:
+                    exploit_refs = [
+                        ref
+                        for ref in (getattr(finding, "exploit_references", []) or [])
+                        if isinstance(ref, dict) and str(ref.get("cve", "")).upper().strip() == cve
+                    ]
                     kev_hit = kev_lookup.get(cve, False)
                     if kev_hit:
                         stats.kev_hits += 1
@@ -855,6 +891,7 @@ def enrich_scan_results(
 
                     nvd_vector = None
                     nvd_score = None
+                    record = None
                     ghsa_advisories = ghsa_lookup.get(cve, [])
                     ghsa_hit = len(ghsa_advisories) > 0
                     if ghsa_hit:
@@ -886,17 +923,59 @@ def enrich_scan_results(
                                 nvd_score = record.get("cvss_score")
                                 any_nvd_hit = True
 
+                    nvd_summary = None
+                    nvd_published = None
+                    nvd_last_modified = None
+                    if record and record is not no_record:
+                        nvd_summary = record.get("description")
+                        nvd_published = record.get("published")
+                        nvd_last_modified = record.get("last_modified")
+
+                    cvss_source = None
+                    if nvd_vector:
+                        cvss_source = "nvd_vector"
+                    elif nvd_score is not None:
+                        cvss_source = "nvd_score"
+                    elif getattr(finding, "cvss_vector", None):
+                        cvss_source = "scanner_vector"
+                    elif getattr(finding, "cvss_score", None) is not None:
+                        cvss_source = "scanner_score"
+
+                    cve_analysis.append({
+                        "cve_id": cve,
+                        "scanner_cvss_score": getattr(finding, "cvss_score", None),
+                        "scanner_cvss_vector": getattr(finding, "cvss_vector", None),
+                        "resolved_cvss_score": nvd_score,
+                        "resolved_cvss_vector": nvd_vector,
+                        "cvss_source": cvss_source,
+                        "summary": nvd_summary,
+                        "published": nvd_published,
+                        "last_modified": nvd_last_modified,
+                        "epss_score": epss_score,
+                        "cisa_kev": kev_hit,
+                        "exploit_available": bool(exploit_refs) or bool(getattr(finding, "exploit_available", False)),
+                        "exploit_reference_count": len(exploit_refs),
+                        "ghsa_advisory_count": len(ghsa_advisories),
+                        "ghsa_max_severity": _ghsa_max_severity(ghsa_advisories),
+                        "ghsa_match_type": "cve" if ghsa_hit else None,
+                        "selected_for_display": False,
+                    })
+
                     enrichment_map[cve] = {
                         "epss_score": epss_score,
                         "cisa_kev": kev_hit,
-                        "exploit_available": bool(getattr(finding, "exploit_available", False)),
+                        "exploit_available": bool(exploit_refs) or bool(getattr(finding, "exploit_available", False)),
                         "cvss_score": nvd_score,
                         "cvss_vector": nvd_vector,
                         "ghsa_advisories": ghsa_advisories,
                     }
 
+                finding.cve_analysis = cve_analysis
                 authoritative_cve = select_authoritative_cve(cves, enrichment_map)
                 if authoritative_cve:
+                    for entry in finding.cve_analysis:
+                        if isinstance(entry, dict) and entry.get("cve_id") == authoritative_cve:
+                            entry["selected_for_display"] = True
                     best = enrichment_map[authoritative_cve]
                     epss_c = best.get("epss_score")
                     finding.epss_score = epss_c if epss_c is not None else None

@@ -18,6 +18,6 @@ print(f"TopN asset IDs: {[a['asset_id'] for a in topn_data['assets']]}")
 print(f"TopN k={topn_data['k']}, rank_basis={topn_data['rank_basis']}")
 
 # Check scoring
-scoring_data = data['derived']['passes']['Scoring@1.0']['data']
+scoring_data = data['derived']['passes']['Scoring@2.0']['data']
 print(f"\nScored findings: {len(scoring_data['scored_findings'])}")
 print(f"Asset scores: {scoring_data['asset_scores']}")

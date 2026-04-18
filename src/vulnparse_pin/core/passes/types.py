@@ -28,6 +28,7 @@ class ScoredFinding:
     operational_score: float
     risk_band: str
     reason: str = ""
+    score_trace: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)
 class ScoreCoverage:

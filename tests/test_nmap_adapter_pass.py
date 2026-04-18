@@ -163,7 +163,7 @@ def test_scoring_adds_nmap_observed_reason_for_matching_open_port(tmp_path) -> N
     runner = PassRunner([NmapAdapterPass(nmap_xml), ScoringPass(policy)])
     out = runner.run_all(ctx, scan)
 
-    scoring = out.derived.get("Scoring@1.0")
+    scoring = out.derived.get("Scoring@2.0")
     assert scoring is not None
     rec = scoring.data["scored_findings"]["F-1"]
     assert "Nmap Port Observed" in rec["reason"]

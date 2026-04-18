@@ -190,7 +190,7 @@ def test_nmap_adapter_pass_can_run_before_scoring_and_topn(tmp_path):
     out = runner.run_all(ctx, scan)
 
     assert out.derived.get("nmap_adapter@1.0") is not None
-    assert out.derived.get("Scoring@1.0") is not None
+    assert out.derived.get("Scoring@2.0") is not None
     assert out.derived.get("TopN@1.0") is not None
 
 
@@ -233,7 +233,7 @@ def test_missing_pass_dependency_behavior(tmp_path):
     assert result.data.get("status") == "skipped"
     err = result.data.get("error", {})
     assert err.get("code") == "missing_dependency"
-    assert "Scoring@1.0" in err.get("missing", [])
+    assert "Scoring@2.0" in err.get("missing", [])
     assert result.data.get("assets") in ([], ())
     assert result.data.get("findings_by_asset") == {}
 
@@ -248,7 +248,7 @@ def test_downstream_uses_asset_level_asset_id(tmp_path):
 
     scan = _run_full_pipeline(ctx, scan)
 
-    scoring = scan.derived.passes["Scoring@1.0"].data
+    scoring = scan.derived.passes["Scoring@2.0"].data
     topn = scan.derived.passes["TopN@1.0"].data
 
     assert "ASSET-CANONICAL" in scoring.get("asset_scores", {})
@@ -526,7 +526,7 @@ def test_pass_runner_rejects_missing_declared_dependency(tmp_path):
     class _DependentOnlyPass:
         name = "DependentOnly"
         version = "1.0"
-        requires_passes = ("Scoring@1.0",)
+        requires_passes = ("Scoring@2.0",)
 
         def run(self, _ctx, _scan):
             return DerivedPassResult(
@@ -545,7 +545,7 @@ def test_pass_runner_rejects_wrong_dependency_order(tmp_path):
 
     class _FakeScoring:
         name = "Scoring"
-        version = "1.0"
+        version = "2.0"
         requires_passes = ()
 
         def run(self, _ctx, _scan):
@@ -557,7 +557,7 @@ def test_pass_runner_rejects_wrong_dependency_order(tmp_path):
     class _NeedsScoring:
         name = "NeedsScoring"
         version = "1.0"
-        requires_passes = ("Scoring@1.0",)
+        requires_passes = ("Scoring@2.0",)
 
         def run(self, _ctx, _scan):
             return DerivedPassResult(

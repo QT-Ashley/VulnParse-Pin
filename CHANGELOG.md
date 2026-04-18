@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Whole-of-CVEs scoring in `ScoringPass` (`Scoring@2.0`): findings with `cve_analysis` now score across all retained CVE records using bounded decay aggregation rather than selecting one authoritative CVE for score calculation.
+- Per-finding `score_trace` persistence on normalized finding objects and in scoring derived output, including contributor CVE IDs, per-CVE raw contribution, decay weight, CVSS/EPSS/KEV/exploit metadata, and final scoring rationale.
+- Scoring policy knobs for finding-level CVE aggregation in `scoring.json`: `aggregation.finding_cve_score`, `aggregation.finding_cve_decay`, and `aggregation.finding_cve_max_contributors`.
+
 - GHSA CLI-first activation contract: `--ghsa` is now the explicit opt-in path, with bare flag meaning online mode and `--ghsa <path>` meaning offline local advisory source.
 - GHSA online lookup budget override via CLI (`--ghsa-budget`) with config default support through `enrichment.ghsa_online_prefetch_budget`.
 - GHSA GitHub token env configuration (`enrichment.ghsa_token_env`) now defaults to `VP_GHSA_TK` with fallback to `GITHUB_TOKEN` for authenticated advisory API sessions.
@@ -56,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GHSA online requests now build authenticated GitHub advisory headers when a token env var is present, without logging secret values.
 - `load_score_policy` in `runtime_helpers.py` now accepts `nmap_port_bonus` kwarg and threads it through to `ScoringPolicyV1`.
 - `policy_values` dict in `_score_parallel` extended with `nmap_port_bonus` key so the process-pool scoring path stays in sync with the inline path.
+- Packaged scoring config advanced to `version: v2` to reflect whole-of-CVEs scoring semantics.
+- `ScoringPass` now writes `raw_risk_score`, `risk_score`, `risk_band`, and `score_trace` back onto mutable finding objects so vulnerability-level JSON output carries the same audit trace as the derived scoring artifact.
 
 ### Performance
 

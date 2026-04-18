@@ -19,10 +19,10 @@ Both effects are independently controlled by policy knobs in `config.yaml`.
 
 ### Pass lifecycle
 
-`NmapAdapterPass` runs as the **first derived pass** in the pipeline, before `Scoring@1.0`, `TopN@1.0`, and `Summary@1.0`. It is a pure read-and-derive step:
+`NmapAdapterPass` runs as the **first derived pass** in the pipeline, before `Scoring@2.0`, `TopN@1.0`, and `Summary@1.0`. It is a pure read-and-derive step:
 
 ```
-[NmapAdapterPass] → [Scoring@1.0] → [TopN@1.0] → [Summary@1.0]
+[NmapAdapterPass] → [Scoring@2.0] → [TopN@1.0] → [Summary@1.0]
 ```
 
 The pass writes its result into the `DerivedContext` registry under the key `nmap_adapter@1.0`. Downstream passes retrieve this by key — no direct coupling.

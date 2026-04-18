@@ -101,6 +101,9 @@ def load_score_policy(config: dict, nmap_port_bonus: float = 0.0) -> ScoringPoli
         w_exploit = float(weights.get("exploit", 2)),
         max_raw_risk = float(risk_ceiling.get("max_raw_risk", 15)),
         max_op_risk = float(risk_ceiling.get("max_operational_risk", 10.0)),
+        cve_aggregation_mode = str(agg.get("finding_cve_score", "stacked_decay")),
+        cve_aggregation_decay = float(agg.get("finding_cve_decay", 0.35)),
+        cve_aggregation_max_contributors = int(agg.get("finding_cve_max_contributors", 8)),
         nmap_port_bonus = float(nmap_port_bonus),
     )
 

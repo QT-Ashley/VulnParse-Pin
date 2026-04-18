@@ -19,7 +19,7 @@ Primary implementation files:
 
 Default pass order:
 
-1. `Scoring@1.0`
+1. `Scoring@2.0`
 2. `TopN@1.0`
 3. `Summary@1.0`
 
@@ -36,6 +36,7 @@ Core policy groups:
 - band thresholds (`critical`, `high`, `medium`, `low`)
 - weights (`epss_high`, `epss_medium`, `kev`, `exploit`)
 - risk ceiling (`max_raw_risk`, `max_operational_risk`)
+- finding-level CVE aggregation (`finding_cve_score`, `finding_cve_decay`, `finding_cve_max_contributors`)
 - Nmap context (`nmap_port_bonus`, default `0.0`)
 
 Bootstrap validates monotonic bands and non-negative constraints before pass execution.
@@ -44,18 +45,19 @@ Bootstrap validates monotonic bands and non-negative constraints before pass exe
 
 Scoring computation in `scoringPass.py`:
 
-1. Start with base CVSS contribution when present.
-2. Add EPSS contribution after clamping EPSS to policy bounds and scaling.
-3. Apply EPSS high or medium multipliers based on EPSS threshold tiers.
-4. Add KEV evidence contribution when KEV is present.
-5. Add exploit evidence contribution when exploit signal is present.
-6. Add Nmap port bonus when a confirmed open port matches the finding's service port and `scoring_port_bonus > 0`.
+1. Build a per-CVE preview for every retained `finding.cve_analysis` record using CVSS, EPSS, KEV, and exploit signals.
+2. Sort contributor CVEs by descending raw preview score.
+3. Aggregate contributor raw scores with bounded decay (`1.0`, `decay`, `decay^2`, ...) up to `finding_cve_max_contributors`.
+4. Fall back to scanner/enrichment rollup fields when no per-CVE analysis is present.
+5. Add Nmap port bonus when a confirmed open port matches the finding's service port and `scoring_port_bonus > 0`.
 
 `raw_score` is the composite pre-normalization score.
 
 `operational_score` is normalized by `max_raw_risk` and clamped to `max_operational_risk`.
 
 Risk band is assigned from raw score thresholds.
+
+`score_trace` captures the full contributor list, per-CVE contribution weights, display CVE, union flags, and final scoring summary. This trace is stored in both `assets[].findings[].score_trace` and `derived["Scoring@2.0"].scored_findings[*].score_trace`.
 
 ## Scoring execution strategy and thresholds
 
@@ -77,6 +79,17 @@ Additional controls:
 - Process worker payloads are serialization-safe plain structures.
 
 These are performance optimizations only; output semantics remain deterministic.
+
+## Whole-of-CVEs trace model
+
+For findings that carry `cve_analysis`, `ScoringPass` no longer uses the display or authoritative CVE as the score source. Instead:
+
+- `display_cve` remains presentation-oriented and is retained in the trace for operator continuity.
+- `primary_cve` is the highest-impact contributor after sorting.
+- `contributors[*].raw_contribution` shows the exact bounded impact of each CVE on the final finding score.
+- `contributors[*].aggregation_weight` shows the decay weight applied to that CVE.
+
+This preserves auditability without requiring downstream consumers to recompute the aggregation logic.
 
 ## TopN configuration model
 

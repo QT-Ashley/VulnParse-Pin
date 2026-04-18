@@ -126,9 +126,102 @@ class TestPluginCaching:
         assert "KEV" in sf.reason
         assert "Exploit" in sf.reason
 
+    def test_whole_cve_cache_builds_bounded_aggregate(self, ctx):
+        """Whole-of-CVEs scoring should aggregate multiple CVEs instead of selecting just one."""
+        scoring = ScoringPass(make_policy())
+
+        finding = make_finding("f-agg", cvss_score=None, epss_score=None)
+        finding.cve_analysis = [
+            {
+                "cve_id": "CVE-2026-0001",
+                "resolved_cvss_score": 9.0,
+                "epss_score": 0.0,
+                "cisa_kev": False,
+                "exploit_available": False,
+                "summary": "Primary CVE",
+                "selected_for_display": True,
+            },
+            {
+                "cve_id": "CVE-2026-0002",
+                "resolved_cvss_score": 5.0,
+                "epss_score": 0.0,
+                "cisa_kev": False,
+                "exploit_available": True,
+                "summary": "Secondary CVE",
+            },
+            {
+                "cve_id": "CVE-2026-0003",
+                "resolved_cvss_score": 0.0,
+                "epss_score": 0.0,
+                "cisa_kev": True,
+                "exploit_available": False,
+                "summary": "Tertiary CVE",
+            },
+        ]
+
+        cache = scoring._build_plugin_cache([(finding, finding.asset_id, "192.168.1.1")], {})
+        attrs = cache["f-agg"]
+
+        assert attrs["whole_cve_raw"] > 9.0
+        trace = attrs["score_trace_base"]
+        assert trace["aggregation_mode"] == "stacked_decay"
+        assert trace["aggregate_cve_raw_score"] == pytest.approx(11.2225)
+        assert trace["contributors"][0]["cve_id"] == "CVE-2026-0001"
+        assert trace["contributors"][1]["raw_contribution"] == pytest.approx(2.1)
+        assert trace["contributors"][2]["raw_contribution"] == pytest.approx(0.1225)
+
 
 class TestParallelScoring:
     """Validate that parallel execution produces correct results."""
+
+    def test_scoring_persists_whole_cve_trace_on_finding(self, ctx):
+        """Scoring should write the aggregate trace back onto the mutable finding object."""
+        policy = make_policy()
+        scoring = ScoringPass(policy, parallel_threshold=10_000)
+
+        finding = make_finding("f-trace", cvss_score=None, epss_score=None)
+        finding.cve_analysis = [
+            {
+                "cve_id": "CVE-2026-0100",
+                "resolved_cvss_score": 8.0,
+                "epss_score": 0.4,
+                "cisa_kev": False,
+                "exploit_available": False,
+                "summary": "Base issue",
+                "selected_for_display": True,
+            },
+            {
+                "cve_id": "CVE-2026-0101",
+                "resolved_cvss_score": 6.0,
+                "epss_score": 0.0,
+                "cisa_kev": False,
+                "exploit_available": True,
+                "summary": "Exploit-backed issue",
+            },
+        ]
+
+        asset = Asset(hostname="host-test", ip_address="192.168.1.1", findings=[finding])
+        scan = ScanResult(
+            scan_metadata=ScanMetaData(
+                source="test",
+                scan_date=datetime.now(),
+                asset_count=1,
+                vulnerability_count=1,
+            ),
+            assets=[asset],
+        )
+
+        result = scoring.run(ctx, scan)
+        scored = result.data["scored_findings"]["f-trace"]
+
+        assert scored["raw_score"] > 8.0
+        assert finding.raw_risk_score == scored["raw_score"]
+        assert finding.risk_score == scored["operational_score"]
+        assert finding.risk_band == scored["risk_band"]
+        assert finding.score_trace["aggregation_mode"] == "stacked_decay"
+        assert finding.score_trace["display_cve"] == "CVE-2026-0100"
+        assert len(finding.score_trace["contributors"]) == 2
+        assert finding.score_trace["contributors"][1]["selected_for_score"] is True
 
     def test_parallel_vs_sequential_identical_results(self, ctx):
         """Verify parallel and sequential modes produce identical outputs."""

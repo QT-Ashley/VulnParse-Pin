@@ -230,6 +230,33 @@
           "type": ["string", "null"],
           "description": "CVE from which enrichment data (EPSS, KEV, etc.) was sourced"
         },
+        "cve_analysis": {
+          "type": ["array", "null"],
+          "description": "Per-CVE enrichment records retained for whole-of-CVEs scoring and auditability",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "cve_id": { "type": "string" },
+              "scanner_cvss_score": { "type": ["number", "null"] },
+              "scanner_cvss_vector": { "type": ["string", "null"] },
+              "resolved_cvss_score": { "type": ["number", "null"] },
+              "resolved_cvss_vector": { "type": ["string", "null"] },
+              "cvss_source": { "type": ["string", "null"] },
+              "summary": { "type": ["string", "null"] },
+              "published": { "type": ["string", "null"] },
+              "last_modified": { "type": ["string", "null"] },
+              "epss_score": { "type": ["number", "null"] },
+              "cisa_kev": { "type": ["boolean", "null"] },
+              "exploit_available": { "type": ["boolean", "null"] },
+              "exploit_reference_count": { "type": ["integer", "null"] },
+              "ghsa_advisory_count": { "type": ["integer", "null"] },
+              "ghsa_max_severity": { "type": ["string", "null"] },
+              "ghsa_match_type": { "type": ["string", "null"] },
+              "selected_for_display": { "type": ["boolean", "null"] }
+            }
+          }
+        },
         "enrichment_sources": {
           "type": ["array", "null"],
           "description": "Ordered list of enrichment sources that contributed to this finding",
@@ -265,6 +292,11 @@
         "risk_band": {
           "type": ["string", "null"],
           "description": "Risk band classification (Critical, High, Medium, Low, Minimal)"
+        },
+        "score_trace": {
+          "type": ["object", "null"],
+          "description": "Auditable scoring trace for this finding, including whole-of-CVEs contributor metadata",
+          "additionalProperties": true
         },
         "triage_priority": {
           "type": ["string", "null"],

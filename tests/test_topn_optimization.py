@@ -111,7 +111,7 @@ def test_topn_optimization():
     print("\n[TEST 1] Small workload (100 findings) - should use SEQUENTIAL execution")
     scan_small = create_mock_scan(num_assets=10, findings_per_asset=10)
     scoring_result = create_mock_scoring_output(scan_small)
-    scan_small.derived = DerivedContext(passes={"Scoring@1.0": scoring_result})
+    scan_small.derived = DerivedContext(passes={"Scoring@2.0": scoring_result})
     
     ctx = MockContext(logger=MockLogger())
     cfg = _safe_fallback_config()
@@ -127,7 +127,7 @@ def test_topn_optimization():
     print("\n[TEST 2] Large workload (25,000 findings) - should use PROCESS POOL")
     scan_large = create_mock_scan(num_assets=250, findings_per_asset=100)
     scoring_result_large = create_mock_scoring_output(scan_large)
-    scan_large.derived = DerivedContext(passes={"Scoring@1.0": scoring_result_large})
+    scan_large.derived = DerivedContext(passes={"Scoring@2.0": scoring_result_large})
     
     start = time.time()
     result_large = topn.run(ctx, scan_large)

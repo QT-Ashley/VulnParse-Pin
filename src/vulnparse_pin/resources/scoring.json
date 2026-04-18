@@ -1,5 +1,5 @@
 {
-    "version": "v1",
+    "version": "v2",
     "epss": {
         "scale": 10.0,
         "min": 0.0,
@@ -16,7 +16,10 @@
         "low": 4.0
     },
     "aggregation": {
-        "asset_score": "max"
+        "asset_score": "max",
+        "finding_cve_score": "stacked_decay",
+        "finding_cve_decay": 0.35,
+        "finding_cve_max_contributors": 8
     },
     "weights": {
         "epss_high": 0.6,

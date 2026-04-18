@@ -12,7 +12,7 @@ Pass abstractions live in `src/vulnparse_pin/core/classes/pass_classes.py`.
 
 Current default pass order:
 
-1. `Scoring@1.0`
+1. `Scoring@2.0`
 2. `TopN@1.0`
 3. `Summary@1.0`
 
@@ -55,7 +55,7 @@ sequenceDiagram
     Enrich-->>Main: enriched ScanResult
     Main->>Runner: run_all(ctx, scan)
     Runner->>Score: run(ctx, scan)
-    Score-->>Runner: DerivedPassResult(Scoring@1.0)
+    Score-->>Runner: DerivedPassResult(Scoring@2.0)
     Runner->>TopN: run(ctx, scan)
     TopN-->>Runner: DerivedPassResult(TopN@1.0)
     Runner->>Summary: run(ctx, scan)

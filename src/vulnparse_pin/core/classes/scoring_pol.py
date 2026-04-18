@@ -32,4 +32,7 @@ class ScoringPolicyV1:
 
     max_raw_risk: float
     max_op_risk: float
+    cve_aggregation_mode: str = "stacked_decay"
+    cve_aggregation_decay: float = 0.35
+    cve_aggregation_max_contributors: int = 8
     nmap_port_bonus: float = 0.0

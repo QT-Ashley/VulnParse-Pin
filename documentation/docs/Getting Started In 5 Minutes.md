@@ -82,7 +82,7 @@ In output JSON, check:
 
 - `assets` → normalized hosts
 - `assets[].findings` → normalized vulnerability records
-- `derived["Scoring@1.0"]` → score coverage and scored findings
+- `derived["Scoring@2.0"]` → score coverage, scored findings, and whole-of-CVEs traces
 - `derived["TopN@1.0"]` → ranked assets and global top findings
 - `derived["Summary@1.0"]` → operator-ready aggregates, risk-band breakdown, and top-risk findings
 
@@ -110,5 +110,5 @@ For upgrade differences, deeper troubleshooting, and output-reading guidance, se
 - [ ] Install environment dependencies
 - [ ] Run one parse command to JSON
 - [ ] Export CSV
-- [ ] Confirm `Scoring@1.0`, `TopN@1.0`, and `Summary@1.0` exist in output
+- [ ] Confirm `Scoring@2.0`, `TopN@1.0`, and `Summary@1.0` exist in output
 - [ ] Adjust one scoring or triage config value and rerun

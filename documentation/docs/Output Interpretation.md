@@ -18,7 +18,7 @@ High-value sections for triage:
 
 1. `assets`: normalized asset entities.
 2. `assets[].findings`: vulnerability findings attached to assets.
-3. `derived["Scoring@1.0"]`: scoring coverage and score distribution details.
+3. `derived["Scoring@2.0"]`: scoring coverage, score traces, and score distribution details.
 4. `derived["TopN@1.0"]`: ranked assets and high-priority findings.
 5. `derived["Summary@1.0"]`: aggregate operator summary and risk-band distribution.
 
@@ -38,6 +38,7 @@ Common signals used in prioritization include:
 - Exploit availability indicators
 - CVSS vector/base score context
 - Derived risk score and risk band
+- `score_trace` when you need per-CVE contribution detail for audit or analyst review
 
 Use these in combination, not isolation.
 
@@ -96,8 +97,9 @@ vpp --verify-runmanifest out.runmanifest.json
 
 1. Start with `derived["TopN@1.0"]` to focus operator effort.
 2. Cross-check high-priority items against KEV/EPSS/exploit signals.
-3. Use technical markdown for analyst handoff.
-4. Use RunManifest to preserve auditability of decisions.
+3. Inspect `assets[].findings[].score_trace` or `derived["Scoring@2.0"].scored_findings[*].score_trace` for whole-of-CVEs contribution details.
+4. Use technical markdown for analyst handoff.
+5. Use RunManifest to preserve auditability of decisions.
 
 ## Related Docs
 

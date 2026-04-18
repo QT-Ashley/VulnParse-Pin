@@ -96,7 +96,7 @@ class SummaryPass(Pass):
         ctx.logger.print_info("Generating summary statistics...", label=self.name)
         
         # Get scoring data if available
-        scoring_data = scan.derived.get("Scoring@1.0")
+        scoring_data = scan.derived.get("Scoring@2.0")
         scoring = scoring_data.data if scoring_data else None
         
         # Build finding lookup map for enrichment
@@ -220,7 +220,7 @@ class SummaryPass(Pass):
                     raw = float("-inf")
                 if raw > top_raw:
                     top_raw = raw
-                    top_cve = str(f.cves[0])
+                    top_cve = str(getattr(f, "enrichment_source_cve", None) or f.cves[0])
             
             asset_entry = {
                 "asset_id": asset_id,
@@ -322,7 +322,7 @@ class SummaryPass(Pass):
                 continue
 
             risk_score = float(scored_data.get('raw_score', 0.0) or 0.0)
-            cve_display = finding.cves[0] if finding.cves else finding_id
+            cve_display = getattr(finding, "enrichment_source_cve", None) or (finding.cves[0] if finding.cves else finding_id)
 
             existing = best_by_cve.get(cve_display)
             if existing is None:
@@ -419,7 +419,7 @@ class SummaryPass(Pass):
             exploit = getattr(finding, 'exploit_available', False)
             
             # Get CVE for display
-            cve_display = finding.cves[0] if finding.cves else finding_id
+            cve_display = getattr(finding, "enrichment_source_cve", None) or (finding.cves[0] if finding.cves else finding_id)
             
             if band == "Critical" and (kev or exploit):
                 immediate.append(cve_display)

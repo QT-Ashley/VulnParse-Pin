@@ -119,13 +119,13 @@ def _resolve_pass(scan: ScanResult, prefix: str) -> Optional[Dict[str, DerivedPa
     if not isinstance(passes, dict):
         return None
 
-    preferred = f"{prefix}1.0"
+    preferred = f"{prefix}2.0"
     if preferred in passes:
         return passes[preferred]
 
     # Fallback lookup
     for k, v in passes.items():
-        if isinstance(k, str) and k.startswith(prefix) and isinstance(v, dict):
+        if isinstance(k, str) and k.startswith(prefix):
             return v
 
 def export_to_csv(ctx: "RunContext", scan_result: ScanResult, *, csv_path: str | Path, csv_sanitization: bool = True) -> None:

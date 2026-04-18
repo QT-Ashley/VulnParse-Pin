@@ -106,5 +106,5 @@ def test_parse_normalize_enrich_passes_smoke(ctx, parser_cls, input_path, use_fi
     _assert_basic_scan(scan)
     scan2 = _run_derived(scan, ctx)
     # derived outputs should have been produced
-    assert "Scoring@1.0" in scan2.derived.passes
+    assert "Scoring@2.0" in scan2.derived.passes
     assert "TopN@1.0" in scan2.derived.passes

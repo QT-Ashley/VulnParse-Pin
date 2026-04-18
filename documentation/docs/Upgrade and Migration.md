@@ -104,7 +104,7 @@ Review:
 
 - Run success and expected output artifacts
 - Expected enrichment coverage for your selected source modes
-- `derived["Scoring@1.0"]`, `derived["TopN@1.0"]`, and `derived["Summary@1.0"]` presence
+- `derived["Scoring@2.0"]`, `derived["TopN@1.0"]`, and `derived["Summary@1.0"]` presence
 
 ## Related Docs
 

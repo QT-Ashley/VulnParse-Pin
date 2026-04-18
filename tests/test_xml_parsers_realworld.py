@@ -108,7 +108,7 @@ class TestNessusXMLRealWorld:
 
         scan = _run_full_pipeline(scan, ctx)
 
-        assert "Scoring@1.0" in scan.derived.passes
+        assert "Scoring@2.0" in scan.derived.passes
         assert "TopN@1.0" in scan.derived.passes
 
     def test_real_nessus_csv_export(self, ctx, tmp_path):
@@ -164,7 +164,7 @@ class TestOpenVASXMLRealWorld:
 
         scan = _run_full_pipeline(scan, ctx)
 
-        assert "Scoring@1.0" in scan.derived.passes
+        assert "Scoring@2.0" in scan.derived.passes
         assert "TopN@1.0" in scan.derived.passes
 
     def test_real_openvas_csv_export(self, ctx, tmp_path):
@@ -280,7 +280,7 @@ class TestEdgeCases:
         if zero_cve_findings:
             # verify they don't break scoring
             scan = _run_full_pipeline(scan, ctx)
-            assert "Scoring@1.0" in scan.derived.passes
+            assert "Scoring@2.0" in scan.derived.passes
 
     def test_openvas_with_missing_cvss(self, ctx):
         """Should handle findings with missing CVSS scores."""

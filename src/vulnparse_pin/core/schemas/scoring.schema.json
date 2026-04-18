@@ -8,7 +8,7 @@
   "properties": {
     "version": {
       "type": "string",
-      "enum": ["v1"]
+      "enum": ["v1", "v2"]
     },
     "epss": {
       "type": "object",
@@ -45,7 +45,10 @@
       "additionalProperties": false,
       "required": ["asset_score"],
       "properties": {
-        "asset_score": { "type": "string", "enum": ["max", "avg"] }
+        "asset_score": { "type": "string", "enum": ["max", "avg"] },
+        "finding_cve_score": { "type": "string", "enum": ["stacked_decay"] },
+        "finding_cve_decay": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "finding_cve_max_contributors": { "type": "integer", "minimum": 1, "maximum": 128 }
       }
     },
     "weights": {

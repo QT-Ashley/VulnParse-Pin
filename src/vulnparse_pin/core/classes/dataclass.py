@@ -42,6 +42,7 @@ class Finding:
     raw_risk_score: Optional[float] = None
     risk_score: Optional[float] = None
     risk_band: Optional[str] = None
+    score_trace: Dict[str, Any] = field(default_factory=dict)
     affected_port: Optional[int] = None
     protocol: Optional[str] = None
     detection_plugin: Optional[str] = None
@@ -52,6 +53,7 @@ class Finding:
     triage_priority: Optional[str] = None
     enriched: Optional[bool] = False
     enrichment_source_cve: Optional[str] = None
+    cve_analysis: List[Dict[str, Any]] = field(default_factory=list)
     enrichment_sources: List[str] = field(default_factory=list)
     confidence: int = 0
     confidence_evidence: Dict[str, int] = field(default_factory=dict)
