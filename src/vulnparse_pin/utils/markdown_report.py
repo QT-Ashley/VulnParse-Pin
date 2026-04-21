@@ -90,7 +90,7 @@ def generate_markdown_report(
 def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
     """
     Generate executive-level summary report.
-    
+
     Focused on:
     - High-level metrics
     - Risk distribution
@@ -102,7 +102,17 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
     top_risks = summary.top_risks
     remediation = summary.remediation_priorities
     asset_summary = summary.asset_summary
+    enrichment = summary.enrichment_metrics
     ghsa_findings, ghsa_refs = _ghsa_reference_metrics(_scan)
+
+    assets = asset_summary.get('assets', []) if isinstance(asset_summary, dict) else []
+    total_critical_findings = sum(int(a.get('critical_findings', 0) or 0) for a in assets)
+    total_high_findings = sum(int(a.get('high_findings', 0) or 0) for a in assets)
+    top_assets = assets[:3]
+    top3_critical = sum(int(a.get('critical_findings', 0) or 0) for a in top_assets)
+    top3_high = sum(int(a.get('high_findings', 0) or 0) for a in top_assets)
+    top3_critical_pct = (top3_critical / total_critical_findings * 100.0) if total_critical_findings else 0.0
+    top3_high_pct = (top3_high / total_high_findings * 100.0) if total_high_findings else 0.0
 
     def _risk_drivers(risk: Any) -> str:
         drivers: list[str] = []
@@ -114,9 +124,9 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
         if isinstance(epss_val, (int, float)) and epss_val >= 0.50:
             drivers.append('EPSS>=0.50')
         return ", ".join(drivers) if drivers else "Risk Score Driven"
-    
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     md = f"""# Vulnerability Scan Executive Summary
 
 **Generated:** {timestamp}  
@@ -134,6 +144,26 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
 | **Exploitable Vulnerabilities** | {overview['exploitable_findings']:,} |
 | **CISA KEV Listed** | {overview['kev_listed_findings']:,} |
 | **GHSA Advisory Matches** | {ghsa_findings:,} findings ({ghsa_refs:,} references) |
+
+---
+
+## 🧠 Decision Context
+
+- CVE rows are ranked by **Finding Risk (Raw)** from derived scoring outputs.
+- For near-tied rows, contributor-breadth signals are applied to keep ordering deterministic.
+- **Finding Agg CVEs** is a finding-level contributor-breadth signal, not an asset-level aggregate.
+
+---
+
+## ✅ Data Quality Scorecard
+
+| Signal | Value |
+|--------|-------|
+| Scored Findings Coverage | {risk_dist['total_scored']:,}/{overview['total_findings']:,} |
+| Enriched Findings Coverage | {enrichment['enriched_findings']:,}/{enrichment['total_findings']:,} ({enrichment['enrichment_coverage']:.1%}) |
+| KEV-listed Findings | {overview['kev_listed_findings']:,} |
+| Public Exploit Findings | {overview['exploitable_findings']:,} |
+| GHSA Advisory Matches | {ghsa_findings:,} findings ({ghsa_refs:,} references) |
 
 ---
 
@@ -160,23 +190,23 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
 ### Top Priority CVEs:
 
 """
-    
+
     for i, cve in enumerate(remediation['immediate_cves'][:5], 1):
         md += f"{i}. `{cve}`\n"
 
     if not remediation['immediate_cves']:
         md += "- No immediate-action CVEs detected in this scan window.\n"
-    
+
     md += f"""
 
 ---
 
 ## 📈 Top {len(top_risks)} Highest Risk CVEs (De-duplicated, Derived Risk)
 
-| CVE | Finding Risk (Raw) | Band | Exploit? | KEV? | Agg CVEs | Agg Exploitable | Agg KEV | CVSS | Occurrences | Primary Drivers |
+| CVE | Finding Risk (Raw) | Band | Exploit? | KEV? | Finding Agg CVEs | Agg Exploitable | Agg KEV | CVSS | Occurrences | Primary Drivers |
 |-----|---------------------|------|----------|------|----------|-----------------|---------|------|-------------|-----------------|
 """
-    
+
     for risk in top_risks:
         exploit_icon = "✅" if risk['exploit_available'] else "❌"
         kev_icon = "✅" if risk['kev_listed'] else "❌"
@@ -185,13 +215,13 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
         agg_count = int(risk.get('aggregated_cve_count', 1) or 1)
         agg_exploit = int(risk.get('aggregated_exploitable_cve_count', 0) or 0)
         agg_kev = int(risk.get('aggregated_kev_cve_count', 0) or 0)
-        
+
         md += (
             f"| {risk['cve']} | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
             f"{exploit_icon} | {kev_icon} | {agg_count:,} | {agg_exploit:,} | {agg_kev:,} | "
             f"{cvss} | {occurrences:,} | {_risk_drivers(risk)} |\n"
         )
-    
+
     md += """
 
 ---
@@ -221,6 +251,40 @@ These are the recommended most vulnerable assets to target first for patching ba
 
 ---
 
+## ⏱️ Remediation Plan by Time Horizon
+
+| Horizon | Focus | Count |
+|---------|-------|-------|
+| 24-48 hours | Immediate-action vulnerabilities | {remediation['immediate_action']:,} |
+| 7 days | High-priority vulnerabilities | {remediation['high_priority']:,} |
+| 30 days | Medium-priority vulnerabilities | {remediation['medium_priority']:,} |
+
+Immediate-action CVE shortlist:
+
+"""
+
+    if remediation['immediate_cves']:
+        for i, cve in enumerate(remediation['immediate_cves'][:5], 1):
+            md += f"{i}. `{cve}`\n"
+    else:
+        md += "- No immediate-action CVEs detected in this scan window.\n"
+
+    md += f"""
+
+---
+
+## 🎯 Risk Concentration
+
+| Concentration Signal | Value |
+|----------------------|-------|
+| Top 3 assets critical-share | {top3_critical:,}/{total_critical_findings:,} ({top3_critical_pct:.1f}%) |
+| Top 3 assets high-share | {top3_high:,}/{total_high_findings:,} ({top3_high_pct:.1f}%) |
+| Assets considered in concentration view | {len(top_assets):,} of {len(assets):,} |
+
+Interpretation: higher concentration usually means faster risk reduction when remediation starts with the top exposed assets.
+
+---
+
 ## 🛡️ Remediation Priority Breakdown
 
 | Priority | Count | Recommended Timeframe |
@@ -238,20 +302,20 @@ These are the recommended most vulnerable assets to target first for patching ba
 3. **Patch Management:** Implement a regular patching cycle for the {remediation['high_priority']} high-priority findings
 4. **Monitoring:** Deploy detection rules for CVEs listed in CISA KEV catalog
 5. **Interpretation Note:** Treat scanner severity as input signal; use derived risk band and raw score to break ties within large critical buckets
-6. **Aggregation Context:** Where Agg CVEs > 1, prioritize remediation by addressing primary shared root-cause components first
+6. **Aggregation Context:** Where Finding Agg CVEs > 1, prioritize remediation by addressing primary shared root-cause components first
 
 ---
 
 *Report generated by VulnParse-Pin - Automated Vulnerability Intelligence*
 """
-    
+
     return md
 
 
 def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
     """
     Generate detailed technical report for vulnerability engineers.
-    
+
     Includes:
     - Detailed asset breakdown
     - Finding-level analysis
@@ -276,9 +340,9 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
         if isinstance(epss_val, (int, float)) and epss_val >= 0.50:
             drivers.append('EPSS>=0.50')
         return ", ".join(drivers) if drivers else "Risk Score Driven"
-    
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     md = f"""# Vulnerability Scan Technical Report
 
 **Generated:** {timestamp}  
@@ -294,7 +358,10 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 3. [Scanner Severity Breakdown](#scanner-severity-breakdown)
 4. [Derived Risk Breakdown](#derived-risk-breakdown)
 5. [Top Risk Findings](#top-risk-findings)
-6. [Enrichment Coverage](#enrichment-coverage)
+6. [Tie-Break Explainability](#tie-break-explainability)
+7. [Enrichment Coverage](#enrichment-coverage)
+8. [Analyst Caveats](#analyst-caveats)
+9. [Trust and Provenance](#trust-and-provenance)
 
 ---
 
@@ -319,14 +386,14 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 | Asset ID | IP Address | Hostname | Criticality | Findings | Risk Score | Critical | High |
 |----------|------------|----------|-------------|----------|------------|----------|------|
 """
-    
+
     for asset in asset_summary['assets'][:20]:  # Limit for readability
         md += (
             f"| {asset['asset_id']} | {asset['ip'] or 'N/A'} | {asset['hostname'] or 'N/A'} | "
             f"{asset.get('criticality') or 'N/A'} | {asset['total_findings']:,} | {asset['risk_score']:.2f} | "
             f"{asset['critical_findings']:,} | {asset['high_findings']:,} |\n"
         )
-    
+
     md += f"""
 
 **Total Assets Evaluated:** {asset_summary['total_assets']:,}
@@ -373,10 +440,10 @@ Use this distribution for remediation prioritization and queue ordering.
 
 ### Top {len(top_risks)} CVEs by Finding Risk Score (Raw, Derived)
 
-| # | CVE | Finding Risk (Raw) | Band | CVSS | EPSS | Exploit | KEV | Agg CVEs | Agg Exploitable | Agg KEV | Occurrences | Primary Drivers |
+| # | CVE | Finding Risk (Raw) | Band | CVSS | EPSS | Exploit | KEV | Finding Agg CVEs | Agg Exploitable | Agg KEV | Occurrences | Primary Drivers |
 |---|-----|---------------------|------|------|------|---------|-----|----------|-----------------|---------|-------------|-----------------|
 """
-    
+
     for i, risk in enumerate(top_risks, 1):
         exploit = "✅ Yes" if risk['exploit_available'] else "❌ No"
         kev = "✅ Yes" if risk['kev_listed'] else "❌ No"
@@ -386,14 +453,22 @@ Use this distribution for remediation prioritization and queue ordering.
         agg_count = int(risk.get('aggregated_cve_count', 1) or 1)
         agg_exploit = int(risk.get('aggregated_exploitable_cve_count', 0) or 0)
         agg_kev = int(risk.get('aggregated_kev_cve_count', 0) or 0)
-        
+
         md += (
             f"| {i} | `{risk['cve']}` | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
             f"{cvss} | {epss} | {exploit} | {kev} | {agg_count:,} | {agg_exploit:,} | {agg_kev:,} | "
             f"{occurrences:,} | {_risk_drivers(risk)} |\n"
         )
-    
+
     md += f"""
+
+---
+
+## 🧷 Tie-Break Explainability
+
+- Rankings are ordered by **Finding Risk (Raw)** first.
+- For near-equal scores, contributor-breadth signals are used to keep ordering deterministic.
+- **Finding Agg CVEs**, **Agg Exploitable**, and **Agg KEV** provide contributor-breadth context for each representative finding row.
 
 ---
 
@@ -416,6 +491,27 @@ Use this distribution for remediation prioritization and queue ordering.
 
 ---
 
+## ⚖️ Analyst Caveats
+
+- "Finding Risk (Raw)" is finding-level and should not be treated as an asset aggregate.
+- "Finding Agg CVEs" describes score-trace contributor breadth for the representative finding row.
+- "Occurrences" captures recurrence of the displayed CVE in the de-duplicated top-risk set.
+- Scanner severity is intentionally separated from derived risk to avoid queue-ordering bias.
+
+---
+
+## 🔐 Trust and Provenance
+
+| Signal | Value |
+|--------|-------|
+| Report Generated At | {timestamp} |
+| Scan Timestamp | {overview.get('scan_timestamp', 'N/A')} |
+| Integrity Reference | Use runmanifest verification for artifact-level trust validation |
+
+Provenance note: this markdown report summarizes derived outputs; verifiable integrity and decision-chain validation are provided by the runmanifest artifact when generated.
+
+---
+
 ## 🔧 Technical Notes
 
 - "Finding Risk (Raw)" is the highest per-finding score observed for that CVE (not an asset aggregate score)
@@ -424,11 +520,11 @@ Use this distribution for remediation prioritization and queue ordering.
 - Scanner severity and derived risk band are intentionally shown separately to reduce prioritization ambiguity
 - Findings with CVSS v3.1 scores are prioritized; v2.0 used as fallback
 - Exploit availability indicates public proof-of-concept code exists
-- "Agg CVEs" fields indicate whole-of-CVEs aggregation breadth from score_trace contributors
+- "Finding Agg CVEs" indicates whole-of-CVEs aggregation breadth from score_trace contributors for the representative finding shown on that row
 
 ---
 
 *For detailed finding-level data, refer to the JSON/CSV output files.*
 """
-    
+
     return md

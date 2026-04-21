@@ -47,7 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decision ledger events for all four `NmapAdapterPass` execution paths (`NMAP_CTX_DISABLED`, `NMAP_CTX_ENABLED`, `NMAP_CTX_FAILED`, `NMAP_CTX_INVALID_FORMAT`) with structured evidence fields (host count, matched asset count, join rate, source file, error text).
 - `DecisionReasonCodes` extended with four new nmap_ctx reason codes.
 - CSV output presentation profiles via `--csv-profile` (`full`, `analyst`, `audit`) with default backward-compatible schema preserved under `full`.
-- Markdown report enrichment to surface aggregated whole-of-CVEs context in top-risk sections (Agg CVEs, Agg Exploitable, Agg KEV).
+- Markdown report enrichment to surface aggregated whole-of-CVEs context in top-risk sections (Finding Agg CVEs, Agg Exploitable, Agg KEV).
+- Executive and technical markdown quality sections: Decision Context, Data Quality Scorecard, Remediation Plan by Time Horizon, Risk Concentration, Tie-Break Explainability, Analyst Caveats, and Trust and Provenance framing.
+- Markdown terminology clarification: top-risk tables now use `Finding Agg CVEs` to explicitly denote finding-level score-contributor breadth.
+- RunManifest pass-summary metric alignment for whole-of-CVEs semantics: Scoring, TopN, and Summary now surface aggregated-context counters needed for audit and operator traceability.
+- Output interpretation documentation for analyst workflows, including JSON/CSV/Markdown/RunManifest reading order and practical triage guidance.
 
 ### Changed
 
@@ -69,6 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TopN ranking tie-breakers now account for whole-of-CVEs breadth signals from scoring traces (exploitable contributor count, KEV contributor count, and total contributor count) before falling back to stable IDs.
 - Summary metrics now consume `Scoring@2.0` trace union flags and contributor metadata so overview counts, top-risk entries, and remediation priority buckets reflect aggregated CVE context rather than only finding-level booleans.
 - Output orchestration now threads `--csv-profile` through CSV export generation.
+- TopN process-pool worker ranking logic now mirrors sequential tie-break behavior for whole-of-CVEs contributor breadth signals, preserving deterministic ordering parity across execution paths.
+- Regression coverage expanded for output-presentation workflows (`--csv-profile`, markdown report rendering, and CLI output flag matrix behavior).
 
 ### Performance
 

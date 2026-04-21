@@ -84,6 +84,10 @@ Designed for leadership-level triage posture:
 - Risk-band overview
 - Top target assets
 - High-priority vulnerability highlights
+- Decision Context section that explains ranking basis and tie interpretation
+- Data Quality Scorecard section for scored/enriched coverage framing
+- Remediation Plan by Time Horizon (24-48h, 7d, 30d)
+- Risk Concentration snapshot to show where critical/high exposure is clustered
 
 Use it for meeting preparation and remediation prioritization checkpoints.
 
@@ -94,6 +98,13 @@ Designed for engineering and operations:
 - Detailed vulnerability and asset breakdowns
 - Operational context for investigation
 - Data aligned with downstream remediation workflows
+- Tie-Break Explainability section for ranking interpretation
+- Analyst Caveats section to prevent finding-level versus asset-level misreads
+- Trust and Provenance section that points operators to runmanifest verification
+
+Interpretation note:
+
+- `Finding Agg CVEs` is finding-level contributor breadth for the representative row and should not be interpreted as an asset-level aggregate count.
 
 ## RunManifest Interpretation
 

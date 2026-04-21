@@ -86,10 +86,21 @@ def test_executive_report_includes_aggregated_risk_columns() -> None:
 
     md = _generate_executive_report(_scan=None, summary=summary)
 
-    assert "Agg CVEs" in md
+    assert "Finding Agg CVEs" in md
     assert "Agg Exploitable" in md
     assert "Agg KEV" in md
     assert "Aggregation Context" in md
+
+
+def test_executive_report_includes_quality_sections() -> None:
+    summary = _build_summary(immediate_cves=["CVE-2026-0001"])
+
+    md = _generate_executive_report(_scan=None, summary=summary)
+
+    assert "Decision Context" in md
+    assert "Data Quality Scorecard" in md
+    assert "Remediation Plan by Time Horizon" in md
+    assert "Risk Concentration" in md
 
 
 def test_executive_report_handles_no_immediate_cves() -> None:
@@ -105,10 +116,20 @@ def test_technical_report_includes_aggregated_risk_columns() -> None:
 
     md = _generate_technical_report(_scan=None, summary=summary)
 
-    assert "Agg CVEs" in md
+    assert "Finding Agg CVEs" in md
     assert "Agg Exploitable" in md
     assert "Agg KEV" in md
     assert "whole-of-CVEs aggregation breadth" in md
+
+
+def test_technical_report_includes_quality_sections() -> None:
+    summary = _build_summary(immediate_cves=["CVE-2026-0001"])
+
+    md = _generate_technical_report(_scan=None, summary=summary)
+
+    assert "Tie-Break Explainability" in md
+    assert "Analyst Caveats" in md
+    assert "Trust and Provenance" in md
 
 
 def test_markdown_reports_include_ghsa_visibility_metrics() -> None:

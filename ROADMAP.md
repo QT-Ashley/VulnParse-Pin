@@ -45,14 +45,21 @@ Delivery focus this quarter is balanced across:
 
 ## v1.2.0
 
-**Status**: Planned — feature development
+**Status**: In validation / release hardening
 
-- Decision explainability graph and provenance query tooling (built on RunManifest + DecisionLedger)
-- More scanner support (Qualys, Rapid7 InsightVM, NMAP, etc.)
-- Expanded intelligence sources (CertCC, threat feeds, GHSA, etc.)
-- CVE aggregated scoring (instead of highest-risk CVE per asset)
-- Third-party integrations (webhook, API, SIEM forwarding)
-- Advanced filtering and custom scoring policies
+- [done] **Whole-of-CVEs scoring model** — `Scoring@2.0` now aggregates contributor CVEs with bounded decay and persists per-finding `score_trace` for explainability.
+- [done] **TopN deterministic parity improvements** — tie-break behavior now includes whole-of-CVEs breadth signals and is aligned between sequential and process-pool worker execution paths.
+- [done] **Summary aggregation alignment** — top risks and remediation buckets consume union contributor signals from scoring traces instead of relying on single booleans.
+- [done] **RunManifest metric alignment** — pass summaries now capture whole-of-CVEs counters across Scoring, TopN, and Summary for audit/reproducibility.
+- [done] **Output presentation upgrade** — CSV profiles (`full`/`analyst`/`audit`), enriched markdown reporting, and output-interpretation guidance for operator workflows.
+	- Executive report quality sections delivered: Decision Context, Data Quality Scorecard, Remediation Plan by Time Horizon, and Risk Concentration.
+	- Technical report quality sections delivered: Tie-Break Explainability, Analyst Caveats, and Trust and Provenance.
+	- Terminology clarity delivered: `Finding Agg CVEs` explicitly denotes finding-level contributor breadth.
+- [in progress] **Decision explainability graph and provenance query tooling** (built on RunManifest + DecisionLedger).
+- [in progress] **More scanner support** (Qualys integrated; Nmap adapter path integrated; additional scanner connectors pending).
+- [in progress] **Expanded intelligence sources** (GHSA integrated with online/offline modes and cache hardening; additional external sources pending).
+- [planned] **Third-party integrations** (webhook, API, SIEM forwarding).
+- [planned] **Advanced filtering and custom scoring policies**.
 
 ## v1.3.0-1.5.0+
 
