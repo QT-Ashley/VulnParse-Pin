@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Attack Capability Inference pass integration in default pipeline (`ACI@1.0`) between `Scoring@2.0` and `TopN@1.0`, including typed output contracts for finding semantics, asset semantics, and ACI metrics.
+- ACI configuration model in TopN policy semantics and schema (`topN.schema.json` / `tn_triage.json`), including capability rules, chain rules, token governance (`token_mode`, `signal_aliases`, `disabled_core_tokens`), bounded uplift controls, and exploit-boost tuning.
+- ACI-focused test coverage for pass behavior and tie-break integration (`tests/test_aci_pass.py`) plus regression updates across pass-contract/parser smoke/CSV/TopN-alignment tests to ensure `Scoring -> ACI -> TopN` pipeline parity.
+- ACI documentation set:
+  - `documentation/docs/ACI Feature Explanation.md`
+  - `documentation/docs/ACI Rule Authoring Tutorial.md`
+  - `documentation/docs/ACI Technical Deep Dive.md`
+- Analyst tabletop prioritization guidance in documentation: explicit `P1`/`P1b`/`P2` lanes, default precedence rule, and escalation exception criteria for exploitability-vs-chain decisions.
+
 - Whole-of-CVEs scoring in `ScoringPass` (`Scoring@2.0`): findings with `cve_analysis` now score across all retained CVE records using bounded decay aggregation rather than selecting one authoritative CVE for score calculation.
 - Per-finding `score_trace` persistence on normalized finding objects and in scoring derived output, including contributor CVE IDs, per-CVE raw contribution, decay weight, CVSS/EPSS/KEV/exploit metadata, and final scoring rationale.
 - Scoring policy knobs for finding-level CVE aggregation in `scoring.json`: `aggregation.finding_cve_score`, `aggregation.finding_cve_decay`, and `aggregation.finding_cve_max_contributors`.
@@ -55,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- TopN now explicitly requires `ACI@1.0`; when ACI output is missing, TopN emits a soft no-op artifact with dependency-aware status/error metadata and decision-ledger evidence.
+- TopN ranking keys now incorporate bounded ACI uplift as deterministic tie-break signal at finding/global/asset ordering layers while preserving score semantics.
+- Markdown report generation now receives runtime CLI args so enrichment-source status is rendered from actual run flags instead of static assumptions.
+- Executive/technical markdown reports now include ACI metric snapshots, capability and chain distributions, confidence buckets, and top-asset finding-to-capability mapping with analyst caveats.
+- Triage methodology language standardized across docs to reflect a real-world impact probability first default model, with explicit guidance to tune config/policy to environment, risk appetite, compliance obligations, and business goals.
+
 - Security hardening stream completed for feed/download surfaces: decompression size caps, HTTPS-only feed override handling, and response-size guardrails for external threat-intel fetch paths.
 - PFH hardening and reliability updates landed, including chmod error-path handling and tighter policy enforcement behavior under protected write/read flows.
 - GHSA activation is now strict CLI-only at runtime: config no longer auto-enables GHSA when `--ghsa` is absent.
@@ -82,6 +97,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - End-to-end online GHSA pass on 5k Nessus sample completed successfully with online prefetch (`25` CVEs queried) and `22` GHSA-attributed findings in output.
 
 ### Fixed
+
+- Executive markdown risk distribution rendering issue where template/code-like output could appear instead of resolved numeric values.
+- Enrichment source status display in markdown reports now accurately reflects runtime enable/disable state for KEV, EPSS, Exploit-DB, NVD, and GHSA.
+- ACI over-inference noise reduced with guardrails:
+  - `remote_service`-only signals no longer imply `remote_execution` or `initial_access`.
+  - protocol-only (`smb`/`ssh`/`rdp`/`rpc`) signals no longer imply `lateral_movement` by themselves.
+  - generic `exposure` token removed from core-token mapping to reduce false information-disclosure inference.
+- Zero-inference reporting clarity improved: reports now include explicit diagnostics and a mapping note when ranked findings exist but all entries are `None inferred` under current ACI thresholds.
 
 - GHSA SQLite signature write path now matches PFH open/write API contract, preventing cache-init disablement under strict handler validation.
 - GHSA test context fixture now roots cache paths under pytest temp roots, preventing false PFH root-policy failures during test runs.

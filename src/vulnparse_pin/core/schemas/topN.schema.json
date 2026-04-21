@@ -122,6 +122,130 @@
                     "items": { "$ref": "#/$defs/InferenceRule" }
                 }
             }
+        },
+
+        "aci": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable Attack Capability Inference derived pass influence for TopN ranking tie-break keys."
+                },
+                "min_confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.6,
+                    "description": "Minimum ACI confidence required before any ranking uplift can apply."
+                },
+                "max_uplift": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "default": 2.0,
+                    "description": "Maximum finding-level ranking uplift used only as TopN tie-break signal."
+                },
+                "asset_uplift_weight": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.5,
+                    "description": "Weight applied when aggregating finding-level ACI uplift into asset-level TopN tie-break signal."
+                },
+                "token_mode": {
+                    "type": "string",
+                    "enum": ["merge", "replace"],
+                    "default": "merge",
+                    "description": "Token vocabulary mode: merge user aliases with maintained core tokens or replace core tokens entirely."
+                },
+                "signal_aliases": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 200,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["token", "signal"],
+                        "properties": {
+                            "token": { "type": "string", "minLength": 1, "maxLength": 64 },
+                            "signal": { "type": "string", "minLength": 1, "maxLength": 64 }
+                        }
+                    }
+                },
+                "disabled_core_tokens": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 200,
+                    "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+                },
+                "exploit_boost": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": true
+                        },
+                        "weight": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.25
+                        },
+                        "max_bonus": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 0.5,
+                            "default": 0.2
+                        }
+                    }
+                },
+                "capability_rules": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 200,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "capability", "signals", "weight"],
+                        "properties": {
+                            "id": { "type": "string", "pattern": "^[a-z0-9_\\-]{1,64}$" },
+                            "enabled": { "type": "boolean", "default": true },
+                            "capability": { "type": "string", "minLength": 1, "maxLength": 64 },
+                            "signals": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 10,
+                                "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+                            },
+                            "weight": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                        }
+                    }
+                },
+                "chain_rules": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 100,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "requires_all", "label"],
+                        "properties": {
+                            "id": { "type": "string", "pattern": "^[a-z0-9_\\-]{1,64}$" },
+                            "enabled": { "type": "boolean", "default": true },
+                            "requires_all": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 10,
+                                "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+                            },
+                            "label": { "type": "string", "minLength": 1, "maxLength": 128 }
+                        }
+                    }
+                }
+            }
         }
     },
 

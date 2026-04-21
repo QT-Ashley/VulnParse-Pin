@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Any, Dict, Tuple, Sequence, TYPE_CHECKING
 
 from vulnparse_pin.core.passes.TopN.TN_triage_schema import (
@@ -18,6 +20,8 @@ from vulnparse_pin.core.passes.TopN.TN_triage_schema import (
     validate_topn_cfg_schema
 )
 from vulnparse_pin.core.passes.TopN.TN_triage_semantics import (
+    ACIConfig,
+    ACIExploitBoost,
     ConfidenceThreshold,
     InferenceConfig,
     SemanticIssue,
@@ -153,4 +157,33 @@ def _safe_fallback_config() -> TNTriageConfig:
         rules=(),
     )
 
-    return TNTriageConfig(topn=topn, inference=inference)
+    aci = _fallback_aci_config()
+
+    return TNTriageConfig(topn=topn, inference=inference, aci=aci)
+
+
+def _fallback_aci_config() -> ACIConfig:
+    """
+    Build fallback ACI defaults from packaged tn_triage.json when possible.
+    This avoids duplicating every capability/chain rule in code.
+    """
+    try:
+        base_dir = Path(__file__).resolve().parents[3]
+        resource_path = base_dir / "resources" / "tn_triage.json"
+        raw = json.loads(resource_path.read_text(encoding="utf-8"))
+        normalized, issues = validate_and_normalize_semantics(raw)
+        if normalized is not None and not issues:
+            return normalized.aci
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    # Last-resort ACI fallback if packaged defaults cannot be loaded/parsed.
+    return ACIConfig(
+        enabled=False,
+        min_confidence=0.6,
+        max_uplift=2.0,
+        asset_uplift_weight=0.5,
+        exploit_boost=ACIExploitBoost(enabled=True, weight=0.25, max_bonus=0.2),
+        capability_rules=(),
+        chain_rules=(),
+    )

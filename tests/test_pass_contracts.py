@@ -13,6 +13,7 @@ from vulnparse_pin.core.classes.dataclass import (
     Services,
 )
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+from vulnparse_pin.core.passes.ACI.aci_pass import AttackCapabilityInferencePass
 from vulnparse_pin.core.passes.Nmap.nmap_adapter_pass import NmapAdapterPass
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
@@ -102,7 +103,8 @@ def _run_full_pipeline(ctx, scan):
 
     scoring = ScoringPass(get_policy())
     topn = TopNPass(_safe_fallback_config())
-    runner = PassRunner([scoring, topn])
+    aci = AttackCapabilityInferencePass(_safe_fallback_config().aci)
+    runner = PassRunner([scoring, aci, topn])
     return runner.run_all(ctx, scan)
 
 
@@ -157,7 +159,8 @@ def test_topn_basis_matches_config(tmp_path):
 
     scoring = ScoringPass(get_policy())
     topn = TopNPass(cfg)
-    runner = PassRunner([scoring, topn])
+    aci = AttackCapabilityInferencePass(cfg.aci)
+    runner = PassRunner([scoring, aci, topn])
     scan = runner.run_all(ctx, scan)
 
     data = scan.derived.passes["TopN@1.0"].data
@@ -185,12 +188,14 @@ def test_nmap_adapter_pass_can_run_before_scoring_and_topn(tmp_path):
     nmap = NmapAdapterPass(None)
     scoring = ScoringPass(get_policy())
     topn = TopNPass(_safe_fallback_config())
-    runner = PassRunner([nmap, scoring, topn])
+    aci = AttackCapabilityInferencePass(_safe_fallback_config().aci)
+    runner = PassRunner([nmap, scoring, aci, topn])
 
     out = runner.run_all(ctx, scan)
 
     assert out.derived.get("nmap_adapter@1.0") is not None
     assert out.derived.get("Scoring@2.0") is not None
+    assert out.derived.get("ACI@1.0") is not None
     assert out.derived.get("TopN@1.0") is not None
 
 
@@ -203,7 +208,8 @@ def test_pass_pipeline_is_deterministic(tmp_path):
 
     scoring = ScoringPass(get_policy())
     topn = TopNPass(_safe_fallback_config())
-    runner = PassRunner([scoring, topn])
+    aci = AttackCapabilityInferencePass(_safe_fallback_config().aci)
+    runner = PassRunner([scoring, aci, topn])
 
     scan1 = copy.deepcopy(base_scan)
     scan2 = copy.deepcopy(base_scan)
@@ -376,7 +382,8 @@ def test_topn_prefers_updated_scan_criticality_over_stale_index(tmp_path):
 
     scoring = ScoringPass(get_policy())
     topn = TopNPass(_safe_fallback_config())
-    out = PassRunner([scoring, topn]).run_all(ctx, scan)
+    aci = AttackCapabilityInferencePass(_safe_fallback_config().aci)
+    out = PassRunner([scoring, aci, topn]).run_all(ctx, scan)
 
     ranked_assets = out.derived.passes["TopN@1.0"].data["assets"]
     assert ranked_assets[0]["asset_id"] == "Z-EXTREME"
@@ -480,7 +487,8 @@ def test_topn_index_sorting_determinism(tmp_path):
     
     scoring = ScoringPass(get_policy())
     topn = TopNPass(_safe_fallback_config())
-    runner = PassRunner([scoring, topn])
+    aci = AttackCapabilityInferencePass(_safe_fallback_config().aci)
+    runner = PassRunner([scoring, aci, topn])
     
     scan1 = copy.deepcopy(base_scan)
     scan2 = copy.deepcopy(base_scan)

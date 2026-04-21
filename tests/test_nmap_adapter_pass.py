@@ -4,6 +4,7 @@ from datetime import datetime
 
 from vulnparse_pin.core.classes.dataclass import Asset, RunContext, ScanMetaData, ScanResult
 from vulnparse_pin.core.passes.Nmap.nmap_adapter_pass import NmapAdapterPass
+from vulnparse_pin.core.passes.ACI.aci_pass import AttackCapabilityInferencePass
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
 from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
@@ -243,7 +244,12 @@ def test_topn_nmap_tiebreak_floats_confirmed_port_finding_first(tmp_path) -> Non
         max_op_risk=10.0,
     )
 
-    runner = PassRunner([NmapAdapterPass(nmap_xml), ScoringPass(policy), TopNPass(_safe_fallback_config())])
+    runner = PassRunner([
+      NmapAdapterPass(nmap_xml),
+      ScoringPass(policy),
+      AttackCapabilityInferencePass(_safe_fallback_config().aci),
+      TopNPass(_safe_fallback_config()),
+    ])
     out = runner.run_all(ctx, scan)
 
     topn = out.derived.get("TopN@1.0")

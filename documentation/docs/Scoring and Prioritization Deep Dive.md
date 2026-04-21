@@ -15,6 +15,16 @@ Primary implementation files:
 - `src/vulnparse_pin/resources/scoring.json`
 - `src/vulnparse_pin/resources/tn_triage.json`
 
+## Triage methodology baseline
+
+VulnParse-Pin applies a real-world impact probability first triage model by default:
+
+- prioritize findings and assets with the highest near-term likelihood of meaningful operational impact
+- treat exploitability and exposure evidence as first-order decision signals
+- use chain/pathway context as decision support, with bounded influence
+
+This baseline should be tuned for your environment. Adjust scoring and TopN policy to match business goals, risk tolerance, and regulatory obligations.
+
 ## Pass dependency chain
 
 Default pass order:
@@ -195,4 +205,7 @@ Derived outputs are append-only under versioned pass keys.
 - [Pass Phases](Pass%20Phases.md)
 - [Pipeline System](Pipeline%20System.md)
 - [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md)
+- [ACI Feature Explanation](ACI%20Feature%20Explanation.md)
+- [ACI Rule Authoring Tutorial](ACI%20Rule%20Authoring%20Tutorial.md)
+- [ACI Technical Deep Dive](ACI%20Technical%20Deep%20Dive.md)
 - [CVSS vs VulnParse-Pin: Technical Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)

@@ -66,6 +66,9 @@ nav:
     - Caching Deep Dive: Caching Deep Dive.md
     - Runtime Policy Deep Dive: Runtime Policy Deep Dive.md
     - Scoring and Prioritization Deep Dive: Scoring and Prioritization Deep Dive.md
+    - ACI Feature Explanation: ACI Feature Explanation.md
+    - ACI Rule Authoring Tutorial: ACI Rule Authoring Tutorial.md
+    - ACI Technical Deep Dive: ACI Technical Deep Dive.md
     - Presentation Overlays: Presentation Overlays.md
   - Performance:
     - Benchmarks: Benchmarks.md

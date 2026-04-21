@@ -71,6 +71,30 @@ def _derived_scoring(scored_findings: dict) -> DerivedPassResult:
     )
 
 
+def _derived_aci() -> DerivedPassResult:
+    return DerivedPassResult(
+        meta=PassMeta(
+            name="ACI",
+            version="1.0",
+            created_at_utc="2026-04-17T00:00:00Z",
+            notes="test",
+        ),
+        data={
+            "finding_semantics": {},
+            "asset_semantics": {},
+            "metrics": {
+                "total_findings": 0,
+                "inferred_findings": 0,
+                "coverage_ratio": 0.0,
+                "capabilities_detected": {},
+                "chain_candidates_detected": {},
+                "confidence_buckets": {"low": 0, "medium": 0, "high": 0},
+                "uplifted_findings": 0,
+            },
+        },
+    )
+
+
 def test_topn_finding_tiebreak_prefers_exploit_breadth(tmp_path):
     ctx = _make_ctx(tmp_path)
 
@@ -109,7 +133,8 @@ def test_topn_finding_tiebreak_prefers_exploit_breadth(tmp_path):
                         },
                     },
                 }
-            )
+            ),
+            "ACI@1.0": _derived_aci(),
         }
     )
 
@@ -159,7 +184,8 @@ def test_topn_asset_tiebreak_prefers_combined_cve_depth(tmp_path):
                         },
                     },
                 }
-            )
+            ),
+            "ACI@1.0": _derived_aci(),
         }
     )
 

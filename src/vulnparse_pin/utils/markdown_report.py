@@ -39,11 +39,283 @@ def _ghsa_reference_metrics(scan: Any) -> tuple[int, int]:
     return findings_with_ghsa, total_ghsa_refs
 
 
+_ACI_STRONG_SEMANTIC_TERMS = (
+    "remote code execution",
+    "rce",
+    "command injection",
+    "sql injection",
+    "authentication bypass",
+    "credential",
+    "password",
+    "hash",
+    "information disclosure",
+    "sensitive data",
+    "leak",
+    "exploit",
+)
+
+
+def _enrichment_source_status(args: Any) -> dict[str, tuple[bool, str]]:
+    """Return enrichment source status keyed by source name."""
+    if args is None:
+        return {
+            "KEV": (True, "Status unavailable (no runtime args provided)"),
+            "EPSS": (True, "Status unavailable (no runtime args provided)"),
+            "Exploit-DB": (True, "Status unavailable (no runtime args provided)"),
+            "NVD": (True, "Status unavailable (no runtime args provided)"),
+            "GHSA": (True, "Status unavailable (no runtime args provided)"),
+        }
+
+    kev_enabled = not bool(getattr(args, "no_kev", False))
+    epss_enabled = not bool(getattr(args, "no_epss", False))
+    exploit_enabled = not bool(getattr(args, "no_exploit", False))
+    nvd_enabled = not bool(getattr(args, "no_nvd", False))
+    ghsa_value = getattr(args, "ghsa", None)
+    ghsa_enabled = ghsa_value is not None
+
+    return {
+        "KEV": (kev_enabled, "Enabled" if kev_enabled else "Disabled by CLI (--no-kev)"),
+        "EPSS": (epss_enabled, "Enabled" if epss_enabled else "Disabled by CLI (--no-epss)"),
+        "Exploit-DB": (exploit_enabled, "Enabled" if exploit_enabled else "Disabled by CLI (--no-exploit)"),
+        "NVD": (nvd_enabled, "Enabled" if nvd_enabled else "Disabled by CLI (--no-nvd)"),
+        "GHSA": (ghsa_enabled, "Enabled" if ghsa_enabled else "Disabled (no --ghsa flag)"),
+    }
+
+
+def _scan_contains_strong_aci_terms(scan: Any) -> bool:
+    if scan is None:
+        return False
+
+    for asset in getattr(scan, "assets", []) or []:
+        for finding in getattr(asset, "findings", []) or []:
+            for value in (
+                getattr(finding, "title", None),
+                getattr(finding, "description", None),
+                getattr(finding, "plugin_output", None),
+            ):
+                if not isinstance(value, str):
+                    continue
+                lowered = value.lower()
+                if any(term in lowered for term in _ACI_STRONG_SEMANTIC_TERMS):
+                    return True
+    return False
+
+
+def _aci_zero_inference_diagnostics(scan: Any, args: Any, aci_metrics: dict[str, Any]) -> list[str]:
+    if not aci_metrics.get("available"):
+        return []
+    if int(aci_metrics.get("inferred_findings", 0) or 0) > 0:
+        return []
+
+    diagnostics = ["No findings met the ACI inference threshold for this run."]
+
+    source_status = _enrichment_source_status(args)
+    disabled_sources = [name for name, status in source_status.items() if not status[0]]
+    if disabled_sources:
+        diagnostics.append(
+            "Enrichment inputs were disabled for: " + ", ".join(disabled_sources) + "."
+        )
+
+    if not _scan_contains_strong_aci_terms(scan):
+        diagnostics.append(
+            "Finding text did not contain stronger exploit semantics such as remote code execution, injection, auth bypass, credential, leak, or exploit markers."
+        )
+
+    return diagnostics
+
+
+def _aci_metrics_snapshot(scan: Any) -> dict[str, Any]:
+    """Return normalized ACI metric snapshot with safe defaults."""
+    snapshot = {
+        "available": False,
+        "total_findings": 0,
+        "inferred_findings": 0,
+        "coverage_ratio": 0.0,
+        "uplifted_findings": 0,
+        "capabilities_detected": {},
+        "chain_candidates_detected": {},
+        "confidence_buckets": {"low": 0, "medium": 0, "high": 0},
+    }
+    if scan is None:
+        return snapshot
+
+    derived = getattr(scan, "derived", None)
+    if derived is None:
+        return snapshot
+
+    aci_pass = None
+    getter = getattr(derived, "get", None)
+    if callable(getter):
+        aci_pass = getter("ACI@1.0")
+    if aci_pass is None:
+        passes = getattr(derived, "passes", None)
+        if isinstance(passes, dict):
+            aci_pass = passes.get("ACI@1.0")
+    if aci_pass is None:
+        return snapshot
+
+    data = getattr(aci_pass, "data", None)
+    if not isinstance(data, dict):
+        return snapshot
+
+    metrics = data.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+
+    capabilities = metrics.get("capabilities_detected", {})
+    chains = metrics.get("chain_candidates_detected", {})
+    confidence = metrics.get("confidence_buckets", {})
+
+    if not isinstance(capabilities, dict):
+        capabilities = {}
+    if not isinstance(chains, dict):
+        chains = {}
+    if not isinstance(confidence, dict):
+        confidence = {}
+
+    snapshot.update(
+        {
+            "available": True,
+            "total_findings": int(metrics.get("total_findings", 0) or 0),
+            "inferred_findings": int(metrics.get("inferred_findings", 0) or 0),
+            "coverage_ratio": float(metrics.get("coverage_ratio", 0.0) or 0.0),
+            "uplifted_findings": int(metrics.get("uplifted_findings", 0) or 0),
+            "capabilities_detected": capabilities,
+            "chain_candidates_detected": chains,
+            "confidence_buckets": {
+                "low": int(confidence.get("low", 0) or 0),
+                "medium": int(confidence.get("medium", 0) or 0),
+                "high": int(confidence.get("high", 0) or 0),
+            },
+        }
+    )
+    return snapshot
+
+
+def _asset_lookup_by_id(scan: Any) -> dict[str, Any]:
+    lookup: dict[str, Any] = {}
+    if scan is None:
+        return lookup
+    for asset in getattr(scan, "assets", []) or []:
+        asset_id = getattr(asset, "asset_id", None)
+        if asset_id:
+            lookup[str(asset_id)] = asset
+    return lookup
+
+
+def _aci_asset_finding_map(scan: Any, max_assets: int = 5, max_findings_per_asset: int = 5) -> list[dict[str, Any]]:
+    """Build top-asset mapping of findings to inferred ACI capabilities."""
+    if scan is None:
+        return []
+
+    derived = getattr(scan, "derived", None)
+    if derived is None:
+        return []
+
+    getter = getattr(derived, "get", None)
+    topn_pass = getter("TopN@1.0") if callable(getter) else None
+    aci_pass = getter("ACI@1.0") if callable(getter) else None
+
+    if topn_pass is None:
+        passes = getattr(derived, "passes", None)
+        if isinstance(passes, dict):
+            topn_pass = passes.get("TopN@1.0")
+            if aci_pass is None:
+                aci_pass = passes.get("ACI@1.0")
+
+    topn_data = getattr(topn_pass, "data", None)
+    aci_data = getattr(aci_pass, "data", None)
+    if not isinstance(topn_data, dict) or not isinstance(aci_data, dict):
+        return []
+
+    ranked_assets = topn_data.get("assets", [])
+    findings_by_asset = topn_data.get("findings_by_asset", {})
+    aci_findings = aci_data.get("finding_semantics", {})
+
+    if not isinstance(ranked_assets, (list, tuple)) or not isinstance(findings_by_asset, dict):
+        return []
+    if not isinstance(aci_findings, dict):
+        aci_findings = {}
+
+    asset_lookup = _asset_lookup_by_id(scan)
+    rows: list[dict[str, Any]] = []
+
+    for ranked in ranked_assets[:max_assets]:
+        if not isinstance(ranked, dict):
+            continue
+        asset_id = str(ranked.get("asset_id", "")).strip()
+        if not asset_id:
+            continue
+
+        asset_obj = asset_lookup.get(asset_id)
+        hostname = getattr(asset_obj, "hostname", None) if asset_obj is not None else None
+        ip_address = getattr(asset_obj, "ip_address", None) if asset_obj is not None else None
+
+        finding_rows: list[dict[str, Any]] = []
+        for finding_ref in (findings_by_asset.get(asset_id) or [])[:max_findings_per_asset]:
+            if not isinstance(finding_ref, dict):
+                continue
+            fid = str(finding_ref.get("finding_id", "")).strip()
+            if not fid:
+                continue
+            aci_rec = aci_findings.get(fid, {}) if isinstance(aci_findings.get(fid, {}), dict) else {}
+            capabilities = aci_rec.get("capabilities", [])
+            if not isinstance(capabilities, (list, tuple)):
+                capabilities = []
+            chain_candidates = aci_rec.get("chain_candidates", [])
+            if not isinstance(chain_candidates, (list, tuple)):
+                chain_candidates = []
+            confidence = aci_rec.get("confidence", 0.0)
+            try:
+                confidence_value = float(confidence)
+            except (TypeError, ValueError):
+                confidence_value = 0.0
+
+            finding_rows.append(
+                {
+                    "finding_id": fid,
+                    "risk_band": str(finding_ref.get("risk_band", "N/A")),
+                    "score": float(finding_ref.get("score", 0.0) or 0.0),
+                    "capabilities": [str(x) for x in capabilities],
+                    "chain_candidates": [str(x) for x in chain_candidates],
+                    "confidence": confidence_value,
+                }
+            )
+
+        rows.append(
+            {
+                "asset_id": asset_id,
+                "hostname": hostname if hostname else "N/A",
+                "ip_address": ip_address if ip_address else "N/A",
+                "findings": finding_rows,
+            }
+        )
+
+    return rows
+
+
+def _aci_asset_map_all_none_inferred(aci_asset_map: list[dict[str, Any]]) -> bool:
+    """Return True when mapped findings exist but none carry inferred capabilities."""
+    if not aci_asset_map:
+        return False
+
+    has_rows = False
+    for asset in aci_asset_map:
+        findings = asset.get("findings", []) if isinstance(asset, dict) else []
+        for finding in findings:
+            has_rows = True
+            capabilities = finding.get("capabilities", []) if isinstance(finding, dict) else []
+            if capabilities:
+                return False
+    return has_rows
+
+
 def generate_markdown_report(
     ctx: "RunContext",
     scan: "ScanResult",
     output_path: "PathLike",
-    report_type: str = "executive"
+    report_type: str = "executive",
+    args: Any = None,
 ) -> None:
     """
     Generate a Markdown report from scan results.
@@ -64,9 +336,9 @@ def generate_markdown_report(
     summary = summary_data.data
     
     if report_type == "executive":
-        content = _generate_executive_report(scan, summary)
+        content = _generate_executive_report(scan, summary, args=args)
     elif report_type == "technical":
-        content = _generate_technical_report(scan, summary)
+        content = _generate_technical_report(scan, summary, args=args)
     else:
         raise ValueError(f"Unknown report type: {report_type}. Expected 'executive' or 'technical'.")
 
@@ -87,7 +359,7 @@ def generate_markdown_report(
     )
 
 
-def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
+def _generate_executive_report(_scan: "ScanResult", summary: Any, args: Any = None) -> str:
     """
     Generate executive-level summary report.
 
@@ -103,7 +375,15 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
     remediation = summary.remediation_priorities
     asset_summary = summary.asset_summary
     enrichment = summary.enrichment_metrics
+    source_status = _enrichment_source_status(args)
     ghsa_findings, ghsa_refs = _ghsa_reference_metrics(_scan)
+    aci_metrics = _aci_metrics_snapshot(_scan)
+    aci_zero_notes = _aci_zero_inference_diagnostics(_scan, args, aci_metrics)
+    top_capabilities = sorted(
+        aci_metrics["capabilities_detected"].items(),
+        key=lambda kv: (-int(kv[1]), str(kv[0])),
+    )[:5]
+    aci_asset_map = _aci_asset_finding_map(_scan)
 
     assets = asset_summary.get('assets', []) if isinstance(asset_summary, dict) else []
     total_critical_findings = sum(int(a.get('critical_findings', 0) or 0) for a in assets)
@@ -164,6 +444,96 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any) -> str:
 | KEV-listed Findings | {overview['kev_listed_findings']:,} |
 | Public Exploit Findings | {overview['exploitable_findings']:,} |
 | GHSA Advisory Matches | {ghsa_findings:,} findings ({ghsa_refs:,} references) |
+
+Enrichment runtime mode:
+
+| Source | Status |
+|--------|--------|
+| KEV | {source_status['KEV'][1]} |
+| EPSS | {source_status['EPSS'][1]} |
+| Exploit-DB | {source_status['Exploit-DB'][1]} |
+| NVD | {source_status['NVD'][1]} |
+| GHSA | {source_status['GHSA'][1]} |
+
+---
+
+## 🧩 Attack Capability Snapshot
+
+| ACI Signal | Value |
+|-----------|-------|
+| ACI Available | {"Yes" if aci_metrics["available"] else "No"} |
+| Total Findings Observed | {aci_metrics['total_findings']:,} |
+| Inferred Findings | {aci_metrics['inferred_findings']:,}/{aci_metrics['total_findings']:,} |
+| Coverage Ratio | {aci_metrics['coverage_ratio']:.1%} |
+| Uplifted Findings | {aci_metrics['uplifted_findings']:,} |
+| Capability Types | {len(aci_metrics['capabilities_detected']):,} |
+| Chain Types | {len(aci_metrics['chain_candidates_detected']):,} |
+
+Top capability signals:
+
+"""
+
+    if top_capabilities:
+        for cap, count in top_capabilities:
+            md += f"- `{cap}`: {int(count):,}\n"
+    else:
+        md += "- ACI data unavailable or no capability signals inferred.\n"
+
+    md += """
+
+Interpretation notes:
+
+- `Inferred Findings` is threshold-qualified (`confidence >= min_confidence`).
+- `Top capability signals` counts capability tags across all findings and can exceed `Inferred Findings` because one finding may have multiple capabilities.
+- Findings below threshold can still appear in capability counts, but they do not increment `Inferred Findings`.
+
+"""
+
+    if aci_zero_notes:
+        md += "ACI zero-inference diagnostic:\n\n"
+        for note in aci_zero_notes:
+            md += f"- {note}\n"
+        md += "\n"
+
+    md += """
+
+---
+
+## 🗺️ Top Assets: Findings to Inferred Capabilities
+
+This view maps top-ranked assets to their top-ranked findings and inferred attack capabilities.
+
+**Disclaimer:** Attack capabilities below are inferred from available evidence and model rules. Treat them as decision-support signals and perform due diligence to validate recommendations before operational action.
+
+"""
+
+    if aci_asset_map:
+        if _aci_asset_map_all_none_inferred(aci_asset_map):
+            md += (
+                "Analyst note: Ranked findings are shown for context, but all mapped entries are `None inferred` "
+                "because no finding met current ACI semantic and confidence criteria for this run.\n\n"
+            )
+        for asset in aci_asset_map:
+            md += (
+                f"### Asset `{asset['asset_id']}` ({asset['hostname']} / {asset['ip_address']})\n\n"
+                "| Finding ID | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence |\n"
+                "|------------|-----------|--------------|-----------------------|------------------|------------|\n"
+            )
+            if asset["findings"]:
+                for finding in asset["findings"]:
+                    capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
+                    chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
+                    md += (
+                        f"| {finding['finding_id']} | {finding['risk_band']} | {finding['score']:.2f} | "
+                        f"{capabilities} | {chains} | {finding['confidence']:.2f} |\n"
+                    )
+            else:
+                md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 |\n"
+            md += "\n"
+    else:
+        md += "No TopN/ACI mapping data available for asset-level capability projection.\n\n"
+
+    md += f"""
 
 ---
 
@@ -306,13 +676,34 @@ Interpretation: higher concentration usually means faster risk reduction when re
 
 ---
 
+## 📚 Metric Definitions (ACI)
+
+Use these definitions when interpreting ACI-driven sections:
+
+| Term | Meaning |
+|------|---------|
+| Total Findings Observed | All findings processed by ACI for this run. |
+| Inferred Findings | Findings that have at least one capability and meet threshold (`confidence >= min_confidence`). |
+| Coverage Ratio | `Inferred Findings / Total Findings Observed`. |
+| Capability Distribution | Non-exclusive counts of matched capability labels; one finding can contribute to multiple capability counts. |
+| Chain Candidate Distribution | Non-exclusive counts of matched chain labels; one finding can contribute to multiple chain counts. |
+| Confidence Distribution | Bucketed confidence counts across all findings observed by ACI, including findings below inference threshold. |
+| Uplifted Findings | Findings where computed ACI rank uplift is greater than zero. |
+
+Analyst reminder:
+
+- A finding can appear in capability counts even when it is not included in `Inferred Findings`.
+- Capability and chain counts are expected to exceed inferred counts in datasets with multi-capability findings.
+
+---
+
 *Report generated by VulnParse-Pin - Automated Vulnerability Intelligence*
 """
 
     return md
 
 
-def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
+def _generate_technical_report(_scan: "ScanResult", summary: Any, args: Any = None) -> str:
     """
     Generate detailed technical report for vulnerability engineers.
 
@@ -328,7 +719,19 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
     risk_dist = summary.risk_distribution
     top_risks = summary.top_risks
     enrichment = summary.enrichment_metrics
+    source_status = _enrichment_source_status(args)
     ghsa_findings, ghsa_refs = _ghsa_reference_metrics(_scan)
+    aci_metrics = _aci_metrics_snapshot(_scan)
+    aci_zero_notes = _aci_zero_inference_diagnostics(_scan, args, aci_metrics)
+    top_capabilities = sorted(
+        aci_metrics["capabilities_detected"].items(),
+        key=lambda kv: (-int(kv[1]), str(kv[0])),
+    )
+    top_chains = sorted(
+        aci_metrics["chain_candidates_detected"].items(),
+        key=lambda kv: (-int(kv[1]), str(kv[0])),
+    )
+    aci_asset_map = _aci_asset_finding_map(_scan)
 
     def _risk_drivers(risk: Any) -> str:
         drivers: list[str] = []
@@ -359,9 +762,11 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any) -> str:
 4. [Derived Risk Breakdown](#derived-risk-breakdown)
 5. [Top Risk Findings](#top-risk-findings)
 6. [Tie-Break Explainability](#tie-break-explainability)
-7. [Enrichment Coverage](#enrichment-coverage)
-8. [Analyst Caveats](#analyst-caveats)
-9. [Trust and Provenance](#trust-and-provenance)
+7. [Attack Capability Evidence](#attack-capability-evidence)
+8. [Top Asset Capability Mapping](#top-asset-capability-mapping)
+9. [Enrichment Coverage](#enrichment-coverage)
+10. [Analyst Caveats](#analyst-caveats)
+11. [Trust and Provenance](#trust-and-provenance)
 
 ---
 
@@ -472,6 +877,110 @@ Use this distribution for remediation prioritization and queue ordering.
 
 ---
 
+## 🧩 Attack Capability Evidence
+
+| ACI Metric | Value |
+|------------|-------|
+| ACI Available | {"Yes" if aci_metrics["available"] else "No"} |
+| Total Findings Observed | {aci_metrics['total_findings']:,} |
+| Inferred Findings | {aci_metrics['inferred_findings']:,} |
+| Coverage Ratio | {aci_metrics['coverage_ratio']:.1%} |
+| Uplifted Findings | {aci_metrics['uplifted_findings']:,} |
+
+Interpretation notes:
+
+- `Inferred Findings` is threshold-qualified (`confidence >= min_confidence`).
+- Capability and chain distributions count matched semantics and are not mutually exclusive per finding.
+- Confidence buckets below include all findings observed by ACI, not only threshold-qualified inferred findings.
+
+"""
+
+    if aci_zero_notes:
+        md += "### Zero-Inference Diagnostic\n\n"
+        for note in aci_zero_notes:
+            md += f"- {note}\n"
+        md += "\n"
+
+    md += """
+
+### Capability Distribution
+
+| Capability | Findings |
+|------------|----------|
+"""
+
+    if top_capabilities:
+        for cap, count in top_capabilities[:10]:
+            md += f"| {cap} | {int(count):,} |\n"
+    else:
+        md += "| _No capability signals inferred_ | 0 |\n"
+
+    md += """
+
+### Chain Candidate Distribution
+
+| Chain Rule | Findings |
+|------------|----------|
+"""
+
+    if top_chains:
+        for chain, count in top_chains[:10]:
+            md += f"| {chain} | {int(count):,} |\n"
+    else:
+        md += "| _No chain candidates inferred_ | 0 |\n"
+
+    md += f"""
+
+### Confidence Distribution
+
+All-finding confidence bucket counts (includes findings that did not meet inference threshold).
+
+| Bucket | Count |
+|--------|-------|
+| High | {aci_metrics['confidence_buckets']['high']:,} |
+| Medium | {aci_metrics['confidence_buckets']['medium']:,} |
+| Low | {aci_metrics['confidence_buckets']['low']:,} |
+
+---
+
+## 🗺️ Top Asset Capability Mapping
+
+This section maps top-ranked assets to top-ranked findings and their inferred attack capabilities for triage handoff.
+
+**Disclaimer:** Capabilities are inferred signals, not ground truth exploit paths. Analysts should perform due diligence and independent verification before executing remediation or response actions.
+
+"""
+
+    if aci_asset_map:
+        if _aci_asset_map_all_none_inferred(aci_asset_map):
+            md += (
+                "Analyst note: Ranked findings are shown for context, but all mapped entries are `None inferred` "
+                "because no finding met current ACI semantic and confidence criteria for this run.\n\n"
+            )
+        for asset in aci_asset_map:
+            md += (
+                f"### Asset `{asset['asset_id']}` ({asset['hostname']} / {asset['ip_address']})\n\n"
+                "| Finding ID | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence |\n"
+                "|------------|-----------|--------------|-----------------------|------------------|------------|\n"
+            )
+            if asset["findings"]:
+                for finding in asset["findings"]:
+                    capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
+                    chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
+                    md += (
+                        f"| {finding['finding_id']} | {finding['risk_band']} | {finding['score']:.2f} | "
+                        f"{capabilities} | {chains} | {finding['confidence']:.2f} |\n"
+                    )
+            else:
+                md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 |\n"
+            md += "\n"
+    else:
+        md += "No TopN/ACI mapping data available for asset-level capability projection.\n\n"
+
+    md += f"""
+
+---
+
 ## 📊 Enrichment Coverage
 
 | Metric | Value |
@@ -483,11 +992,13 @@ Use this distribution for remediation prioritization and queue ordering.
 
 ### Data Sources
 
-- ✅ CISA Known Exploited Vulnerabilities (KEV)
-- ✅ FIRST Exploit Prediction Scoring System (EPSS)
-- ✅ Exploit-DB Public Exploits
-- ✅ GitHub Security Advisories (GHSA)
-- ✅ National Vulnerability Database (NVD)
+| Source | Runtime Status |
+|--------|----------------|
+| CISA Known Exploited Vulnerabilities (KEV) | {source_status['KEV'][1]} |
+| FIRST Exploit Prediction Scoring System (EPSS) | {source_status['EPSS'][1]} |
+| Exploit-DB Public Exploits | {source_status['Exploit-DB'][1]} |
+| GitHub Security Advisories (GHSA) | {source_status['GHSA'][1]} |
+| National Vulnerability Database (NVD) | {source_status['NVD'][1]} |
 
 ---
 
@@ -521,6 +1032,27 @@ Provenance note: this markdown report summarizes derived outputs; verifiable int
 - Findings with CVSS v3.1 scores are prioritized; v2.0 used as fallback
 - Exploit availability indicates public proof-of-concept code exists
 - "Finding Agg CVEs" indicates whole-of-CVEs aggregation breadth from score_trace contributors for the representative finding shown on that row
+
+---
+
+## 📚 Metric Definitions (ACI)
+
+Use these definitions when interpreting ACI-driven sections:
+
+| Term | Meaning |
+|------|---------|
+| Total Findings Observed | All findings processed by ACI for this run. |
+| Inferred Findings | Findings that have at least one capability and meet threshold (`confidence >= min_confidence`). |
+| Coverage Ratio | `Inferred Findings / Total Findings Observed`. |
+| Capability Distribution | Non-exclusive counts of matched capability labels; one finding can contribute to multiple capability counts. |
+| Chain Candidate Distribution | Non-exclusive counts of matched chain labels; one finding can contribute to multiple chain counts. |
+| Confidence Distribution | Bucketed confidence counts across all findings observed by ACI, including findings below inference threshold. |
+| Uplifted Findings | Findings where computed ACI rank uplift is greater than zero. |
+
+Analyst reminder:
+
+- A finding can appear in capability counts even when it is not included in `Inferred Findings`.
+- Capability and chain counts are expected to exceed inferred counts in datasets with multi-capability findings.
 
 ---
 

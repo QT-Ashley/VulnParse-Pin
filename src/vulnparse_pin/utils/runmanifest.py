@@ -163,6 +163,23 @@ def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
             "medium_priority": int(remediation.get("medium_priority", 0) or 0),
         }
 
+    if name == "aci":
+        metrics = data.get("metrics", {}) if isinstance(data.get("metrics"), dict) else {}
+        caps = metrics.get("capabilities_detected", {}) if isinstance(metrics.get("capabilities_detected"), dict) else {}
+        chains = metrics.get("chain_candidates_detected", {}) if isinstance(metrics.get("chain_candidates_detected"), dict) else {}
+        conf = metrics.get("confidence_buckets", {}) if isinstance(metrics.get("confidence_buckets"), dict) else {}
+        return {
+            "total_findings": int(metrics.get("total_findings", 0) or 0),
+            "inferred_findings": int(metrics.get("inferred_findings", 0) or 0),
+            "coverage_ratio": float(metrics.get("coverage_ratio", 0.0) or 0.0),
+            "uplifted_findings": int(metrics.get("uplifted_findings", 0) or 0),
+            "capability_types": len(caps),
+            "chain_types": len(chains),
+            "confidence_low": int(conf.get("low", 0) or 0),
+            "confidence_medium": int(conf.get("medium", 0) or 0),
+            "confidence_high": int(conf.get("high", 0) or 0),
+        }
+
     return {}
 
 

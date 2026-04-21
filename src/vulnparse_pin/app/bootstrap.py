@@ -21,6 +21,7 @@ from vulnparse_pin.core.classes.dataclass import FeedSpec, RunContext, Services
 from vulnparse_pin.core.classes.execution_manifest import LedgerService
 from vulnparse_pin.core.classes.pass_classes import PassRunner
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+from vulnparse_pin.core.passes.ACI.aci_pass import AttackCapabilityInferencePass
 from vulnparse_pin.core.passes.Nmap.nmap_adapter_pass import NmapAdapterPass
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
 from vulnparse_pin.core.passes.Summary.summary_pass import SummaryConfig, SummaryPass
@@ -206,6 +207,7 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
     passesList = [
         NmapAdapterPass(getattr(args, "nmap_ctx", None)),
         ScoringPass(ctx.services.scoring_config),
+        AttackCapabilityInferencePass(ctx.services.topn_config.aci),
         TopNPass(ctx.services.topn_config),
         SummaryPass(SummaryConfig(include_top_risks=summary_top_n)),
     ]

@@ -55,11 +55,15 @@ Delivery focus this quarter is balanced across:
 	- Executive report quality sections delivered: Decision Context, Data Quality Scorecard, Remediation Plan by Time Horizon, and Risk Concentration.
 	- Technical report quality sections delivered: Tie-Break Explainability, Analyst Caveats, and Trust and Provenance.
 	- Terminology clarity delivered: `Finding Agg CVEs` explicitly denotes finding-level contributor breadth.
+- [done] **Attack Capability Inference integration** — `ACI@1.0` pass wired into default pipeline and consumed by TopN as bounded tie-break signal; dependency handling and decision-ledger reason codes added.
+- [done] **ACI reporting and diagnostics** — executive/technical markdown now include ACI metrics snapshots, chain/capability distributions, confidence buckets, top-asset capability mapping, runtime-accurate enrichment status, and zero-inference diagnostics.
+- [done] **ACI inference guardrails and realism hardening** — reduced protocol/service-only false positives and tightened token semantics to better align outputs with realistic attack pathways.
+- [done] **ACI docs and operator guidance** — feature explanation, rule-authoring tutorial, technical deep dive, and tabletop prioritization policy (`P1`/`P1b`/`P2`) including impact-probability-first methodology and policy-tuning guidance.
 - [in progress] **Decision explainability graph and provenance query tooling** (built on RunManifest + DecisionLedger).
-- [in progress] **More scanner support** (Qualys integrated; Nmap adapter path integrated; additional scanner connectors pending).
-- [in progress] **Expanded intelligence sources** (GHSA integrated with online/offline modes and cache hardening; additional external sources pending).
+- [in progress] **More scanner support** (Qualys integrated; Nmap adapter path integrated; additional scanner connectors and parser-quality promotion work pending).
+- [in progress] **Expanded intelligence sources** (GHSA integrated with online/offline modes and cache hardening; additional external sources and source-confidence normalization pending).
 - [planned] **Third-party integrations** (webhook, API, SIEM forwarding).
-- [planned] **Advanced filtering and custom scoring policies**.
+- [planned] **Advanced filtering and custom scoring/triage policies**.
 
 ## v1.3.0-1.5.0+
 

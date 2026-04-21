@@ -84,10 +84,49 @@ class InferenceConfig:
     allow_predicates: frozenset[str]
     rules: Tuple[ParsedRule, ...]
 
+
+@dataclass(frozen=True)
+class ACIExploitBoost:
+    enabled: bool
+    weight: float
+    max_bonus: float
+
+
+@dataclass(frozen=True)
+class ACICapabilityRule:
+    rule_id: str
+    enabled: bool
+    capability: str
+    signals: Tuple[str, ...]
+    weight: float
+
+
+@dataclass(frozen=True)
+class ACIChainRule:
+    rule_id: str
+    enabled: bool
+    requires_all: Tuple[str, ...]
+    label: str
+
+
+@dataclass(frozen=True)
+class ACIConfig:
+    enabled: bool
+    min_confidence: float
+    max_uplift: float
+    asset_uplift_weight: float
+    exploit_boost: ACIExploitBoost
+    capability_rules: Tuple[ACICapabilityRule, ...]
+    chain_rules: Tuple[ACIChainRule, ...]
+    token_mode: str = "merge"
+    signal_aliases: Tuple[Tuple[str, str], ...] = ()
+    disabled_core_tokens: Tuple[str, ...] = ()
+
 @dataclass(frozen=True)
 class TNTriageConfig:
     topn: TopNConfig
     inference: InferenceConfig
+    aci: ACIConfig
 
 
 # -----------------------------------------------
@@ -104,6 +143,7 @@ def validate_and_normalize_semantics(raw: Dict[str, Any]) -> Tuple[Optional[TNTr
 
     topn_raw = raw.get("topn", {})
     inf_raw = raw.get("inference", {})
+    aci_raw = raw.get("aci", {})
 
 
     # ---- topn semantics
@@ -111,12 +151,243 @@ def validate_and_normalize_semantics(raw: Dict[str, Any]) -> Tuple[Optional[TNTr
 
     # ---- inference semantics
     inf_cfg = _parse_inference(inf_raw, issues)
+    aci_cfg = _parse_aci(aci_raw, issues)
 
     if issues:
         return None, issues
 
-    assert topn_cfg is not None and inf_cfg is not None
-    return TNTriageConfig(topn=topn_cfg, inference=inf_cfg), issues
+    assert topn_cfg is not None and inf_cfg is not None and aci_cfg is not None
+    return TNTriageConfig(topn=topn_cfg, inference=inf_cfg, aci=aci_cfg), issues
+
+
+def _parse_aci(aci_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Optional[ACIConfig]:
+    if not isinstance(aci_raw, dict):
+        issues.append(SemanticIssue("/aci", "aci must be an object", "ACI_TYPE"))
+        return None
+
+    enabled = bool(aci_raw.get("enabled", False))
+
+    min_confidence_raw = aci_raw.get("min_confidence", 0.6)
+    max_uplift_raw = aci_raw.get("max_uplift", 2.0)
+    asset_uplift_weight_raw = aci_raw.get("asset_uplift_weight", 0.5)
+
+    try:
+        min_confidence = float(min_confidence_raw)
+    except (TypeError, ValueError):
+        issues.append(SemanticIssue("/aci/min_confidence", "min_confidence must be a number", "ACI_MIN_CONF_TYPE"))
+        min_confidence = 0.6
+    try:
+        max_uplift = float(max_uplift_raw)
+    except (TypeError, ValueError):
+        issues.append(SemanticIssue("/aci/max_uplift", "max_uplift must be a number", "ACI_MAX_UPLIFT_TYPE"))
+        max_uplift = 2.0
+    try:
+        asset_uplift_weight = float(asset_uplift_weight_raw)
+    except (TypeError, ValueError):
+        issues.append(SemanticIssue("/aci/asset_uplift_weight", "asset_uplift_weight must be a number", "ACI_ASSET_UPLIFT_WEIGHT_TYPE"))
+        asset_uplift_weight = 0.5
+
+    if min_confidence < 0.0 or min_confidence > 1.0:
+        issues.append(SemanticIssue("/aci/min_confidence", "min_confidence must be between 0.0 and 1.0", "ACI_MIN_CONF_RANGE"))
+        min_confidence = min(1.0, max(0.0, min_confidence))
+    if max_uplift < 0.0:
+        issues.append(SemanticIssue("/aci/max_uplift", "max_uplift must be >= 0.0", "ACI_MAX_UPLIFT_RANGE"))
+        max_uplift = 0.0
+    if asset_uplift_weight < 0.0 or asset_uplift_weight > 1.0:
+        issues.append(SemanticIssue("/aci/asset_uplift_weight", "asset_uplift_weight must be between 0.0 and 1.0", "ACI_ASSET_UPLIFT_WEIGHT_RANGE"))
+        asset_uplift_weight = min(1.0, max(0.0, asset_uplift_weight))
+
+    token_mode = str(aci_raw.get("token_mode", "merge") or "merge").strip().lower()
+    if token_mode not in ("merge", "replace"):
+        issues.append(SemanticIssue("/aci/token_mode", "token_mode must be either 'merge' or 'replace'", "ACI_TOKEN_MODE"))
+        token_mode = "merge"
+
+    signal_aliases_raw = aci_raw.get("signal_aliases", [])
+    if not isinstance(signal_aliases_raw, list):
+        issues.append(SemanticIssue("/aci/signal_aliases", "signal_aliases must be an array", "ACI_SIGNAL_ALIASES_TYPE"))
+        signal_aliases_raw = []
+    signal_aliases: List[Tuple[str, str]] = []
+    seen_alias_tokens: Set[str] = set()
+    for idx, item in enumerate(signal_aliases_raw):
+        if not isinstance(item, dict):
+            issues.append(SemanticIssue(f"/aci/signal_aliases/{idx}", "alias entry must be an object", "ACI_SIGNAL_ALIAS_ENTRY_TYPE"))
+            continue
+        token = str(item.get("token", "")).strip().lower()
+        signal = str(item.get("signal", "")).strip().lower()
+        if not token:
+            issues.append(SemanticIssue(f"/aci/signal_aliases/{idx}/token", "token must be a non-empty string", "ACI_SIGNAL_ALIAS_TOKEN"))
+            continue
+        if not signal:
+            issues.append(SemanticIssue(f"/aci/signal_aliases/{idx}/signal", "signal must be a non-empty string", "ACI_SIGNAL_ALIAS_SIGNAL"))
+            continue
+        if len(token) > 64:
+            issues.append(SemanticIssue(f"/aci/signal_aliases/{idx}/token", "token max length is 64", "ACI_SIGNAL_ALIAS_TOKEN_LEN"))
+            continue
+        if len(signal) > 64:
+            issues.append(SemanticIssue(f"/aci/signal_aliases/{idx}/signal", "signal max length is 64", "ACI_SIGNAL_ALIAS_SIGNAL_LEN"))
+            continue
+        if token in seen_alias_tokens:
+            issues.append(SemanticIssue(f"/aci/signal_aliases/{idx}/token", f"duplicate alias token: {token}", "ACI_SIGNAL_ALIAS_TOKEN_DUP"))
+            continue
+        seen_alias_tokens.add(token)
+        signal_aliases.append((token, signal))
+
+    disabled_core_tokens_raw = aci_raw.get("disabled_core_tokens", [])
+    if not isinstance(disabled_core_tokens_raw, list):
+        issues.append(SemanticIssue("/aci/disabled_core_tokens", "disabled_core_tokens must be an array", "ACI_DISABLED_CORE_TOKENS_TYPE"))
+        disabled_core_tokens_raw = []
+    disabled_core_tokens: List[str] = []
+    seen_disabled_tokens: Set[str] = set()
+    for idx, token_raw in enumerate(disabled_core_tokens_raw):
+        token = str(token_raw).strip().lower()
+        if not token:
+            issues.append(SemanticIssue(f"/aci/disabled_core_tokens/{idx}", "disabled token must be non-empty", "ACI_DISABLED_CORE_TOKEN_EMPTY"))
+            continue
+        if len(token) > 64:
+            issues.append(SemanticIssue(f"/aci/disabled_core_tokens/{idx}", "disabled token max length is 64", "ACI_DISABLED_CORE_TOKEN_LEN"))
+            continue
+        if token in seen_disabled_tokens:
+            issues.append(SemanticIssue(f"/aci/disabled_core_tokens/{idx}", f"duplicate disabled token: {token}", "ACI_DISABLED_CORE_TOKEN_DUP"))
+            continue
+        seen_disabled_tokens.add(token)
+        disabled_core_tokens.append(token)
+
+    exploit_boost_raw = aci_raw.get("exploit_boost", {})
+    if not isinstance(exploit_boost_raw, dict):
+        issues.append(SemanticIssue("/aci/exploit_boost", "exploit_boost must be an object", "ACI_EXPLOIT_BOOST_TYPE"))
+        exploit_boost_raw = {}
+
+    exploit_enabled = bool(exploit_boost_raw.get("enabled", True))
+    try:
+        exploit_weight = float(exploit_boost_raw.get("weight", 0.25))
+    except (TypeError, ValueError):
+        issues.append(SemanticIssue("/aci/exploit_boost/weight", "exploit_boost.weight must be a number", "ACI_EXPLOIT_WEIGHT_TYPE"))
+        exploit_weight = 0.25
+    try:
+        exploit_max_bonus = float(exploit_boost_raw.get("max_bonus", 0.2))
+    except (TypeError, ValueError):
+        issues.append(SemanticIssue("/aci/exploit_boost/max_bonus", "exploit_boost.max_bonus must be a number", "ACI_EXPLOIT_MAX_BONUS_TYPE"))
+        exploit_max_bonus = 0.2
+
+    if exploit_weight < 0.0 or exploit_weight > 1.0:
+        issues.append(SemanticIssue("/aci/exploit_boost/weight", "exploit_boost.weight must be between 0.0 and 1.0", "ACI_EXPLOIT_WEIGHT_RANGE"))
+        exploit_weight = min(1.0, max(0.0, exploit_weight))
+    if exploit_max_bonus < 0.0:
+        issues.append(SemanticIssue("/aci/exploit_boost/max_bonus", "exploit_boost.max_bonus must be >= 0.0", "ACI_EXPLOIT_MAX_BONUS_RANGE"))
+        exploit_max_bonus = 0.0
+
+    capability_rules_raw = aci_raw.get("capability_rules", [])
+    if not isinstance(capability_rules_raw, list):
+        issues.append(SemanticIssue("/aci/capability_rules", "capability_rules must be an array", "ACI_CAP_RULES_TYPE"))
+        capability_rules_raw = []
+
+    capability_rules: List[ACICapabilityRule] = []
+    seen_cap_rule_ids: Set[str] = set()
+    for idx, rule in enumerate(capability_rules_raw):
+        if not isinstance(rule, dict):
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}", "rule must be an object", "ACI_CAP_RULE_TYPE"))
+            continue
+        rule_id = str(rule.get("id", "")).strip()
+        if not rule_id:
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}/id", "id must be a non-empty string", "ACI_CAP_RULE_ID"))
+            continue
+        if rule_id in seen_cap_rule_ids:
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}/id", f"duplicate rule id: {rule_id}", "ACI_CAP_RULE_ID_DUP"))
+            continue
+        seen_cap_rule_ids.add(rule_id)
+
+        capability = str(rule.get("capability", "")).strip().lower()
+        if not capability:
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}/capability", "capability must be a non-empty string", "ACI_CAP_RULE_CAPABILITY"))
+            continue
+
+        signals_raw = rule.get("signals", [])
+        if not isinstance(signals_raw, list) or not signals_raw:
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}/signals", "signals must be a non-empty array", "ACI_CAP_RULE_SIGNALS"))
+            continue
+        signals = tuple(str(s).strip().lower() for s in signals_raw if str(s).strip())
+        if not signals:
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}/signals", "signals cannot be empty after normalization", "ACI_CAP_RULE_SIGNALS_EMPTY"))
+            continue
+
+        try:
+            weight = float(rule.get("weight", 0.0))
+        except (TypeError, ValueError):
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}/weight", "weight must be a number", "ACI_CAP_RULE_WEIGHT_TYPE"))
+            continue
+        if weight < 0.0 or weight > 1.0:
+            issues.append(SemanticIssue(f"/aci/capability_rules/{idx}/weight", "weight must be between 0.0 and 1.0", "ACI_CAP_RULE_WEIGHT_RANGE"))
+            continue
+
+        capability_rules.append(
+            ACICapabilityRule(
+                rule_id=rule_id,
+                enabled=bool(rule.get("enabled", True)),
+                capability=capability,
+                signals=signals,
+                weight=weight,
+            )
+        )
+
+    chain_rules_raw = aci_raw.get("chain_rules", [])
+    if not isinstance(chain_rules_raw, list):
+        issues.append(SemanticIssue("/aci/chain_rules", "chain_rules must be an array", "ACI_CHAIN_RULES_TYPE"))
+        chain_rules_raw = []
+
+    chain_rules: List[ACIChainRule] = []
+    seen_chain_ids: Set[str] = set()
+    for idx, rule in enumerate(chain_rules_raw):
+        if not isinstance(rule, dict):
+            issues.append(SemanticIssue(f"/aci/chain_rules/{idx}", "rule must be an object", "ACI_CHAIN_RULE_TYPE"))
+            continue
+        rule_id = str(rule.get("id", "")).strip()
+        if not rule_id:
+            issues.append(SemanticIssue(f"/aci/chain_rules/{idx}/id", "id must be a non-empty string", "ACI_CHAIN_RULE_ID"))
+            continue
+        if rule_id in seen_chain_ids:
+            issues.append(SemanticIssue(f"/aci/chain_rules/{idx}/id", f"duplicate rule id: {rule_id}", "ACI_CHAIN_RULE_ID_DUP"))
+            continue
+        seen_chain_ids.add(rule_id)
+
+        requires_all_raw = rule.get("requires_all", [])
+        if not isinstance(requires_all_raw, list) or not requires_all_raw:
+            issues.append(SemanticIssue(f"/aci/chain_rules/{idx}/requires_all", "requires_all must be a non-empty array", "ACI_CHAIN_REQUIRES"))
+            continue
+        requires_all = tuple(str(s).strip().lower() for s in requires_all_raw if str(s).strip())
+        if not requires_all:
+            issues.append(SemanticIssue(f"/aci/chain_rules/{idx}/requires_all", "requires_all cannot be empty after normalization", "ACI_CHAIN_REQUIRES_EMPTY"))
+            continue
+
+        label = str(rule.get("label", "")).strip()
+        if not label:
+            issues.append(SemanticIssue(f"/aci/chain_rules/{idx}/label", "label must be a non-empty string", "ACI_CHAIN_LABEL"))
+            continue
+
+        chain_rules.append(
+            ACIChainRule(
+                rule_id=rule_id,
+                enabled=bool(rule.get("enabled", True)),
+                requires_all=requires_all,
+                label=label,
+            )
+        )
+
+    return ACIConfig(
+        enabled=enabled,
+        min_confidence=min_confidence,
+        max_uplift=max_uplift,
+        asset_uplift_weight=asset_uplift_weight,
+        exploit_boost=ACIExploitBoost(
+            enabled=exploit_enabled,
+            weight=exploit_weight,
+            max_bonus=exploit_max_bonus,
+        ),
+        capability_rules=tuple(capability_rules),
+        chain_rules=tuple(chain_rules),
+        token_mode=token_mode,
+        signal_aliases=tuple(signal_aliases),
+        disabled_core_tokens=tuple(disabled_core_tokens),
+    )
 
 # -----------------------------------------------
 # TopN parsing / semantics

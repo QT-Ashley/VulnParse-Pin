@@ -207,6 +207,12 @@ def _topn_asset_chunk_worker(
     chunk: List[Tuple[str, List[str]]],
     scoring_data: Dict[str, Dict[str, Any]],
     finding_attrs: Dict[str, Dict[str, Any]],
+    aci_finding_data: Dict[str, Dict[str, Any]],
+    aci_asset_data: Dict[str, Dict[str, Any]],
+    aci_enabled: bool,
+    aci_min_confidence: float,
+    aci_max_uplift: float,
+    aci_asset_uplift_weight: float,
     asset_obs_by_id: Dict[str, Dict[str, Any]],
     inference_cfg: Dict[str, Any],
     rank_basis: str,
@@ -218,8 +224,8 @@ def _topn_asset_chunk_worker(
 ) -> Dict[str, Any]:
     out_inference: Dict[str, Dict[str, Any]] = {}
     out_findings: Dict[str, List[Dict[str, Any]]] = {}
-    out_assets: List[Tuple[float, int, int, int, int, int, int, str, Tuple[float, ...]]] = []
-    global_heap: List[Tuple[float, str, str, int, int, int, int, Dict[str, Any]]] = []
+    out_assets: List[Tuple[float, float, int, int, int, int, int, int, str, Tuple[float, ...]]] = []
+    global_heap: List[Tuple[float, float, str, str, int, int, int, int, Dict[str, Any]]] = []
     entry_counter = 0
 
     for asset_id, finding_ids in chunk:
@@ -228,7 +234,7 @@ def _topn_asset_chunk_worker(
         crit_label = str(obs.get("criticality") or "").strip().lower()
         crit_rank = {"extreme": 4, "high": 3, "medium": 2, "low": 1}.get(crit_label, 0)
 
-        rows: List[Tuple[float, int, int, int, str, Dict[str, Any]]] = []
+        rows: List[Tuple[float, float, int, int, int, str, Dict[str, Any]]] = []
         asset_scores: List[float] = []
         crit_high = 0
         scorable_count = 0
@@ -248,6 +254,26 @@ def _topn_asset_chunk_worker(
             reasons = _split_reason_text(rec.get("reason", ""))
             exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
 
+            aci_uplift = 0.0
+            aci_rec = aci_finding_data.get(fid)
+            if aci_enabled and isinstance(aci_rec, dict):
+                try:
+                    confidence = float(aci_rec.get("confidence", 0.0))
+                    uplift = float(aci_rec.get("rank_uplift", 0.0))
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                    uplift = 0.0
+                if confidence >= float(aci_min_confidence):
+                    aci_uplift = max(0.0, min(float(aci_max_uplift), uplift))
+
+            if aci_uplift > 0.0 and isinstance(aci_rec, dict):
+                capabilities = aci_rec.get("capabilities", [])
+                if not isinstance(capabilities, (list, tuple)):
+                    capabilities = []
+                conf = float(aci_rec.get("confidence", 0.0) or 0.0)
+                caps_preview = ",".join(str(c) for c in capabilities[:3]) if capabilities else "unspecified"
+                reasons = tuple(reasons) + (f"ACI Uplift (+{aci_uplift:.2f}) conf={conf:.2f} caps={caps_preview}",)
+
             attrs = finding_attrs.get(fid, {})
             port = attrs.get("port")
             proto = attrs.get("proto")
@@ -266,7 +292,7 @@ def _topn_asset_chunk_worker(
                 "plugin_id": str(plugin_id) if plugin_id is not None else None,
             }
 
-            rows.append((score, exploit_count, kev_count, cve_count, fid, ref_dict))
+            rows.append((score, aci_uplift, exploit_count, kev_count, cve_count, fid, ref_dict))
             asset_scores.append(score)
             scorable_count += 1
             if band.lower() in ("critical", "high"):
@@ -278,26 +304,27 @@ def _topn_asset_chunk_worker(
             cve_breadth += cve_count
 
             if include_global_top:
-                key = (score, exploit_count, kev_count, cve_count, asset_id, fid)
+                key = (score, aci_uplift, exploit_count, kev_count, cve_count, asset_id, fid)
                 if len(global_heap) < global_top_max:
-                    heapq.heappush(global_heap, (key[0], key[4], key[5], key[1], key[2], key[3], entry_counter, ref_dict))
+                    heapq.heappush(global_heap, (key[0], key[1], key[5], key[6], key[2], key[3], key[4], entry_counter, ref_dict))
                     entry_counter += 1
                 else:
                     min_key = (
                         global_heap[0][0],
-                        global_heap[0][3],
+                        global_heap[0][1],
                         global_heap[0][4],
                         global_heap[0][5],
-                        global_heap[0][1],
+                        global_heap[0][6],
                         global_heap[0][2],
+                        global_heap[0][3],
                     )
                     if key > min_key:
-                        heapq.heapreplace(global_heap, (key[0], key[4], key[5], key[1], key[2], key[3], entry_counter, ref_dict))
+                        heapq.heapreplace(global_heap, (key[0], key[1], key[5], key[6], key[2], key[3], key[4], entry_counter, ref_dict))
                         entry_counter += 1
 
-        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], x[4]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], x[5]))
         ranked_findings: List[Dict[str, Any]] = []
-        for i, (_, _, _, _, _, ref_dict) in enumerate(rows[:max_findings_per_asset], start=1):
+        for i, (_, _, _, _, _, _, ref_dict) in enumerate(rows[:max_findings_per_asset], start=1):
             ref_dict["rank"] = i
             ranked_findings.append(ref_dict)
         out_findings[asset_id] = ranked_findings
@@ -309,9 +336,19 @@ def _topn_asset_chunk_worker(
             if i < len(decay):
                 asset_score += float(value) * float(decay[i])
 
+        aci_asset_uplift = 0.0
+        aci_asset_rec = aci_asset_data.get(asset_id)
+        if aci_enabled and isinstance(aci_asset_rec, dict):
+            try:
+                aci_asset_uplift = float(aci_asset_rec.get("rank_uplift", 0.0))
+            except (TypeError, ValueError):
+                aci_asset_uplift = 0.0
+            aci_asset_uplift = max(0.0, min(float(aci_max_uplift), aci_asset_uplift * float(aci_asset_uplift_weight)))
+
         out_assets.append(
             (
                 asset_score,
+                aci_asset_uplift,
                 crit_high,
                 exploitable_findings,
                 kev_findings,
@@ -324,8 +361,8 @@ def _topn_asset_chunk_worker(
         )
 
     global_candidates = [
-        (score, asset_id, fid, exploit_count, kev_count, cve_count, entry_order, ref_dict)
-        for score, asset_id, fid, exploit_count, kev_count, cve_count, entry_order, ref_dict in global_heap
+        (score, aci_uplift, asset_id, fid, exploit_count, kev_count, cve_count, entry_order, ref_dict)
+        for score, aci_uplift, asset_id, fid, exploit_count, kev_count, cve_count, entry_order, ref_dict in global_heap
     ]
 
     return {

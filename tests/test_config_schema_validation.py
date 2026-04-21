@@ -6,6 +6,7 @@ from ruamel.yaml import YAML
 
 from vulnparse_pin.core.config_source import RawConfigPayloads
 from vulnparse_pin.core.config_validator import ConfigValidator
+from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
 
 
 def _load_default_payloads() -> RawConfigPayloads:
@@ -267,3 +268,26 @@ def test_global_config_schema_rejects_invalid_ghsa_budget():
 
     with pytest.raises(RuntimeError, match="Global config schema validation failed"):
         ConfigValidator._validate_schema(invalid, "config.schema.json", label="Global config")
+
+
+def test_safe_fallback_aci_rules_track_packaged_topn_defaults() -> None:
+    payloads = _load_default_payloads()
+    fallback = _safe_fallback_config()
+
+    default_aci = payloads.topn_config.get("aci", {}) if isinstance(payloads.topn_config, dict) else {}
+    default_capability_ids = {
+        str(rule.get("id", "")).strip()
+        for rule in (default_aci.get("capability_rules", []) if isinstance(default_aci, dict) else [])
+        if isinstance(rule, dict)
+    }
+    default_chain_ids = {
+        str(rule.get("id", "")).strip()
+        for rule in (default_aci.get("chain_rules", []) if isinstance(default_aci, dict) else [])
+        if isinstance(rule, dict)
+    }
+
+    fallback_capability_ids = {rule.rule_id for rule in fallback.aci.capability_rules}
+    fallback_chain_ids = {rule.rule_id for rule in fallback.aci.chain_rules}
+
+    assert default_capability_ids == fallback_capability_ids
+    assert default_chain_ids == fallback_chain_ids

@@ -88,7 +88,7 @@ def _split_reason_text(reason_value: Any) -> Tuple[str, ...]:
 class TopNPass(Pass):
     name = "TopN"
     version: str = "1.0"
-    requires_passes: tuple[str, ...] = ("Scoring@2.0",)
+    requires_passes: tuple[str, ...] = ("Scoring@2.0", "ACI@1.0")
 
     def __init__(
         self, 
@@ -147,6 +147,46 @@ class TopNPass(Pass):
             )
             return DerivedPassResult(meta=meta, data=data)
 
+        aci = self._get_aci_output(scan)
+        if aci is None:
+            ctx.logger.error("Missing ACI output; cannot rank.", extra={"vp_label": "TopNPass"})
+            services = getattr(ctx, "services", None)
+            ledger = getattr(services, "ledger", None)
+            if ledger is not None:
+                ledger.append_event(
+                    component="TopN",
+                    event_type="decision",
+                    subject_ref="topn:summary",
+                    reason_code=DecisionReasonCodes.TOPN_SKIPPED_MISSING_ACI,
+                    reason_text="TopN skipped because ACI@1.0 output was missing.",
+                    factor_refs=["dependency:ACI@1.0"],
+                    evidence={"status": "skipped", "missing_dependency": "ACI@1.0"},
+                )
+
+            output = TopNPassOutput(
+                rank_basis=self.cfg.topn.rank_basis,
+                k=self.cfg.topn.k,
+                decay=self.cfg.topn.decay,
+                assets=(),
+                findings_by_asset={},
+                global_top_findings=(),
+            )
+            data = asdict(output)
+            data["status"] = "skipped"
+            data["error"] = {
+                "code": "missing_dependency",
+                "message": "ACI@1.0 output not found; TopN ranking not executed.",
+                "missing": ["ACI@1.0"],
+            }
+
+            meta = PassMeta(
+                name=self.name,
+                version=self.version,
+                created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                notes="TopN soft no-op due to missing ACI pass output.",
+            )
+            return DerivedPassResult(meta=meta, data=data)
+
         # 1 Build lookup index
         nmap_ctx_cfg = getattr(getattr(ctx, "services", None), "nmap_ctx_config", None) or {}
         nmap_open_ports_by_asset: Dict[str, set] = {}
@@ -168,6 +208,7 @@ class TopNPass(Pass):
                 ctx=ctx,
                 scan=scan,
                 scoring=scoring,
+                aci=aci,
                 asset_to_findings=asset_to_findings,
                 rank_basis=rank_basis,
                 nmap_open_ports_by_asset=nmap_open_ports_by_asset,
@@ -187,6 +228,7 @@ class TopNPass(Pass):
                 ranked = self._rank_findings_for_asset(
                     scan=scan,
                     scoring=scoring,
+                    aci=aci,
                     asset_id=asset_id,
                     finding_ids=fids,
                     rank_basis=rank_basis,
@@ -200,6 +242,7 @@ class TopNPass(Pass):
             ranked_assets = self._rank_assets(
                 scan=scan,
                 scoring=scoring,
+                aci=aci,
                 asset_to_findings=asset_to_findings,
                 inference_by_asset=inference_by_asset,
                 rank_basis=rank_basis,
@@ -216,6 +259,7 @@ class TopNPass(Pass):
                 global_top = self._rank_global_findings(
                     scan=scan,
                     scoring=scoring,
+                    aci=aci,
                     asset_to_findings=asset_to_findings,
                     rank_basis=rank_basis,
                     ctx=ctx,
@@ -301,6 +345,7 @@ class TopNPass(Pass):
         ctx: "RunContext",
         scan: "ScanResult",
         scoring: "DerivedPassResult",
+        aci: "DerivedPassResult",
         asset_to_findings: Dict[str, List[str]],
         rank_basis: str,
         nmap_open_ports_by_asset: Optional[Dict[str, set]] = None,
@@ -332,6 +377,21 @@ class TopNPass(Pass):
                     "reason": rec.get("reason", ""),
                     "score_trace": rec.get("score_trace", {}),
                 }
+
+        aci_finding_data: Dict[str, Dict[str, Any]] = {}
+        aci_asset_data: Dict[str, Dict[str, Any]] = {}
+        aci_data = getattr(aci, "data", None)
+        if isinstance(aci_data, dict):
+            raw_findings = aci_data.get("finding_semantics", {})
+            raw_assets = aci_data.get("asset_semantics", {})
+            if isinstance(raw_findings, dict):
+                for fid, rec in raw_findings.items():
+                    if isinstance(rec, dict):
+                        aci_finding_data[fid] = rec
+            if isinstance(raw_assets, dict):
+                for aid, rec in raw_assets.items():
+                    if isinstance(rec, dict):
+                        aci_asset_data[aid] = rec
 
         finding_attrs: Dict[str, Dict[str, Any]] = {}
         asset_obs_by_id: Dict[str, Dict[str, Any]] = {}
@@ -412,8 +472,8 @@ class TopNPass(Pass):
 
         inference_by_asset: Dict[str, ExposureInference] = {}
         findings_by_asset_ranked: Dict[str, Tuple[RankedFindingRef, ...]] = {}
-        asset_rows: List[Tuple[float, int, int, int, int, int, int, str, Tuple[float, ...]]] = []
-        global_candidates: List[Tuple[float, str, str, int, int, int, int, Dict[str, Any]]] = []
+        asset_rows: List[Tuple[float, float, int, int, int, int, int, int, str, Tuple[float, ...]]] = []
+        global_candidates: List[Tuple[float, float, str, str, int, int, int, int, Dict[str, Any]]] = []
 
         try:
             with cf.ProcessPoolExecutor(max_workers=num_workers) as executor:
@@ -423,6 +483,12 @@ class TopNPass(Pass):
                         chunk,
                         scoring_data,
                         finding_attrs,
+                        aci_finding_data,
+                        aci_asset_data,
+                        bool(self.cfg.aci.enabled),
+                        float(self.cfg.aci.min_confidence),
+                        float(self.cfg.aci.max_uplift),
+                        float(self.cfg.aci.asset_uplift_weight),
                         asset_obs_by_id,
                         inference_cfg,
                         rank_basis,
@@ -487,6 +553,7 @@ class TopNPass(Pass):
                 findings_by_asset_ranked[asset_id] = self._rank_findings_for_asset(
                     scan=scan,
                     scoring=scoring,
+                    aci=aci,
                     asset_id=asset_id,
                     finding_ids=fids,
                     rank_basis=rank_basis,
@@ -498,6 +565,7 @@ class TopNPass(Pass):
             ranked_assets = self._rank_assets(
                 scan=scan,
                 scoring=scoring,
+                aci=aci,
                 asset_to_findings=asset_to_findings,
                 inference_by_asset=inference_by_asset,
                 rank_basis=rank_basis,
@@ -511,6 +579,7 @@ class TopNPass(Pass):
                 global_top = self._rank_global_findings(
                     scan=scan,
                     scoring=scoring,
+                    aci=aci,
                     asset_to_findings=asset_to_findings,
                     rank_basis=rank_basis,
                     ctx=ctx,
@@ -519,10 +588,11 @@ class TopNPass(Pass):
                 )
             return inference_by_asset, findings_by_asset_ranked, ranked_assets, global_top
 
-        asset_rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], -x[6], x[7]))
+        asset_rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], -x[6], -x[7], x[8]))
         ranked_assets: List[RankedAssetRef] = []
         for i, (
             asset_score,
+            _aci_asset_uplift,
             _crit_high,
             _exploitable_findings,
             _kev_findings,
@@ -549,10 +619,10 @@ class TopNPass(Pass):
 
         global_top: Tuple[RankedFindingRef, ...] = ()
         if self.cfg.topn.include_global_top_findings:
-            global_candidates.sort(key=lambda x: (-x[0], -x[3], -x[4], -x[5], -x[6], x[1], x[2]))
+            global_candidates.sort(key=lambda x: (-x[0], -x[1], -x[4], -x[5], -x[6], -x[7], x[2], x[3]))
             selected = global_candidates[: self.cfg.topn.global_top_findings]
             refs: List[RankedFindingRef] = []
-            for i, (_, _, _, _, _, _, _, d) in enumerate(selected, start=1):
+            for i, (_, _, _, _, _, _, _, _, d) in enumerate(selected, start=1):
                 refs.append(
                     RankedFindingRef(
                         finding_id=d["finding_id"],
@@ -596,6 +666,64 @@ class TopNPass(Pass):
             return scan.derived.passes["Scoring@2.0"]
         except (AttributeError, TypeError, KeyError):
             return None
+
+    def _get_aci_output(self, scan: "ScanResult") -> DerivedPassResult | None:
+        try:
+            return scan.derived.passes["ACI@1.0"]
+        except (AttributeError, TypeError, KeyError):
+            return None
+
+    def _get_finding_aci_record(self, aci: "DerivedPassResult", finding_id: str) -> Optional[Dict[str, Any]]:
+        data = getattr(aci, "data", None)
+        if not isinstance(data, dict):
+            return None
+        findings = data.get("finding_semantics", {})
+        if not isinstance(findings, dict):
+            return None
+        rec = findings.get(finding_id)
+        return rec if isinstance(rec, dict) else None
+
+    def _get_asset_aci_record(self, aci: "DerivedPassResult", asset_id: str) -> Optional[Dict[str, Any]]:
+        data = getattr(aci, "data", None)
+        if not isinstance(data, dict):
+            return None
+        assets = data.get("asset_semantics", {})
+        if not isinstance(assets, dict):
+            return None
+        rec = assets.get(asset_id)
+        return rec if isinstance(rec, dict) else None
+
+    def _compute_finding_aci_uplift(self, aci_rec: Optional[Dict[str, Any]]) -> float:
+        if not self.cfg.aci.enabled or not isinstance(aci_rec, dict):
+            return 0.0
+        try:
+            confidence = float(aci_rec.get("confidence", 0.0))
+            uplift = float(aci_rec.get("rank_uplift", 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+        if confidence < float(self.cfg.aci.min_confidence):
+            return 0.0
+        return max(0.0, min(float(self.cfg.aci.max_uplift), uplift))
+
+    def _compute_asset_aci_uplift(self, aci_rec: Optional[Dict[str, Any]]) -> float:
+        if not self.cfg.aci.enabled or not isinstance(aci_rec, dict):
+            return 0.0
+        try:
+            uplift = float(aci_rec.get("rank_uplift", 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+        weighted = uplift * float(self.cfg.aci.asset_uplift_weight)
+        return max(0.0, min(float(self.cfg.aci.max_uplift), weighted))
+
+    def _build_aci_reason_text(self, aci_rec: Optional[Dict[str, Any]], uplift: float) -> Optional[str]:
+        if uplift <= 0.0 or not isinstance(aci_rec, dict):
+            return None
+        capabilities = aci_rec.get("capabilities", [])
+        if not isinstance(capabilities, (list, tuple)):
+            capabilities = []
+        conf = aci_rec.get("confidence", 0.0)
+        caps_preview = ",".join(str(c) for c in capabilities[:3]) if capabilities else "unspecified"
+        return f"ACI Uplift (+{uplift:.2f}) conf={float(conf):.2f} caps={caps_preview}"
 
     def _index_findings_by_asset(self, scan: "ScanResult") -> dict[str, List[str]]:
         maps: Dict[str, List[str]] = {}
@@ -716,6 +844,7 @@ class TopNPass(Pass):
         *,
         scan: "ScanResult",
         scoring: "DerivedPassResult",
+        aci: "DerivedPassResult",
         asset_id: str,
         finding_ids: List[str],
         rank_basis: str,
@@ -724,7 +853,7 @@ class TopNPass(Pass):
         nmap_confirmed_ports: set = frozenset(),
     ) -> tuple[RankedFindingRef, ...]:
 
-        rows: List[Tuple[float, int, int, int, int, str, RankedFindingRef]] = []
+        rows: List[Tuple[float, float, int, int, int, int, str, RankedFindingRef]] = []
 
 
         for fid in finding_ids:
@@ -739,6 +868,11 @@ class TopNPass(Pass):
             band = str(rec.get("risk_band", "unknown"))
             reasons = _split_reason_text(rec.get("reason", ""))
             exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
+            aci_rec = self._get_finding_aci_record(aci, fid)
+            aci_uplift = self._compute_finding_aci_uplift(aci_rec)
+            aci_reason = self._build_aci_reason_text(aci_rec, aci_uplift)
+            if aci_reason:
+                reasons = tuple(list(reasons) + [aci_reason])
 
             f = self._get_finding_by_id(scan, fid, ctx)
             port = getattr(f, "affected_port", None) if f else None
@@ -759,12 +893,12 @@ class TopNPass(Pass):
             )
             # Sort key: score, combined-CVE exploit/KEV breadth, nmap confirmation, then stable ID.
             nmap_hit = 1 if isinstance(port, int) and port in nmap_confirmed_ports else 0
-            rows.append((score, exploit_count, kev_count, cve_count, nmap_hit, fid, ref))
+            rows.append((score, aci_uplift, exploit_count, kev_count, cve_count, nmap_hit, fid, ref))
 
-        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], x[5]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], x[6]))
 
         output: List[RankedFindingRef] = []
-        for i, (_, _, _, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
+        for i, (_, _, _, _, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
             output.append(_replace_rank(ref, i))
         return tuple(output)
 
@@ -774,6 +908,7 @@ class TopNPass(Pass):
         ctx: "RunContext",
         scan: "ScanResult",
         scoring: "DerivedPassResult",
+        aci: "DerivedPassResult",
         asset_to_findings: Dict[str, List[str]],
         rank_basis: str,
     ) -> Dict[str, Tuple[RankedFindingRef, ...]]:
@@ -875,6 +1010,7 @@ class TopNPass(Pass):
                 ranked = self._rank_findings_for_asset(
                     scan=scan,
                     scoring=scoring,
+                    aci=aci,
                     asset_id=asset_id,
                     finding_ids=fids,
                     rank_basis=rank_basis,
@@ -889,6 +1025,7 @@ class TopNPass(Pass):
         *,
         scan: "ScanResult",
         scoring: "DerivedPassResult",
+        aci: "DerivedPassResult",
         asset_to_findings: Dict[str, List[str]],
         inference_by_asset: Dict[str, ExposureInference],
         rank_basis: str,
@@ -899,7 +1036,7 @@ class TopNPass(Pass):
         decay = self.cfg.topn.decay
         k = self.cfg.topn.k
 
-        rows: List[Tuple[float, int, int, int, int, int, int, int, str, RankedAssetRef]] = []
+        rows: List[Tuple[float, float, int, int, int, int, int, int, int, str, RankedAssetRef]] = []
 
 
         for asset_id, fids, in asset_to_findings.items():
@@ -935,6 +1072,8 @@ class TopNPass(Pass):
             obs = self._collect_asset_observation(scan, asset_id, finding_ids=fids, ctx=ctx)
             crit_label = (obs.criticality or "").strip().lower() if obs else ""
             crit_rank = {"extreme": 4, "high": 3, "medium": 2, "low": 1}.get(crit_label, 0)
+            aci_asset_rec = self._get_asset_aci_record(aci, asset_id)
+            aci_asset_uplift = self._compute_asset_aci_uplift(aci_asset_rec)
 
             scores.sort(reverse=True)
             top_scores = tuple(scores[:k])
@@ -959,6 +1098,7 @@ class TopNPass(Pass):
             rows.append(
                 (
                     asset_score,
+                    aci_asset_uplift,
                     crit_high,
                     exploitable_findings,
                     kev_findings,
@@ -971,10 +1111,10 @@ class TopNPass(Pass):
                 )
             )
 
-        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], -x[6], -x[7], x[8]))
+        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], -x[6], -x[7], -x[8], x[9]))
 
         output: List[RankedAssetRef] = []
-        for i, (_, _, _, _, _, _, _, _, _, ref) in enumerate(rows, start=1):
+        for i, (_, _, _, _, _, _, _, _, _, _, ref) in enumerate(rows, start=1):
             output.append(_replace_rank(ref, i))
         return output
 
@@ -984,6 +1124,7 @@ class TopNPass(Pass):
         *,
         scan: "ScanResult",
         scoring: "DerivedPassResult",
+        aci: "DerivedPassResult",
         asset_to_findings: Dict[str, List[str]],
         rank_basis: str,
         ctx: Optional["RunContext"] = None,
@@ -992,7 +1133,7 @@ class TopNPass(Pass):
     ) -> Tuple[RankedFindingRef, ...]:
         nmap_open_ports_by_asset = nmap_open_ports_by_asset or {}
 
-        rows: List[Tuple[float, int, int, int, int, str, str, RankedFindingRef]] = []
+        rows: List[Tuple[float, float, int, int, int, int, str, str, RankedFindingRef]] = []
 
 
         for asset_id, fids in asset_to_findings.items():
@@ -1007,6 +1148,11 @@ class TopNPass(Pass):
                 band = str(rec.get("risk_band", "unknown"))
                 reasons = _split_reason_text(rec.get("reason", ""))
                 exploit_count, kev_count, cve_count = _score_trace_priority_signals(rec)
+                aci_rec = self._get_finding_aci_record(aci, fid)
+                aci_uplift = self._compute_finding_aci_uplift(aci_rec)
+                aci_reason = self._build_aci_reason_text(aci_rec, aci_uplift)
+                if aci_reason:
+                    reasons = tuple(list(reasons) + [aci_reason])
 
                 f = self._get_finding_by_id(scan, fid, ctx)
                 port = getattr(f, "affected_port", None) if f else None
@@ -1028,12 +1174,12 @@ class TopNPass(Pass):
 
                 nmap_ports = nmap_open_ports_by_asset.get(asset_id, set())
                 nmap_hit = 1 if isinstance(port, int) and port in nmap_ports else 0
-                rows.append((score, exploit_count, kev_count, cve_count, nmap_hit, asset_id, fid, ref))
+                rows.append((score, aci_uplift, exploit_count, kev_count, cve_count, nmap_hit, asset_id, fid, ref))
 
-        rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], x[5], x[6]))
+            rows.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3], -x[4], -x[5], x[6], x[7]))
 
         output: List[RankedFindingRef] = []
-        for i, (_, _, _, _, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
+        for i, (_, _, _, _, _, _, _, _, ref) in enumerate(rows[:max_findings], start=1):
             output.append(_replace_rank(ref, i))
         return tuple(output)
 

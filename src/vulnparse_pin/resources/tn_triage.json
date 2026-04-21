@@ -110,5 +110,191 @@
                 "evidence": "Asset criticality suggests elevated exposure priority (+1)"
             }
         ]
+    },
+    "aci": {
+        "enabled": false,
+        "min_confidence": 0.6,
+        "max_uplift": 2.0,
+        "asset_uplift_weight": 0.5,
+        "token_mode": "merge",
+        "signal_aliases": [],
+        "disabled_core_tokens": [],
+        "exploit_boost": {
+            "enabled": true,
+            "weight": 0.25,
+            "max_bonus": 0.2
+        },
+        "capability_rules": [
+            {
+                "id": "cap_initial_access",
+                "enabled": true,
+                "capability": "initial_access",
+                "signals": ["exploit", "remote_service", "rce", "lfi", "sqli", "auth bypass"],
+                "weight": 0.7
+            },
+            {
+                "id": "cap_remote_execution",
+                "enabled": true,
+                "capability": "remote_execution",
+                "signals": ["exploit", "remote_service", "rce"],
+                "weight": 0.85
+            },
+            {
+                "id": "cap_privilege_escalation",
+                "enabled": true,
+                "capability": "privilege_escalation",
+                "signals": ["privesc", "privilege escalation", "sudo", "setuid", "kernel"],
+                "weight": 0.75
+            },
+            {
+                "id": "cap_credential_access",
+                "enabled": true,
+                "capability": "credential_access",
+                "signals": ["credential", "password", "hash"],
+                "weight": 0.65
+            },
+            {
+                "id": "cap_information_disclosure",
+                "enabled": true,
+                "capability": "information_disclosure",
+                "signals": ["info disclosure", "information disclosure", "sensitive data", "leak", "exposure"],
+                "weight": 0.55
+            },
+            {
+                "id": "cap_persistence",
+                "enabled": true,
+                "capability": "persistence",
+                "signals": ["persistence", "startup", "autorun", "scheduled task", "service install"],
+                "weight": 0.6
+            },
+            {
+                "id": "cap_local_file_inclusion",
+                "enabled": true,
+                "capability": "local_file_inclusion",
+                "signals": ["lfi", "local file inclusion", "path traversal", "file read", "etc/passwd"],
+                "weight": 0.7
+            },
+            {
+                "id": "cap_sql_injection",
+                "enabled": true,
+                "capability": "sql_injection",
+                "signals": ["sqli", "sql injection", "union select", "database", "query"],
+                "weight": 0.72
+            },
+            {
+                "id": "cap_auth_bypass",
+                "enabled": true,
+                "capability": "auth_bypass",
+                "signals": ["auth bypass", "authentication bypass", "bypass login", "default credential"],
+                "weight": 0.68
+            },
+            {
+                "id": "cap_command_execution",
+                "enabled": true,
+                "capability": "command_execution",
+                "signals": ["command injection", "cmd injection", "os command", "command execution"],
+                "weight": 0.78
+            },
+            {
+                "id": "cap_secrets_exposure",
+                "enabled": true,
+                "capability": "secrets_exposure",
+                "signals": ["api key", "token", "secret", "private key", "hardcoded credential"],
+                "weight": 0.62
+            },
+            {
+                "id": "cap_lateral_movement",
+                "enabled": true,
+                "capability": "lateral_movement",
+                "signals": ["smb", "ssh", "rdp", "rpc"],
+                "weight": 0.6
+            }
+        ],
+        "chain_rules": [
+            {
+                "id": "chain_initial_to_credential",
+                "enabled": true,
+                "requires_all": ["remote_execution", "credential_access"],
+                "label": "Initial access and credential theft pathway"
+            },
+            {
+                "id": "chain_credential_to_lateral",
+                "enabled": true,
+                "requires_all": ["credential_access", "lateral_movement"],
+                "label": "Credential-assisted lateral movement pathway"
+            },
+            {
+                "id": "chain_initial_to_privesc",
+                "enabled": true,
+                "requires_all": ["remote_execution", "privilege_escalation"],
+                "label": "Initial access to privilege escalation pathway"
+            },
+            {
+                "id": "chain_sqli_to_disclosure",
+                "enabled": true,
+                "requires_all": ["sql_injection", "information_disclosure"],
+                "label": "Database exploitation and information disclosure pathway"
+            },
+            {
+                "id": "chain_lfi_to_persistence",
+                "enabled": true,
+                "requires_all": ["local_file_inclusion", "persistence"],
+                "label": "File inclusion to persistence pathway"
+            },
+            {
+                "id": "chain_lfi_to_disclosure",
+                "enabled": true,
+                "requires_all": ["local_file_inclusion", "information_disclosure"],
+                "label": "File inclusion to information disclosure pathway"
+            },
+            {
+                "id": "chain_lfi_to_credential",
+                "enabled": true,
+                "requires_all": ["local_file_inclusion", "credential_access"],
+                "label": "File inclusion to credential access pathway"
+            },
+            {
+                "id": "chain_privesc_to_persistence",
+                "enabled": true,
+                "requires_all": ["privilege_escalation", "persistence"],
+                "label": "Privilege escalation to persistence pathway"
+            },
+            {
+                "id": "chain_initial_access_to_credential",
+                "enabled": true,
+                "requires_all": ["initial_access", "credential_access"],
+                "label": "Initial access to credential access pathway"
+            },
+            {
+                "id": "chain_auth_bypass_to_initial_access",
+                "enabled": true,
+                "requires_all": ["auth_bypass", "initial_access"],
+                "label": "Authentication bypass to initial access pathway"
+            },
+            {
+                "id": "chain_command_exec_to_privesc",
+                "enabled": true,
+                "requires_all": ["command_execution", "privilege_escalation"],
+                "label": "Command execution to privilege escalation pathway"
+            },
+            {
+                "id": "chain_disclosure_to_credential",
+                "enabled": true,
+                "requires_all": ["information_disclosure", "credential_access"],
+                "label": "Information disclosure to credential access pathway"
+            },
+            {
+                "id": "chain_sqli_to_credential",
+                "enabled": true,
+                "requires_all": ["sql_injection", "credential_access"],
+                "label": "SQL injection to credential access pathway"
+            },
+            {
+                "id": "chain_secrets_to_credential",
+                "enabled": true,
+                "requires_all": ["secrets_exposure", "credential_access"],
+                "label": "Secrets exposure to credential access pathway"
+            }
+        ]
     }
 }

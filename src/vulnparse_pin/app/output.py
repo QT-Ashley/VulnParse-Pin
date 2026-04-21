@@ -63,10 +63,10 @@ def run_output_and_summary(
         )
         
         # Markdown Exec
-        generate_markdown_report(ctx, scan_result, md_output, report_type="executive")
+        generate_markdown_report(ctx, scan_result, md_output, report_type="executive", args=args)
         
         # Markdown Tech
-        generate_markdown_report(ctx, scan_result, md_tech_output, report_type="technical")
+        generate_markdown_report(ctx, scan_result, md_tech_output, report_type="technical", args=args)
     else:
         if args.output:
             if args.presentation and not scan_result.derived.get("Scoring@2.0"):
@@ -87,10 +87,10 @@ def run_output_and_summary(
             )
 
         if md_output:
-            generate_markdown_report(ctx, scan_result, md_output, report_type="executive")
+            generate_markdown_report(ctx, scan_result, md_output, report_type="executive", args=args)
 
         if md_tech_output:
-            generate_markdown_report(ctx, scan_result, md_tech_output, report_type="technical")
+            generate_markdown_report(ctx, scan_result, md_tech_output, report_type="technical", args=args)
 
     if runmanifest_output:
         runmanifest = build_runmanifest(

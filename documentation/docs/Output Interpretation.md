@@ -136,6 +136,51 @@ vpp --verify-runmanifest out.runmanifest.json
 5. Use technical markdown for analyst handoff.
 6. Use RunManifest to preserve auditability of decisions.
 
+## Tabletop Prioritization Policy (Exploitability vs ACI Chains)
+
+Use this policy when deciding whether a chain-candidate finding should be treated above a currently exploitable public-facing finding.
+
+Methodology principle:
+
+- VulnParse-Pin triage is impact-probability first in real-world terms: prioritize findings with the highest near-term likelihood of meaningful operational impact.
+- This is a default operating model, not a one-size-fits-all mandate. Teams should adjust configs and triage policy to fit their environment, risk appetite, regulatory duties, and business goals.
+
+Priority lanes:
+
+1. `P1 Immediate Exploitable`
+	- KEV-listed or public exploit available
+	- internet/public-facing exposure
+	- high derived risk (typically Critical/High band)
+
+2. `P1b High-Confidence Chain Path`
+	- ACI indicates chain candidates with strong confidence
+	- chain implies meaningful blast radius (credential theft, privilege expansion, lateral movement)
+	- corroborating operational evidence exists (asset criticality, exposure path, adjacent controls posture)
+
+3. `P2 Remaining High Risk`
+	- high-risk findings without immediate exploitability evidence
+	- lower-confidence or uncorroborated chain candidates
+
+Default precedence rule:
+
+- A lower-ranked chain-candidate finding does not automatically outrank a currently exploitable, public-facing finding in `P1`.
+
+Escalation exception:
+
+- Elevate a chain-candidate finding into `P1b` above some `P1` backlog items only when chain confidence and expected impact indicate materially higher near-term compromise potential for the environment.
+
+Evidence fields to review before exception handling:
+
+1. `derived["ACI@1.0"].data.finding_semantics[*].chain_candidates`
+2. `derived["ACI@1.0"].data.finding_semantics[*].confidence`
+3. `derived["ACI@1.0"].data.metrics.chain_candidates_detected`
+4. `derived["TopN@1.0"]` ranking and reason context
+5. `derived["Summary@1.0"]` concentration and remediation pressure
+
+Analyst note:
+
+- Treat ACI chain outputs as decision-support signals. They improve triage order but are not proof of exploit success or compromise on their own.
+
 ## Related Docs
 
 - [Usage](Usage.md)

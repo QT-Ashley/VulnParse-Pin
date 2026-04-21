@@ -90,6 +90,7 @@ def test_csv_export_includes_derived_fields_when_present(tmp_path):
     from vulnparse_pin.core.classes.dataclass import ScanResult, ScanMetaData, Asset, Finding, RunContext, AppPaths
     from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
     from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
+    from vulnparse_pin.core.passes.ACI.aci_pass import AttackCapabilityInferencePass
     from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
     from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
     from vulnparse_pin.core.classes.pass_classes import PassRunner
@@ -115,7 +116,8 @@ def test_csv_export_includes_derived_fields_when_present(tmp_path):
     )
     scoring = ScoringPass(policy)
     topn = TopNPass(_safe_fallback_config())
-    runner = PassRunner([scoring, topn])
+    aci = AttackCapabilityInferencePass(_safe_fallback_config().aci)
+    runner = PassRunner([scoring, aci, topn])
     scan = runner.run_all(ctx, scan)
 
     # export
@@ -134,6 +136,7 @@ def test_csv_export_handles_none_scores_gracefully(tmp_path):
     from vulnparse_pin.core.classes.dataclass import ScanResult, ScanMetaData, Asset, Finding, RunContext, AppPaths
     from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
     from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
+    from vulnparse_pin.core.passes.ACI.aci_pass import AttackCapabilityInferencePass
     from vulnparse_pin.core.passes.TopN.topn_pass import TopNPass
     from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
     from vulnparse_pin.core.classes.pass_classes import PassRunner
@@ -164,7 +167,8 @@ def test_csv_export_handles_none_scores_gracefully(tmp_path):
     )
     scoring = ScoringPass(policy)
     topn = TopNPass(_safe_fallback_config())
-    runner = PassRunner([scoring, topn])
+    aci = AttackCapabilityInferencePass(_safe_fallback_config().aci)
+    runner = PassRunner([scoring, aci, topn])
     scan = runner.run_all(ctx, scan)
 
     # export; should NOT raise TypeError even if scores are None

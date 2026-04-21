@@ -279,5 +279,8 @@ See [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md) for full configura
 - [Caching Deep Dive](Caching%20Deep%20Dive.md)
 - [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
 - [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)
+- [ACI Feature Explanation](ACI%20Feature%20Explanation.md)
+- [ACI Rule Authoring Tutorial](ACI%20Rule%20Authoring%20Tutorial.md)
+- [ACI Technical Deep Dive](ACI%20Technical%20Deep%20Dive.md)
 - [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md)
 - [Enrichment Deep Dive](Enrichment%20Deep%20Dive.md)
