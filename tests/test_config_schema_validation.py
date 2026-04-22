@@ -7,6 +7,7 @@ from ruamel.yaml import YAML
 from vulnparse_pin.core.config_source import RawConfigPayloads
 from vulnparse_pin.core.config_validator import ConfigValidator
 from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
+from vulnparse_pin.core.passes.TopN.TN_triage_semantics import validate_and_normalize_semantics
 
 
 def _load_default_payloads() -> RawConfigPayloads:
@@ -97,6 +98,50 @@ def test_topn_schema_validation_rejects_unknown_properties():
 
     with pytest.raises(RuntimeError, match="TopN config schema validation failed"):
         ConfigValidator._validate_schema(invalid_topn, "topN.schema.json", label="TopN config")
+
+
+def test_topn_semantics_accept_oal_aliases_and_finding_text_predicate() -> None:
+    payloads = _load_default_payloads()
+    payloads.topn_config["triage_policy"] = {
+        "enabled": True,
+        "p1_risk_bands": ["critical", "high"],
+        "p1_require_public_exposure": True,
+        "p1_require_exploit_or_kev": True,
+        "p1b_risk_bands": ["critical", "high", "medium"],
+        "p1b_min_aci_confidence": 0.75,
+        "p1b_require_chain_candidate": True,
+        "p1b_require_public_exposure": False,
+        "preserve_p1_precedence": True,
+    }
+    payloads.topn_config["inference"]["allow_predicates"] = [
+        "ip_is_public",
+        "ip_is_private",
+        "any_port_in_public_list",
+        "port_in",
+        "hostname_contains_any",
+        "finding_text_contains_any",
+        "criticality_is",
+    ]
+    payloads.topn_config["inference"]["finding_text_min_token_matches"] = 2
+    payloads.topn_config["inference"]["rules"].append(
+        {
+            "id": "finding_text_test_hint",
+            "enabled": True,
+            "tag": "externally_facing",
+            "weight": 4,
+            "when": "finding_text_contains_any:[internet,public]",
+            "evidence": "Finding text suggests exposure (+4)",
+        }
+    )
+
+    normalized, issues = validate_and_normalize_semantics(payloads.topn_config)
+
+    assert issues == []
+    assert normalized is not None
+    assert normalized.triage_policy.oal1_risk_bands == ("critical", "high")
+    assert normalized.triage_policy.oal2_risk_bands == ("critical", "high", "medium")
+    assert normalized.inference.finding_text_min_token_matches == 2
+    assert any(rule.predicate.name == "finding_text_contains_any" for rule in normalized.inference.rules)
 
 
 def test_config_validation_missing_global_version_warns_and_continues():

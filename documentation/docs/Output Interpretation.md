@@ -145,29 +145,29 @@ Methodology principle:
 - VulnParse-Pin triage is impact-probability first in real-world terms: prioritize findings with the highest near-term likelihood of meaningful operational impact.
 - This is a default operating model, not a one-size-fits-all mandate. Teams should adjust configs and triage policy to fit their environment, risk appetite, regulatory duties, and business goals.
 
-Priority lanes:
+Operational Action Lanes (`OAL`):
 
-1. `P1 Immediate Exploitable`
-	- KEV-listed or public exploit available
-	- internet/public-facing exposure
-	- high derived risk (typically Critical/High band)
+1. `OAL-1 Immediate Exploitable`
+   - KEV-listed or public exploit available
+   - internet/public-facing exposure
+   - high derived risk (typically Critical/High band)
 
-2. `P1b High-Confidence Chain Path`
-	- ACI indicates chain candidates with strong confidence
-	- chain implies meaningful blast radius (credential theft, privilege expansion, lateral movement)
-	- corroborating operational evidence exists (asset criticality, exposure path, adjacent controls posture)
+2. `OAL-2 High-Confidence Chain Path`
+   - ACI indicates chain candidates with strong confidence
+   - chain implies meaningful blast radius (credential theft, privilege expansion, lateral movement)
+   - corroborating operational evidence exists (asset criticality, exposure path, adjacent controls posture)
 
-3. `P2 Remaining High Risk`
-	- high-risk findings without immediate exploitability evidence
-	- lower-confidence or uncorroborated chain candidates
+3. `OAL-3 Remaining High Risk`
+   - high-risk findings without immediate exploitability evidence
+   - lower-confidence or uncorroborated chain candidates
 
 Default precedence rule:
 
-- A lower-ranked chain-candidate finding does not automatically outrank a currently exploitable, public-facing finding in `P1`.
+- A lower-ranked chain-candidate finding does not automatically outrank a currently exploitable, public-facing finding in `OAL-1`.
 
 Escalation exception:
 
-- Elevate a chain-candidate finding into `P1b` above some `P1` backlog items only when chain confidence and expected impact indicate materially higher near-term compromise potential for the environment.
+- Elevate a chain-candidate finding into `OAL-2` above some `OAL-1` backlog items only when chain confidence and expected impact indicate materially higher near-term compromise potential for the environment.
 
 Evidence fields to review before exception handling:
 
@@ -180,6 +180,80 @@ Evidence fields to review before exception handling:
 Analyst note:
 
 - Treat ACI chain outputs as decision-support signals. They improve triage order but are not proof of exploit success or compromise on their own.
+
+### OAL Policy Knobs and Practical Implications
+
+TopN `triage_policy` exposes OAL behavior as explicit knobs. The defaults are tuned for conservative real-world actionability.
+
+Primary knobs:
+
+- `oal1_risk_bands`
+- `oal1_require_public_exposure`
+- `oal1_require_exploit_or_kev`
+- `oal2_risk_bands`
+- `oal2_min_aci_confidence`
+- `oal2_require_chain_candidate`
+- `oal2_require_public_exposure`
+- `preserve_oal1_precedence`
+
+Current default posture highlights:
+
+- `oal2_min_aci_confidence: 0.8`
+- `oal2_require_public_exposure: true`
+
+Implication profile of this default:
+
+1. `OAL-2` precision increases by requiring stronger semantic confidence.
+2. Internal-only chain candidates are less likely to surface as `OAL-2` unless public exposure evidence exists.
+3. `OAL-2` queue volume decreases versus looser settings; analyst trust typically increases.
+4. `OAL-3` may contain meaningful internal chain risk that some environments may choose to elevate by policy.
+
+If your environment is east-west dominant and intentionally prioritizes internal blast radius, consider policy tuning (for example setting `oal2_require_public_exposure: false`) with explicit governance and periodic review.
+
+### Context Tag Taxonomy (v1)
+
+Context tags in markdown are lightweight analyst cues derived from canonical TopN/ACI outputs and summary context. They are not independent scoring logic.
+
+v1 tag families:
+
+1. Exposure posture
+   - `Externally-Facing Inferred`
+   - `Public-Service Ports Inferred`
+   - `Exposure Confidence: Low|Medium|High`
+
+2. Asset pressure
+   - `Criticality: Low|Medium|High|Extreme`
+   - `Critical Findings Present`
+   - `High Findings Present`
+   - `Top Risk Concentration`
+
+3. Lane presence
+   - `Contains OAL-1 Findings`
+   - `Contains OAL-2 Findings`
+
+4. OAL-2 lightweight prioritization
+   - `OAL-2 Priority: Immediate Analyst Validation`
+   - `OAL-2 Priority: Validate Next`
+   - `OAL-2 Priority: Monitor`
+   - `OAL-2 Chain-Corroborated`
+   - `OAL-2 Coexists With OAL-1`
+
+OAL-2 lightweight tag behavior:
+
+- Priority tags are based on the highest OAL-2 finding confidence on the asset:
+  - `>= 0.90` -> `Immediate Analyst Validation`
+  - `>= 0.80 and < 0.90` -> `Validate Next`
+  - otherwise -> `Monitor`
+- `OAL-2 Chain-Corroborated` appears when at least one OAL-2 finding has non-empty chain candidates.
+- `OAL-2 Coexists With OAL-1` appears when OAL-2 findings exist on an asset that also has OAL-1 findings.
+
+Rendered example (as it appears in markdown reports):
+
+```markdown
+Context Tags: Externally-Facing Inferred | Public-Service Ports Inferred | Exposure Confidence: High | Criticality: High | Contains OAL-1 Findings | Contains OAL-2 Findings | OAL-2 Priority: Immediate Analyst Validation | OAL-2 Chain-Corroborated | OAL-2 Coexists With OAL-1
+
+OAL-2 tag legend: `Immediate Analyst Validation` = confidence >= 0.90, `Validate Next` = confidence >= 0.80 and < 0.90, `Monitor` = lower-confidence OAL-2.
+```
 
 ## Related Docs
 

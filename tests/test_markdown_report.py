@@ -212,14 +212,29 @@ def test_markdown_reports_include_top_asset_finding_capability_mapping() -> None
                 asset_id="asset-1",
                 hostname="host-1",
                 ip_address="10.0.0.1",
-                findings=[],
+                findings=[
+                    SimpleNamespace(
+                        finding_id="F-100",
+                        title="Demo Finding Title",
+                        exploit_available=False,
+                        cisa_kev=False,
+                    )
+                ],
             )
         ],
         derived=_DerivedShim(
             {
                 "TopN@1.0": SimpleNamespace(
                     data={
-                        "assets": [{"asset_id": "asset-1", "rank": 1}],
+                        "assets": [{
+                            "asset_id": "asset-1",
+                            "rank": 1,
+                            "inference": {
+                                "externally_facing_inferred": True,
+                                "public_service_ports_inferred": True,
+                                "confidence": "high",
+                            },
+                        }],
                         "findings_by_asset": {
                             "asset-1": [
                                 {
@@ -264,8 +279,23 @@ def test_markdown_reports_include_top_asset_finding_capability_mapping() -> None
     assert "host-1 / 10.0.0.1" in technical
     assert "F-100" in executive
     assert "F-100" in technical
+    assert "Demo Finding Title" in executive
+    assert "Demo Finding Title" in technical
     assert "remote_execution, credential_access" in executive
     assert "remote_execution, credential_access" in technical
+    assert "OAL = Operational Action Lane" in executive
+    assert "OAL = Operational Action Lane" in technical
+    assert "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |" in executive
+    assert "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |" in technical
+    assert "OAL-2 High-Confidence Chain Path" in executive
+    assert "OAL-2 High-Confidence Chain Path" in technical
+    assert "Context Tags:" in executive
+    assert "Context Tags:" in technical
+    assert "Externally-Facing Inferred" in executive
+    assert "Public-Service Ports Inferred" in executive
+    assert "Exposure Confidence: High" in technical
+    assert "Criticality: High" in technical
+    assert "Top Risk Concentration" in executive
     assert "perform due diligence" in executive
     assert "due diligence" in technical
 
@@ -374,3 +404,148 @@ def test_markdown_reports_note_when_all_mapped_findings_are_none_inferred() -> N
     marker = "all mapped entries are `None inferred`"
     assert marker in executive
     assert marker in technical
+
+
+def test_markdown_reports_use_topn_inference_for_oal1_and_context_tags() -> None:
+    summary = _build_summary(immediate_cves=["CVE-2026-0001"])
+    scan = SimpleNamespace(
+        assets=[
+            SimpleNamespace(
+                asset_id="asset-1",
+                hostname="host-1",
+                ip_address="10.0.0.1",
+                findings=[SimpleNamespace(finding_id="F-300", exploit_available=True, cisa_kev=False)],
+            )
+        ],
+        derived=_DerivedShim(
+            {
+                "TopN@1.0": SimpleNamespace(
+                    data={
+                        "assets": [{
+                            "asset_id": "asset-1",
+                            "rank": 1,
+                            "inference": {
+                                "externally_facing_inferred": True,
+                                "public_service_ports_inferred": True,
+                                "confidence": "medium",
+                            },
+                        }],
+                        "findings_by_asset": {
+                            "asset-1": [
+                                {
+                                    "finding_id": "F-300",
+                                    "risk_band": "Critical",
+                                    "score": 9.9,
+                                }
+                            ]
+                        },
+                    }
+                ),
+                "ACI@1.0": SimpleNamespace(
+                    data={
+                        "finding_semantics": {
+                            "F-300": {
+                                "capabilities": [],
+                                "chain_candidates": [],
+                                "confidence": 0.0,
+                            }
+                        },
+                        "metrics": {
+                            "total_findings": 1,
+                            "inferred_findings": 0,
+                            "coverage_ratio": 0.0,
+                            "uplifted_findings": 0,
+                            "capabilities_detected": {},
+                            "chain_candidates_detected": {},
+                            "confidence_buckets": {"low": 1, "medium": 0, "high": 0},
+                        },
+                    }
+                ),
+            }
+        ),
+    )
+
+    executive = _generate_executive_report(_scan=scan, summary=summary)
+    technical = _generate_technical_report(_scan=scan, summary=summary)
+
+    assert "OAL-1 Immediate Exploitable" in executive
+    assert "OAL-1 Immediate Exploitable" in technical
+    assert "Externally-Facing Inferred" in executive
+    assert "Public-Service Ports Inferred" in technical
+    assert "Contains OAL-1 Findings" in executive
+
+
+def test_markdown_reports_render_lightweight_oal2_priority_tags() -> None:
+    summary = _build_summary(immediate_cves=[])
+    scan = SimpleNamespace(
+        assets=[
+            SimpleNamespace(
+                asset_id="asset-1",
+                hostname="host-1",
+                ip_address="10.0.0.1",
+                findings=[
+                    SimpleNamespace(finding_id="F-401", title="Chain candidate finding", exploit_available=False, cisa_kev=False),
+                    SimpleNamespace(finding_id="F-402", title="Exploitable finding", exploit_available=True, cisa_kev=False),
+                ],
+            )
+        ],
+        derived=_DerivedShim(
+            {
+                "TopN@1.0": SimpleNamespace(
+                    data={
+                        "assets": [{
+                            "asset_id": "asset-1",
+                            "rank": 1,
+                            "inference": {
+                                "externally_facing_inferred": True,
+                                "public_service_ports_inferred": True,
+                                "confidence": "high",
+                            },
+                        }],
+                        "findings_by_asset": {
+                            "asset-1": [
+                                {"finding_id": "F-401", "risk_band": "High", "score": 8.7},
+                                {"finding_id": "F-402", "risk_band": "High", "score": 8.6},
+                            ]
+                        },
+                    }
+                ),
+                "ACI@1.0": SimpleNamespace(
+                    data={
+                        "finding_semantics": {
+                            "F-401": {
+                                "capabilities": ["credential_access", "lateral_movement"],
+                                "chain_candidates": ["Credential-assisted lateral movement pathway"],
+                                "confidence": 0.92,
+                            },
+                            "F-402": {
+                                "capabilities": [],
+                                "chain_candidates": [],
+                                "confidence": 0.0,
+                            },
+                        },
+                        "metrics": {
+                            "total_findings": 2,
+                            "inferred_findings": 1,
+                            "coverage_ratio": 0.5,
+                            "uplifted_findings": 1,
+                            "capabilities_detected": {"credential_access": 1, "lateral_movement": 1},
+                            "chain_candidates_detected": {"chain_credential_to_lateral": 1},
+                            "confidence_buckets": {"low": 1, "medium": 0, "high": 1},
+                        },
+                    }
+                ),
+            }
+        ),
+    )
+
+    executive = _generate_executive_report(_scan=scan, summary=summary)
+    technical = _generate_technical_report(_scan=scan, summary=summary)
+
+    assert "Contains OAL-2 Findings" in executive
+    assert "OAL-2 Priority: Immediate Analyst Validation" in executive
+    assert "OAL-2 Chain-Corroborated" in executive
+    assert "OAL-2 Coexists With OAL-1" in executive
+    assert "OAL-2 Priority: Immediate Analyst Validation" in technical
+    assert "OAL-2 tag legend:" in executive
+    assert "OAL-2 tag legend:" in technical

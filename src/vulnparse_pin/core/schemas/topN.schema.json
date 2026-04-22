@@ -110,9 +110,18 @@
                         "any_port_in_public_list",
                         "port_in",
                         "hostname_contains_any",
+                        "finding_text_contains_any",
                         "criticality_is"
                     ],
                     "description": "Allowlist of supported predicate names (including optional criticality-based predicates)."
+                },
+
+                "finding_text_min_token_matches": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 2,
+                    "description": "Minimum distinct token matches required for finding_text_contains_any to trigger."
                 },
 
                 "rules": {
@@ -120,6 +129,101 @@
                     "minItems": 0,
                     "maxItems": 500,
                     "items": { "$ref": "#/$defs/InferenceRule" }
+                }
+            }
+        },
+
+        "triage_policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "oal1_risk_bands": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "enum": ["critical", "high", "medium", "low", "informational"] },
+                    "default": ["critical", "high"]
+                },
+                "oal1_require_public_exposure": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "oal1_require_exploit_or_kev": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "oal2_risk_bands": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "enum": ["critical", "high", "medium", "low", "informational"] },
+                    "default": ["critical", "high", "medium"]
+                },
+                "oal2_min_aci_confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.8
+                },
+                "oal2_require_chain_candidate": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "oal2_require_public_exposure": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "preserve_oal1_precedence": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "p1_risk_bands": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "enum": ["critical", "high", "medium", "low", "informational"] },
+                    "default": ["critical", "high"]
+                },
+                "p1_require_public_exposure": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "p1_require_exploit_or_kev": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "p1b_risk_bands": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "enum": ["critical", "high", "medium", "low", "informational"] },
+                    "default": ["critical", "high", "medium"]
+                },
+                "p1b_min_aci_confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.8
+                },
+                "p1b_require_chain_candidate": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "p1b_require_public_exposure": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "preserve_p1_precedence": {
+                    "type": "boolean",
+                    "default": true
                 }
             }
         },
@@ -286,7 +390,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256,
-                    "description": "Predicate expression. Supported forms include ip_is_public, ip_is_private, any_port_in_public_list, port_in:[...], hostname_contains_any:[...], criticality_is:[extreme|high|medium|low]."
+                    "description": "Predicate expression. Supported forms include ip_is_public, ip_is_private, any_port_in_public_list, port_in:[...], hostname_contains_any:[...], finding_text_contains_any:[...], criticality_is:[extreme|high|medium|low]."
                 },
 
                 "evidence": {

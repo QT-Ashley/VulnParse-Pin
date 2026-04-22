@@ -134,6 +134,29 @@ def _bucket_confidence_worker(score: int, thresholds: Dict[str, int]) -> str:
     return "low"
 
 
+def _normalize_text_blob_worker(text: str) -> str:
+    return "".join(ch if ch.isalnum() else " " for ch in text.lower())
+
+
+def _count_finding_text_token_hits_worker(
+    pred_tokens: Tuple[str, ...],
+    normalized_blob: str,
+    blob_terms: set[str],
+) -> int:
+    padded_blob = f" {normalized_blob} "
+    hits = 0
+    for tok in pred_tokens:
+        token = str(tok or "").strip().lower()
+        if not token:
+            continue
+        if " " in token:
+            if f" {token} " in padded_blob:
+                hits += 1
+        elif token in blob_terms:
+            hits += 1
+    return hits
+
+
 def _predicate_matches_worker(
     pred_name: str,
     pred_ports: Tuple[int, ...],
@@ -143,6 +166,10 @@ def _predicate_matches_worker(
     criticality: str,
     ports_set: set[int],
     public_service_ports_set: set[int],
+    finding_text_blob: str,
+    normalized_text_blob: str,
+    text_terms: set[str],
+    finding_text_min_token_matches: int,
 ) -> bool:
     if pred_name == "ip_is_public":
         return _is_public_ip(ip)
@@ -154,6 +181,11 @@ def _predicate_matches_worker(
         return any(p in ports_set for p in pred_ports)
     if pred_name == "hostname_contains_any":
         return any(tok in hostname for tok in pred_tokens)
+    if pred_name == "finding_text_contains_any":
+        return (
+            _count_finding_text_token_hits_worker(pred_tokens, normalized_text_blob, text_terms)
+            >= int(finding_text_min_token_matches)
+        )
     if pred_name == "criticality_is":
         return criticality in pred_tokens
     return False
@@ -171,6 +203,9 @@ def _infer_exposure_worker(
     hostname = (obs.get("hostname") or "").strip().lower()
     criticality = str(obs.get("criticality") or "").strip().lower()
     ports_set = set(obs.get("open_ports", ()))
+    finding_text_blob = str(obs.get("finding_text_blob") or "").strip().lower()
+    normalized_text_blob = _normalize_text_blob_worker(finding_text_blob)
+    text_terms = set(normalized_text_blob.split())
 
     for rule in inference_cfg["rules"]:
         if not rule["enabled"]:
@@ -184,6 +219,10 @@ def _infer_exposure_worker(
             criticality,
             ports_set,
             set(inference_cfg["public_service_ports"]),
+            finding_text_blob,
+            normalized_text_blob,
+            text_terms,
+            int(inference_cfg.get("finding_text_min_token_matches", 2)),
         ):
             score += int(rule["weight"])
             hit_tags.add(rule["tag"])

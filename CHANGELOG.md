@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `documentation/docs/ACI Feature Explanation.md`
   - `documentation/docs/ACI Rule Authoring Tutorial.md`
   - `documentation/docs/ACI Technical Deep Dive.md`
-- Analyst tabletop prioritization guidance in documentation: explicit `P1`/`P1b`/`P2` lanes, default precedence rule, and escalation exception criteria for exploitability-vs-chain decisions.
+- Analyst tabletop prioritization guidance in documentation: explicit Operational Action Lane (`OAL`) categories, default precedence rule, and escalation exception criteria for exploitability-vs-chain decisions.
+- Repeatable ACI phrase-quality benchmark harness (`tests/test_aci_phrase_benchmark.py`) with curated positive/negative phrase cases (`tests/benchmarks/aci_phrase_benchmark.json`) to track inference drift over time.
 
 - Whole-of-CVEs scoring in `ScoringPass` (`Scoring@2.0`): findings with `cve_analysis` now score across all retained CVE records using bounded decay aggregation rather than selecting one authoritative CVE for score calculation.
 - Per-finding `score_trace` persistence on normalized finding objects and in scoring derived output, including contributor CVE IDs, per-CVE raw contribution, decay weight, CVSS/EPSS/KEV/exploit metadata, and final scoring rationale.
@@ -69,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Markdown report generation now receives runtime CLI args so enrichment-source status is rendered from actual run flags instead of static assumptions.
 - Executive/technical markdown reports now include ACI metric snapshots, capability and chain distributions, confidence buckets, and top-asset finding-to-capability mapping with analyst caveats.
 - Triage methodology language standardized across docs to reflect a real-world impact probability first default model, with explicit guidance to tune config/policy to environment, risk appetite, compliance obligations, and business goals.
+- TopN config model now includes `triage_policy` controls for operational lane policy (`P1`/`P1b`/`P2`) with schema + semantic validation and packaged defaults in `tn_triage.json`.
+- Markdown ACI mapping tables now render policy-lane classification per finding (config-backed), so analyst handoff includes explicit lane context alongside confidence and chain signals.
+- Markdown ACI asset mapping now includes TopN-derived asset context tags (for example externally-facing inference, public-service-port inference, exposure confidence, criticality, and concentration hints).
 
 - Security hardening stream completed for feed/download surfaces: decompression size caps, HTTPS-only feed override handling, and response-size guardrails for external threat-intel fetch paths.
 - PFH hardening and reliability updates landed, including chmod error-path handling and tighter policy enforcement behavior under protected write/read flows.
@@ -95,6 +99,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - GHSA cold vs warm loader benchmark on local advisory database (target set: 5,000 CVEs) showed `33.865s` cold vs `0.182s` warm (`~186x` speedup) using SQLite hydration path.
 - End-to-end online GHSA pass on 5k Nessus sample completed successfully with online prefetch (`25` CVEs queried) and `22` GHSA-attributed findings in output.
+- Release-readiness validation run set executed successfully:
+  - Focused regression suite: `39 passed`
+  - 5k E2E full enrichment: completed successfully (`release_validation_full` artifacts)
+  - 5k E2E reduced enrichment: completed successfully (`release_validation_reduced` artifacts)
 
 ### Fixed
 

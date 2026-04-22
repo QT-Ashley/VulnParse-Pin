@@ -52,6 +52,7 @@ def build_post_enrichment_index(scan: ScanResult) -> PostEnrichmentIndex:
         asset_id = asset.asset_id or f"{asset.hostname}:{asset.ip_address}"
         findings_for_asset: List[Finding] = []
         open_ports: set[int] = set()
+        finding_text_parts: List[str] = []
         
         for finding in asset.findings:
             # Core index: finding by ID
@@ -88,6 +89,13 @@ def build_post_enrichment_index(scan: ScanResult) -> PostEnrichmentIndex:
             # Collect open ports for asset observation
             if isinstance(finding.affected_port, int):
                 open_ports.add(finding.affected_port)
+            for text_value in (
+                getattr(finding, "title", None),
+                getattr(finding, "description", None),
+                getattr(finding, "plugin_output", None),
+            ):
+                if text_value:
+                    finding_text_parts.append(str(text_value))
         
         # Store grouped findings
         findings_by_asset_id[asset_id] = findings_for_asset
@@ -99,6 +107,7 @@ def build_post_enrichment_index(scan: ScanResult) -> PostEnrichmentIndex:
             hostname=asset.hostname,
             criticality=asset.criticality,
             open_ports=tuple(sorted(open_ports)),
+            finding_text_blob=" ".join(finding_text_parts).lower(),
         )
     
     return PostEnrichmentIndex(

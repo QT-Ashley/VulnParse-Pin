@@ -82,6 +82,7 @@ class InferenceConfig:
     public_service_ports: Tuple[int, ...]
     public_service_ports_set: frozenset[int]
     allow_predicates: frozenset[str]
+    finding_text_min_token_matches: int
     rules: Tuple[ParsedRule, ...]
 
 
@@ -122,11 +123,25 @@ class ACIConfig:
     signal_aliases: Tuple[Tuple[str, str], ...] = ()
     disabled_core_tokens: Tuple[str, ...] = ()
 
+
+@dataclass(frozen=True)
+class TriagePolicyConfig:
+    enabled: bool
+    oal1_risk_bands: Tuple[str, ...]
+    oal1_require_public_exposure: bool
+    oal1_require_exploit_or_kev: bool
+    oal2_risk_bands: Tuple[str, ...]
+    oal2_min_aci_confidence: float
+    oal2_require_chain_candidate: bool
+    oal2_require_public_exposure: bool
+    preserve_oal1_precedence: bool
+
 @dataclass(frozen=True)
 class TNTriageConfig:
     topn: TopNConfig
     inference: InferenceConfig
     aci: ACIConfig
+    triage_policy: TriagePolicyConfig
 
 
 # -----------------------------------------------
@@ -144,6 +159,7 @@ def validate_and_normalize_semantics(raw: Dict[str, Any]) -> Tuple[Optional[TNTr
     topn_raw = raw.get("topn", {})
     inf_raw = raw.get("inference", {})
     aci_raw = raw.get("aci", {})
+    triage_policy_raw = raw.get("triage_policy", {})
 
 
     # ---- topn semantics
@@ -152,12 +168,90 @@ def validate_and_normalize_semantics(raw: Dict[str, Any]) -> Tuple[Optional[TNTr
     # ---- inference semantics
     inf_cfg = _parse_inference(inf_raw, issues)
     aci_cfg = _parse_aci(aci_raw, issues)
+    triage_policy_cfg = _parse_triage_policy(triage_policy_raw, issues)
 
     if issues:
         return None, issues
 
-    assert topn_cfg is not None and inf_cfg is not None and aci_cfg is not None
-    return TNTriageConfig(topn=topn_cfg, inference=inf_cfg, aci=aci_cfg), issues
+    assert topn_cfg is not None and inf_cfg is not None and aci_cfg is not None and triage_policy_cfg is not None
+    return TNTriageConfig(topn=topn_cfg, inference=inf_cfg, aci=aci_cfg, triage_policy=triage_policy_cfg), issues
+
+
+def _parse_triage_policy(raw: Dict[str, Any], issues: List[SemanticIssue]) -> Optional[TriagePolicyConfig]:
+    if not isinstance(raw, dict):
+        issues.append(SemanticIssue("/triage_policy", "triage_policy must be an object", "TRIAGE_POLICY_TYPE"))
+        return None
+
+    enabled = bool(raw.get("enabled", True))
+    allowed_bands = {"critical", "high", "medium", "low", "informational"}
+
+    def _parse_band_list(path: str, value: Any, default: Tuple[str, ...]) -> Tuple[str, ...]:
+        if value is None:
+            return default
+        if not isinstance(value, list):
+            issues.append(SemanticIssue(path, "risk band list must be an array", "TRIAGE_BANDS_TYPE"))
+            return default
+        normalized: List[str] = []
+        seen: Set[str] = set()
+        for idx, item in enumerate(value):
+            band = str(item).strip().lower()
+            if band not in allowed_bands:
+                issues.append(SemanticIssue(f"{path}/{idx}", f"invalid risk band: {band}", "TRIAGE_BAND_INVALID"))
+                continue
+            if band in seen:
+                continue
+            seen.add(band)
+            normalized.append(band)
+        if not normalized:
+            issues.append(SemanticIssue(path, "risk band list cannot be empty", "TRIAGE_BANDS_EMPTY"))
+            return default
+        return tuple(normalized)
+
+    def _pick(primary: str, legacy: str, default: Any) -> Any:
+        if primary in raw:
+            return raw.get(primary)
+        if legacy in raw:
+            return raw.get(legacy)
+        return default
+
+    oal1_risk_bands = _parse_band_list(
+        "/triage_policy/oal1_risk_bands",
+        _pick("oal1_risk_bands", "p1_risk_bands", ["critical", "high"]),
+        ("critical", "high"),
+    )
+    oal2_risk_bands = _parse_band_list(
+        "/triage_policy/oal2_risk_bands",
+        _pick("oal2_risk_bands", "p1b_risk_bands", ["critical", "high", "medium"]),
+        ("critical", "high", "medium"),
+    )
+
+    oal1_require_public_exposure = bool(_pick("oal1_require_public_exposure", "p1_require_public_exposure", True))
+    oal1_require_exploit_or_kev = bool(_pick("oal1_require_exploit_or_kev", "p1_require_exploit_or_kev", True))
+
+    try:
+        oal2_min_aci_confidence = float(_pick("oal2_min_aci_confidence", "p1b_min_aci_confidence", 0.8))
+    except (TypeError, ValueError):
+        issues.append(SemanticIssue("/triage_policy/oal2_min_aci_confidence", "oal2_min_aci_confidence must be a number", "TRIAGE_OAL2_CONF_TYPE"))
+        oal2_min_aci_confidence = 0.8
+    if oal2_min_aci_confidence < 0.0 or oal2_min_aci_confidence > 1.0:
+        issues.append(SemanticIssue("/triage_policy/oal2_min_aci_confidence", "oal2_min_aci_confidence must be between 0.0 and 1.0", "TRIAGE_OAL2_CONF_RANGE"))
+        oal2_min_aci_confidence = min(1.0, max(0.0, oal2_min_aci_confidence))
+
+    oal2_require_chain_candidate = bool(_pick("oal2_require_chain_candidate", "p1b_require_chain_candidate", True))
+    oal2_require_public_exposure = bool(_pick("oal2_require_public_exposure", "p1b_require_public_exposure", True))
+    preserve_oal1_precedence = bool(_pick("preserve_oal1_precedence", "preserve_p1_precedence", True))
+
+    return TriagePolicyConfig(
+        enabled=enabled,
+        oal1_risk_bands=oal1_risk_bands,
+        oal1_require_public_exposure=oal1_require_public_exposure,
+        oal1_require_exploit_or_kev=oal1_require_exploit_or_kev,
+        oal2_risk_bands=oal2_risk_bands,
+        oal2_min_aci_confidence=oal2_min_aci_confidence,
+        oal2_require_chain_candidate=oal2_require_chain_candidate,
+        oal2_require_public_exposure=oal2_require_public_exposure,
+        preserve_oal1_precedence=preserve_oal1_precedence,
+    )
 
 
 def _parse_aci(aci_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Optional[ACIConfig]:
@@ -500,6 +594,29 @@ def _parse_inference(inf_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Op
 
     allow_pred_frozen = frozenset(allow_predicates)
 
+    finding_text_min_token_matches_raw = inf_raw.get("finding_text_min_token_matches", 2)
+    if not isinstance(finding_text_min_token_matches_raw, int):
+        issues.append(
+            SemanticIssue(
+                "/inference/finding_text_min_token_matches",
+                "finding_text_min_token_matches must be an integer",
+                "FINDING_TEXT_MIN_TOKENS_TYPE",
+            )
+        )
+        finding_text_min_token_matches = 2
+    else:
+        finding_text_min_token_matches = finding_text_min_token_matches_raw
+    if finding_text_min_token_matches < 1 or finding_text_min_token_matches > 10:
+        issues.append(
+            SemanticIssue(
+                "/inference/finding_text_min_token_matches",
+                "finding_text_min_token_matches must be in range 1..10",
+                "FINDING_TEXT_MIN_TOKENS_RANGE",
+                detail=str(finding_text_min_token_matches),
+            )
+        )
+        finding_text_min_token_matches = min(10, max(1, finding_text_min_token_matches))
+
     # Rules
     rules_raw = inf_raw.get("rules", [])
     if not isinstance(rules_raw, list):
@@ -573,6 +690,7 @@ def _parse_inference(inf_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Op
         public_service_ports=tuple(ports_list),
         public_service_ports_set=ports_set,
         allow_predicates=allow_pred_frozen,
+        finding_text_min_token_matches=finding_text_min_token_matches,
         rules=tuple(parsed_rules)
     )
 
@@ -587,6 +705,7 @@ _SUPPORTED_FORMS = frozenset({
     "any_port_in_public_list",
     "port_in",
     "hostname_contains_any",
+    "finding_text_contains_any",
     "criticality_is",
 })
 
@@ -607,6 +726,7 @@ def _parse_when_predicate(
     - any_port_in_public_list
     - port_in:[80,443,...]
     - hostname_contains_any:[dmz,rtr,vpn,...]
+    - finding_text_contains_any:[internet,public,exposed,...]
     - criticality_is:[extreme,high,medium,low]
     """
     if ":" in when:
@@ -660,21 +780,21 @@ def _parse_when_predicate(
             ports.append(p)
         return ParsedPredicate(name=name, ports=tuple(ports))
 
-    if name == "hostname_contains_any":
+    if name in ("hostname_contains_any", "finding_text_contains_any"):
         tokens: List[str] = []
         for it in items:
             tok = it.strip().lower()
             if not tok:
                 continue
             if len(tok) > 64:
-                issues.append(SemanticIssue(rule_path, "hostname token too long (max 64)", "HOST_TOKEN_LENGTH", detail=tok[:80]))
+                issues.append(SemanticIssue(rule_path, "predicate token too long (max 64)", "HOST_TOKEN_LENGTH", detail=tok[:80]))
                 return None
             tokens.append(tok)
         if not tokens:
-            issues.append(SemanticIssue(rule_path, "hostname_contains_any tokens cannot be empty", "HOST_TOKEN_EMPTY"))
+            issues.append(SemanticIssue(rule_path, f"{name} tokens cannot be empty", "HOST_TOKEN_EMPTY"))
             return None
         if len(tokens) > 50:
-            issues.append(SemanticIssue(rule_path, "hostname_contains_any token list too large (max 50)", "HOST_TOKEN_COUNT", detail=str(len(tokens))))
+            issues.append(SemanticIssue(rule_path, f"{name} token list too large (max 50)", "HOST_TOKEN_COUNT", detail=str(len(tokens))))
             return None
         return ParsedPredicate(name=name, tokens=tuple(tokens))
 

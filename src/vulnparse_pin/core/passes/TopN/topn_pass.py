@@ -81,6 +81,25 @@ def _split_reason_text(reason_value: Any) -> Tuple[str, ...]:
     return tuple(part.strip() for part in reason_text.split(";") if part.strip())
 
 
+def _normalize_text_blob(text: str) -> str:
+    return "".join(ch if ch.isalnum() else " " for ch in text.lower())
+
+
+def _count_finding_text_token_hits(tokens: Tuple[str, ...], normalized_blob: str, blob_terms: set[str]) -> int:
+    padded_blob = f" {normalized_blob} "
+    hits = 0
+    for tok in tokens:
+        token = str(tok or "").strip().lower()
+        if not token:
+            continue
+        if " " in token:
+            if f" {token} " in padded_blob:
+                hits += 1
+        elif token in blob_terms:
+            hits += 1
+    return hits
+
+
 # -------------------------------------------
 # TopN Pass
 # -------------------------------------------
@@ -422,6 +441,7 @@ class TopNPass(Pass):
                     "hostname": obs.hostname,
                     "criticality": criticality,
                     "open_ports": tuple(obs.open_ports),
+                    "finding_text_blob": obs.finding_text_blob,
                 }
         else:
             for asset in scan.assets:
@@ -443,6 +463,16 @@ class TopNPass(Pass):
                         "hostname": hostname,
                         "criticality": crit,
                         "open_ports": tuple(sorted(open_ports)),
+                        "finding_text_blob": " ".join(
+                            str(text_value)
+                            for finding in asset.findings
+                            for text_value in (
+                                getattr(finding, "title", None),
+                                getattr(finding, "description", None),
+                                getattr(finding, "plugin_output", None),
+                            )
+                            if text_value
+                        ).lower(),
                     }
 
         inference_cfg = {
@@ -451,6 +481,7 @@ class TopNPass(Pass):
                 "high": int(self.cfg.inference.confidence_thresholds.high),
             },
             "public_service_ports": tuple(int(p) for p in self.cfg.inference.public_service_ports_set),
+            "finding_text_min_token_matches": int(self.cfg.inference.finding_text_min_token_matches),
             "rules": [
                 {
                     "rule_id": r.rule_id,
@@ -789,6 +820,7 @@ class TopNPass(Pass):
                     hostname=obs.hostname,
                     criticality=current_criticality if current_criticality is not None else obs.criticality,
                     open_ports=obs.open_ports,
+                    finding_text_blob=obs.finding_text_blob,
                 )
 
         ip = getattr(asset, "ip_address", None) if asset else None
@@ -796,6 +828,7 @@ class TopNPass(Pass):
 
         # Gather open ports
         ports: List[int] = []
+        finding_text_parts: List[str] = []
         for fid in finding_ids:
             f = self._get_finding_by_id(scan, fid, ctx)
             if not f:
@@ -803,10 +836,24 @@ class TopNPass(Pass):
             p = getattr(f, "affected_port", None)
             if isinstance(p, int):
                 ports.append(p)
+            for text_value in (
+                getattr(f, "title", None),
+                getattr(f, "description", None),
+                getattr(f, "plugin_output", None),
+            ):
+                if text_value:
+                    finding_text_parts.append(str(text_value))
 
         ports = sorted(set(ports))
         crit = current_criticality
-        return AssetObservation(asset_id=asset_id, ip=ip, hostname=hostname, criticality=crit, open_ports=tuple(ports))
+        return AssetObservation(
+            asset_id=asset_id,
+            ip=ip,
+            hostname=hostname,
+            criticality=crit,
+            open_ports=tuple(ports),
+            finding_text_blob=" ".join(finding_text_parts).lower(),
+        )
 
     def _get_finding_by_id(self, scan: "ScanResult", finding_id: str, ctx: Optional["RunContext"] = None) -> Optional[Any]:
         """
@@ -1196,11 +1243,23 @@ class TopNPass(Pass):
         hostname = (obs.hostname or "").strip().lower()
         criticality = (obs.criticality or "").strip().lower()
         ports_set = set(obs.open_ports)
+        finding_text_blob = str(obs.finding_text_blob or "").strip().lower()
+        normalized_text_blob = _normalize_text_blob(finding_text_blob)
+        text_terms = set(normalized_text_blob.split())
 
         for rule in self.cfg.inference.rules:
             if not rule.enabled:
                 continue
-            if self._predicate_matches(rule.predicate, ip, hostname, criticality, ports_set):
+            if self._predicate_matches(
+                rule.predicate,
+                ip,
+                hostname,
+                criticality,
+                ports_set,
+                finding_text_blob,
+                normalized_text_blob,
+                text_terms,
+            ):
                 score += rule.weight
                 hit_tags.add(rule.tag)
                 ev = rule.evidence.strip() if rule.evidence else f"{rule.rule_id} ({rule.weight:+d})"
@@ -1222,7 +1281,17 @@ class TopNPass(Pass):
             evidence=evidence_sorted
         )
 
-    def _predicate_matches(self, pred: ParsedPredicate, ip: str, hostname: str, criticality: str, ports_set: set[int]) -> bool:
+    def _predicate_matches(
+        self,
+        pred: ParsedPredicate,
+        ip: str,
+        hostname: str,
+        criticality: str,
+        ports_set: set[int],
+        finding_text_blob: str,
+        normalized_text_blob: str,
+        text_terms: set[str],
+    ) -> bool:
         name = pred.name
 
         if name == "ip_is_public":
@@ -1235,6 +1304,9 @@ class TopNPass(Pass):
             return any(p in ports_set for p in pred.ports)
         if name == "hostname_contains_any":
             return any(tok in hostname for tok in pred.tokens)
+        if name == "finding_text_contains_any":
+            min_hits = int(self.cfg.inference.finding_text_min_token_matches)
+            return _count_finding_text_token_hits(pred.tokens, normalized_text_blob, text_terms) >= min_hits
         if name == "criticality_is":
             return criticality in pred.tokens
 

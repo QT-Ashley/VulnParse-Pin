@@ -120,6 +120,7 @@ class AssetObservation:
     hostname: Optional[str]
     criticality: Optional[str] = None
     open_ports: Tuple[int, ...] = field(default_factory=tuple)
+    finding_text_blob: str = ""
 
 
 @dataclass(frozen=True)

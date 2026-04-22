@@ -203,7 +203,212 @@ def _asset_lookup_by_id(scan: Any) -> dict[str, Any]:
     return lookup
 
 
-def _aci_asset_finding_map(scan: Any, max_assets: int = 5, max_findings_per_asset: int = 5) -> list[dict[str, Any]]:
+def _finding_lookup_by_id(scan: Any) -> dict[str, Any]:
+    lookup: dict[str, Any] = {}
+    if scan is None:
+        return lookup
+    for asset in getattr(scan, "assets", []) or []:
+        for finding in getattr(asset, "findings", []) or []:
+            fid = getattr(finding, "finding_id", None)
+            if fid:
+                lookup[str(fid)] = finding
+    return lookup
+
+
+def _asset_summary_lookup(summary: Any) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    if summary is None:
+        return lookup
+    asset_summary = getattr(summary, "asset_summary", None)
+    if not isinstance(asset_summary, dict):
+        return lookup
+    for asset in asset_summary.get("assets", []) or []:
+        if not isinstance(asset, dict):
+            continue
+        asset_id = str(asset.get("asset_id", "")).strip()
+        if asset_id:
+            lookup[asset_id] = asset
+    return lookup
+
+
+def _resolve_triage_policy_from_ctx(ctx: Any) -> dict[str, Any]:
+    defaults = {
+        "enabled": True,
+        "oal1_risk_bands": ("critical", "high"),
+        "oal1_require_public_exposure": True,
+        "oal1_require_exploit_or_kev": True,
+        "oal2_risk_bands": ("critical", "high", "medium"),
+        "oal2_min_aci_confidence": 0.8,
+        "oal2_require_chain_candidate": True,
+        "oal2_require_public_exposure": True,
+        "preserve_oal1_precedence": True,
+    }
+
+    services = getattr(ctx, "services", None)
+    topn_cfg = getattr(services, "topn_config", None)
+    triage = getattr(topn_cfg, "triage_policy", None)
+    if triage is None:
+        return defaults
+
+    def _get(name: str, fallback: Any) -> Any:
+        return getattr(triage, name, fallback)
+
+    def _get_alias(primary: str, legacy: str, fallback: Any) -> Any:
+        if hasattr(triage, primary):
+            return getattr(triage, primary)
+        if hasattr(triage, legacy):
+            return getattr(triage, legacy)
+        return fallback
+
+    oal1_bands = tuple(
+        str(x).strip().lower()
+        for x in (_get_alias("oal1_risk_bands", "p1_risk_bands", defaults["oal1_risk_bands"]) or defaults["oal1_risk_bands"])
+    )
+    oal2_bands = tuple(
+        str(x).strip().lower()
+        for x in (_get_alias("oal2_risk_bands", "p1b_risk_bands", defaults["oal2_risk_bands"]) or defaults["oal2_risk_bands"])
+    )
+
+    return {
+        "enabled": bool(_get("enabled", defaults["enabled"])),
+        "oal1_risk_bands": oal1_bands or defaults["oal1_risk_bands"],
+        "oal1_require_public_exposure": bool(_get_alias("oal1_require_public_exposure", "p1_require_public_exposure", defaults["oal1_require_public_exposure"])),
+        "oal1_require_exploit_or_kev": bool(_get_alias("oal1_require_exploit_or_kev", "p1_require_exploit_or_kev", defaults["oal1_require_exploit_or_kev"])),
+        "oal2_risk_bands": oal2_bands or defaults["oal2_risk_bands"],
+        "oal2_min_aci_confidence": float(_get_alias("oal2_min_aci_confidence", "p1b_min_aci_confidence", defaults["oal2_min_aci_confidence"])),
+        "oal2_require_chain_candidate": bool(_get_alias("oal2_require_chain_candidate", "p1b_require_chain_candidate", defaults["oal2_require_chain_candidate"])),
+        "oal2_require_public_exposure": bool(_get_alias("oal2_require_public_exposure", "p1b_require_public_exposure", defaults["oal2_require_public_exposure"])),
+        "preserve_oal1_precedence": bool(_get_alias("preserve_oal1_precedence", "preserve_p1_precedence", defaults["preserve_oal1_precedence"])),
+    }
+
+
+def _operational_action_lane_for_finding(
+    *,
+    risk_band: str,
+    exploit_available: bool,
+    cisa_kev: bool,
+    chain_candidates: list[str],
+    confidence: float,
+    externally_facing: bool,
+    policy: dict[str, Any],
+) -> str:
+    if not bool(policy.get("enabled", True)):
+        return "OAL Disabled"
+
+    band = str(risk_band or "").strip().lower()
+    oal1_bands = set(policy.get("oal1_risk_bands", ("critical", "high")))
+    oal2_bands = set(policy.get("oal2_risk_bands", ("critical", "high", "medium")))
+
+    oal1_match = (
+        band in oal1_bands
+        and (externally_facing or not bool(policy.get("oal1_require_public_exposure", True)))
+        and ((exploit_available or cisa_kev) or not bool(policy.get("oal1_require_exploit_or_kev", True)))
+    )
+
+    oal2_match = (
+        band in oal2_bands
+        and float(confidence) >= float(policy.get("oal2_min_aci_confidence", 0.8))
+        and (bool(chain_candidates) or not bool(policy.get("oal2_require_chain_candidate", True)))
+        and (externally_facing or not bool(policy.get("oal2_require_public_exposure", True)))
+    )
+
+    if oal1_match and bool(policy.get("preserve_oal1_precedence", True)):
+        return "OAL-1 Immediate Exploitable"
+    if oal2_match:
+        return "OAL-2 High-Confidence Chain Path"
+    if oal1_match:
+        return "OAL-1 Immediate Exploitable"
+    return "OAL-3 Remaining High Risk"
+
+
+def _asset_context_tags(
+    *,
+    asset_id: str,
+    exposure_signals: dict[str, Any],
+    asset_summary_row: dict[str, Any] | None,
+    top_concentration_ids: set[str],
+    finding_rows: list[dict[str, Any]],
+) -> list[str]:
+    tags: list[str] = []
+
+    def _lane_rank(lane: str) -> int:
+        value = str(lane or "").strip()
+        if value == "OAL-1 Immediate Exploitable":
+            return 3
+        if value == "OAL-2 High-Confidence Chain Path":
+            return 2
+        if value == "OAL-3 Remaining High Risk":
+            return 1
+        return 0
+
+    externally_facing = bool(exposure_signals.get("externally_facing", False))
+    public_service_ports = bool(exposure_signals.get("public_service_ports", False))
+    confidence = str(exposure_signals.get("confidence", "")).strip().lower()
+
+    if externally_facing:
+        tags.append("Externally-Facing Inferred")
+    if public_service_ports:
+        tags.append("Public-Service Ports Inferred")
+    if confidence:
+        tags.append(f"Exposure Confidence: {confidence.title()}")
+
+    if isinstance(asset_summary_row, dict):
+        criticality = str(asset_summary_row.get("criticality", "")).strip()
+        if criticality:
+            tags.append(f"Criticality: {criticality}")
+        if int(asset_summary_row.get("critical_findings", 0) or 0) > 0:
+            tags.append("Critical Findings Present")
+        elif int(asset_summary_row.get("high_findings", 0) or 0) > 0:
+            tags.append("High Findings Present")
+
+    if asset_id in top_concentration_ids:
+        tags.append("Top Risk Concentration")
+
+    oal_lanes = {str(f.get("policy_lane", "")).strip() for f in finding_rows if isinstance(f, dict)}
+    if "OAL-1 Immediate Exploitable" in oal_lanes:
+        tags.append("Contains OAL-1 Findings")
+    if "OAL-2 High-Confidence Chain Path" in oal_lanes:
+        tags.append("Contains OAL-2 Findings")
+
+    oal2_rows = [
+        f for f in finding_rows
+        if isinstance(f, dict) and str(f.get("policy_lane", "")).strip() == "OAL-2 High-Confidence Chain Path"
+    ]
+    if oal2_rows:
+        top_oal2 = max(oal2_rows, key=lambda row: float(row.get("confidence", 0.0) or 0.0))
+        top_oal2_conf = float(top_oal2.get("confidence", 0.0) or 0.0)
+        if top_oal2_conf >= 0.9:
+            tags.append("OAL-2 Priority: Immediate Analyst Validation")
+        elif top_oal2_conf >= 0.8:
+            tags.append("OAL-2 Priority: Validate Next")
+        else:
+            tags.append("OAL-2 Priority: Monitor")
+
+        has_chain = any(bool(row.get("chain_candidates")) for row in oal2_rows)
+        if has_chain:
+            tags.append("OAL-2 Chain-Corroborated")
+
+        oal2_max_rank = max(_lane_rank(row.get("policy_lane", "")) for row in finding_rows if isinstance(row, dict))
+        if oal2_max_rank >= 3:
+            tags.append("OAL-2 Coexists With OAL-1")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        if tag in seen:
+            continue
+        seen.add(tag)
+        deduped.append(tag)
+    return deduped
+
+
+def _aci_asset_finding_map(
+    scan: Any,
+    summary: Any,
+    triage_policy: dict[str, Any],
+    max_assets: int = 5,
+    max_findings_per_asset: int = 5,
+) -> list[dict[str, Any]]:
     """Build top-asset mapping of findings to inferred ACI capabilities."""
     if scan is None:
         return []
@@ -238,7 +443,32 @@ def _aci_asset_finding_map(scan: Any, max_assets: int = 5, max_findings_per_asse
         aci_findings = {}
 
     asset_lookup = _asset_lookup_by_id(scan)
+    finding_lookup = _finding_lookup_by_id(scan)
+    asset_summary_lookup = _asset_summary_lookup(summary)
     rows: list[dict[str, Any]] = []
+
+    asset_exposure_map: dict[str, bool] = {}
+    asset_exposure_signals_by_id: dict[str, dict[str, Any]] = {}
+    for ranked in ranked_assets:
+        if not isinstance(ranked, dict):
+            continue
+        asset_id = str(ranked.get("asset_id", "")).strip()
+        if not asset_id:
+            continue
+        inference = ranked.get("inference", {}) if isinstance(ranked, dict) else {}
+        signals = {
+            "externally_facing": bool(inference.get("externally_facing_inferred", False)) if isinstance(inference, dict) else False,
+            "public_service_ports": bool(inference.get("public_service_ports_inferred", False)) if isinstance(inference, dict) else False,
+            "confidence": str(inference.get("confidence", "")).strip().lower() if isinstance(inference, dict) else "",
+        }
+        asset_exposure_signals_by_id[asset_id] = signals
+        asset_exposure_map[asset_id] = bool(signals.get("externally_facing", False))
+
+    top_concentration_ids = {
+        str(ranked.get("asset_id", "")).strip()
+        for ranked in ranked_assets[:3]
+        if isinstance(ranked, dict) and str(ranked.get("asset_id", "")).strip()
+    }
 
     for ranked in ranked_assets[:max_assets]:
         if not isinstance(ranked, dict):
@@ -271,14 +501,30 @@ def _aci_asset_finding_map(scan: Any, max_assets: int = 5, max_findings_per_asse
             except (TypeError, ValueError):
                 confidence_value = 0.0
 
+            finding_obj = finding_lookup.get(fid)
+            exploit_available = bool(getattr(finding_obj, "exploit_available", False)) if finding_obj is not None else False
+            cisa_kev = bool(getattr(finding_obj, "cisa_kev", False)) if finding_obj is not None else False
+            finding_title = str(getattr(finding_obj, "title", "") or "").strip() if finding_obj is not None else ""
+            policy_lane = _operational_action_lane_for_finding(
+                risk_band=str(finding_ref.get("risk_band", "")),
+                exploit_available=exploit_available,
+                cisa_kev=cisa_kev,
+                chain_candidates=[str(x) for x in chain_candidates],
+                confidence=confidence_value,
+                externally_facing=bool(asset_exposure_map.get(asset_id, False)),
+                policy=triage_policy,
+            )
+
             finding_rows.append(
                 {
                     "finding_id": fid,
+                    "finding_title": finding_title or "N/A",
                     "risk_band": str(finding_ref.get("risk_band", "N/A")),
                     "score": float(finding_ref.get("score", 0.0) or 0.0),
                     "capabilities": [str(x) for x in capabilities],
                     "chain_candidates": [str(x) for x in chain_candidates],
                     "confidence": confidence_value,
+                    "policy_lane": policy_lane,
                 }
             )
 
@@ -287,6 +533,13 @@ def _aci_asset_finding_map(scan: Any, max_assets: int = 5, max_findings_per_asse
                 "asset_id": asset_id,
                 "hostname": hostname if hostname else "N/A",
                 "ip_address": ip_address if ip_address else "N/A",
+                "context_tags": _asset_context_tags(
+                    asset_id=asset_id,
+                    exposure_signals=asset_exposure_signals_by_id.get(asset_id, {}),
+                    asset_summary_row=asset_summary_lookup.get(asset_id),
+                    top_concentration_ids=top_concentration_ids,
+                    finding_rows=finding_rows,
+                ),
                 "findings": finding_rows,
             }
         )
@@ -334,11 +587,12 @@ def generate_markdown_report(
         raise ValueError("Summary@1.0 pass must run before generating Markdown report")
     
     summary = summary_data.data
+    triage_policy = _resolve_triage_policy_from_ctx(ctx)
     
     if report_type == "executive":
-        content = _generate_executive_report(scan, summary, args=args)
+        content = _generate_executive_report(scan, summary, args=args, triage_policy=triage_policy)
     elif report_type == "technical":
-        content = _generate_technical_report(scan, summary, args=args)
+        content = _generate_technical_report(scan, summary, args=args, triage_policy=triage_policy)
     else:
         raise ValueError(f"Unknown report type: {report_type}. Expected 'executive' or 'technical'.")
 
@@ -359,7 +613,12 @@ def generate_markdown_report(
     )
 
 
-def _generate_executive_report(_scan: "ScanResult", summary: Any, args: Any = None) -> str:
+def _generate_executive_report(
+    _scan: "ScanResult",
+    summary: Any,
+    args: Any = None,
+    triage_policy: dict[str, Any] | None = None,
+) -> str:
     """
     Generate executive-level summary report.
 
@@ -383,7 +642,7 @@ def _generate_executive_report(_scan: "ScanResult", summary: Any, args: Any = No
         aci_metrics["capabilities_detected"].items(),
         key=lambda kv: (-int(kv[1]), str(kv[0])),
     )[:5]
-    aci_asset_map = _aci_asset_finding_map(_scan)
+    aci_asset_map = _aci_asset_finding_map(_scan, summary, triage_policy=triage_policy or {})
 
     assets = asset_summary.get('assets', []) if isinstance(asset_summary, dict) else []
     total_critical_findings = sum(int(a.get('critical_findings', 0) or 0) for a in assets)
@@ -505,30 +764,47 @@ This view maps top-ranked assets to their top-ranked findings and inferred attac
 
 **Disclaimer:** Attack capabilities below are inferred from available evidence and model rules. Treat them as decision-support signals and perform due diligence to validate recommendations before operational action.
 
+**OAL = Operational Action Lane.** This is the config-backed analyst action recommendation for the finding under the current triage policy.
+
 """
 
     if aci_asset_map:
+        oal2_legend_emitted = False
         if _aci_asset_map_all_none_inferred(aci_asset_map):
             md += (
                 "Analyst note: Ranked findings are shown for context, but all mapped entries are `None inferred` "
                 "because no finding met current ACI semantic and confidence criteria for this run.\n\n"
             )
         for asset in aci_asset_map:
+            tags = asset.get("context_tags", []) if isinstance(asset, dict) else []
             md += (
                 f"### Asset `{asset['asset_id']}` ({asset['hostname']} / {asset['ip_address']})\n\n"
-                "| Finding ID | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence |\n"
-                "|------------|-----------|--------------|-----------------------|------------------|------------|\n"
+            )
+            if tags:
+                md += f"Context Tags: {' | '.join(tags)}\n\n"
+                has_oal2_priority_tags = any(
+                    str(tag).startswith("OAL-2 Priority:") for tag in tags
+                )
+                if has_oal2_priority_tags and not oal2_legend_emitted:
+                    md += (
+                        "OAL-2 tag legend: `Immediate Analyst Validation` = confidence >= 0.90, "
+                        "`Validate Next` = confidence >= 0.80 and < 0.90, `Monitor` = lower-confidence OAL-2.\n\n"
+                    )
+                    oal2_legend_emitted = True
+            md += (
+                "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |\n"
+                "|------------|---------------|-----------|--------------|-----------------------|------------------|------------|-----|\n"
             )
             if asset["findings"]:
                 for finding in asset["findings"]:
                     capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
                     chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
                     md += (
-                        f"| {finding['finding_id']} | {finding['risk_band']} | {finding['score']:.2f} | "
-                        f"{capabilities} | {chains} | {finding['confidence']:.2f} |\n"
+                        f"| {finding['finding_id']} | {finding['finding_title']} | {finding['risk_band']} | {finding['score']:.2f} | "
+                        f"{capabilities} | {chains} | {finding['confidence']:.2f} | {finding['policy_lane']} |\n"
                     )
             else:
-                md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 |\n"
+                md += "| _No ranked findings available_ | N/A | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
             md += "\n"
     else:
         md += "No TopN/ACI mapping data available for asset-level capability projection.\n\n"
@@ -703,7 +979,12 @@ Analyst reminder:
     return md
 
 
-def _generate_technical_report(_scan: "ScanResult", summary: Any, args: Any = None) -> str:
+def _generate_technical_report(
+    _scan: "ScanResult",
+    summary: Any,
+    args: Any = None,
+    triage_policy: dict[str, Any] | None = None,
+) -> str:
     """
     Generate detailed technical report for vulnerability engineers.
 
@@ -731,7 +1012,7 @@ def _generate_technical_report(_scan: "ScanResult", summary: Any, args: Any = No
         aci_metrics["chain_candidates_detected"].items(),
         key=lambda kv: (-int(kv[1]), str(kv[0])),
     )
-    aci_asset_map = _aci_asset_finding_map(_scan)
+    aci_asset_map = _aci_asset_finding_map(_scan, summary, triage_policy=triage_policy or {})
 
     def _risk_drivers(risk: Any) -> str:
         drivers: list[str] = []
@@ -949,30 +1230,47 @@ This section maps top-ranked assets to top-ranked findings and their inferred at
 
 **Disclaimer:** Capabilities are inferred signals, not ground truth exploit paths. Analysts should perform due diligence and independent verification before executing remediation or response actions.
 
+**OAL = Operational Action Lane.** This is the config-backed analyst action recommendation for the finding under the current triage policy.
+
 """
 
     if aci_asset_map:
+        oal2_legend_emitted = False
         if _aci_asset_map_all_none_inferred(aci_asset_map):
             md += (
                 "Analyst note: Ranked findings are shown for context, but all mapped entries are `None inferred` "
                 "because no finding met current ACI semantic and confidence criteria for this run.\n\n"
             )
         for asset in aci_asset_map:
+            tags = asset.get("context_tags", []) if isinstance(asset, dict) else []
             md += (
                 f"### Asset `{asset['asset_id']}` ({asset['hostname']} / {asset['ip_address']})\n\n"
-                "| Finding ID | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence |\n"
-                "|------------|-----------|--------------|-----------------------|------------------|------------|\n"
+            )
+            if tags:
+                md += f"Context Tags: {' | '.join(tags)}\n\n"
+                has_oal2_priority_tags = any(
+                    str(tag).startswith("OAL-2 Priority:") for tag in tags
+                )
+                if has_oal2_priority_tags and not oal2_legend_emitted:
+                    md += (
+                        "OAL-2 tag legend: `Immediate Analyst Validation` = confidence >= 0.90, "
+                        "`Validate Next` = confidence >= 0.80 and < 0.90, `Monitor` = lower-confidence OAL-2.\n\n"
+                    )
+                    oal2_legend_emitted = True
+            md += (
+                "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |\n"
+                "|------------|---------------|-----------|--------------|-----------------------|------------------|------------|-----|\n"
             )
             if asset["findings"]:
                 for finding in asset["findings"]:
                     capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
                     chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
                     md += (
-                        f"| {finding['finding_id']} | {finding['risk_band']} | {finding['score']:.2f} | "
-                        f"{capabilities} | {chains} | {finding['confidence']:.2f} |\n"
+                        f"| {finding['finding_id']} | {finding['finding_title']} | {finding['risk_band']} | {finding['score']:.2f} | "
+                        f"{capabilities} | {chains} | {finding['confidence']:.2f} | {finding['policy_lane']} |\n"
                     )
             else:
-                md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 |\n"
+                md += "| _No ranked findings available_ | N/A | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
             md += "\n"
     else:
         md += "No TopN/ACI mapping data available for asset-level capability projection.\n\n"

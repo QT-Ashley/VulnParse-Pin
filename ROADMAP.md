@@ -52,16 +52,20 @@ Delivery focus this quarter is balanced across:
 - [done] **Summary aggregation alignment** — top risks and remediation buckets consume union contributor signals from scoring traces instead of relying on single booleans.
 - [done] **RunManifest metric alignment** — pass summaries now capture whole-of-CVEs counters across Scoring, TopN, and Summary for audit/reproducibility.
 - [done] **Output presentation upgrade** — CSV profiles (`full`/`analyst`/`audit`), enriched markdown reporting, and output-interpretation guidance for operator workflows.
-	- Executive report quality sections delivered: Decision Context, Data Quality Scorecard, Remediation Plan by Time Horizon, and Risk Concentration.
-	- Technical report quality sections delivered: Tie-Break Explainability, Analyst Caveats, and Trust and Provenance.
-	- Terminology clarity delivered: `Finding Agg CVEs` explicitly denotes finding-level contributor breadth.
+  - Executive report quality sections delivered: Decision Context, Data Quality Scorecard, Remediation Plan by Time Horizon, and Risk Concentration.
+  - Technical report quality sections delivered: Tie-Break Explainability, Analyst Caveats, and Trust and Provenance.
+  - Terminology clarity delivered: `Finding Agg CVEs` explicitly denotes finding-level contributor breadth.
 - [done] **Attack Capability Inference integration** — `ACI@1.0` pass wired into default pipeline and consumed by TopN as bounded tie-break signal; dependency handling and decision-ledger reason codes added.
 - [done] **ACI reporting and diagnostics** — executive/technical markdown now include ACI metrics snapshots, chain/capability distributions, confidence buckets, top-asset capability mapping, runtime-accurate enrichment status, and zero-inference diagnostics.
 - [done] **ACI inference guardrails and realism hardening** — reduced protocol/service-only false positives and tightened token semantics to better align outputs with realistic attack pathways.
-- [done] **ACI docs and operator guidance** — feature explanation, rule-authoring tutorial, technical deep dive, and tabletop prioritization policy (`P1`/`P1b`/`P2`) including impact-probability-first methodology and policy-tuning guidance.
+- [done] **ACI docs and operator guidance** — feature explanation, rule-authoring tutorial, technical deep dive, and tabletop prioritization policy with Operational Action Lane (`OAL`) terminology, including impact-probability-first methodology and policy-tuning guidance.
+- [done] **Release-readiness validation pass** — focused ACI/reporting regression suite and dual 5k E2E runs (full + reduced enrichment) completed successfully with reproducible artifacts.
+- [done] **ACI phrase-quality benchmark harness** — curated positive/negative phrase benchmark cases added to detect inference drift and guard against regression in semantic precision.
+- [done] **Triage policy operationalization (config-backed)** — `triage_policy` controls added to TopN config schema/semantics and surfaced in markdown mapping via per-finding policy lanes.
 - [in progress] **Decision explainability graph and provenance query tooling** (built on RunManifest + DecisionLedger).
 - [in progress] **More scanner support** (Qualys integrated; Nmap adapter path integrated; additional scanner connectors and parser-quality promotion work pending).
 - [in progress] **Expanded intelligence sources** (GHSA integrated with online/offline modes and cache hardening; additional external sources and source-confidence normalization pending).
+- [done] **TopN asset context tags in markdown reports** — project asset-level context labels (for example: externally-facing inferred, public-service-port inferred, criticality class, and concentration hints) into executive/technical asset mapping sections.
 - [planned] **Third-party integrations** (webhook, API, SIEM forwarding).
 - [planned] **Advanced filtering and custom scoring/triage policies**.
 
