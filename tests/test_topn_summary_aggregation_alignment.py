@@ -240,3 +240,87 @@ def test_summary_uses_union_flags_for_immediate_action(tmp_path):
     top_risks = list(summary.top_risks)
     assert top_risks[0]["aggregated_cve_count"] == 2
     assert top_risks[0]["aggregated_exploitable_cve_count"] == 1
+
+
+def test_summary_emits_decision_trace_summary(tmp_path):
+    ctx = _make_ctx(tmp_path)
+
+    finding = _finding("F-TRACE", "A1")
+    finding.exploit_available = False
+    finding.cisa_kev = False
+    asset = Asset(hostname="trace-host", ip_address="10.0.0.20", findings=[finding])
+    asset.asset_id = "A1"
+
+    scan = _scan_with_assets(asset)
+    scan.derived = DerivedContext(
+        passes={
+            "Scoring@2.0": _derived_scoring(
+                {
+                    "F-TRACE": {
+                        "raw_score": 8.2,
+                        "operational_score": 8.2,
+                        "risk_band": "High",
+                        "reason": "Whole-of-CVEs Aggregated",
+                        "score_trace": {
+                            "display_cve": "CVE-2026-7777",
+                            "cve_count": 1,
+                            "union_flags": {"exploit": False, "kev": False},
+                            "contributors": [
+                                {"cve_id": "CVE-2026-7777", "exploit_available": False, "cisa_kev": False},
+                            ],
+                        },
+                    }
+                }
+            ),
+            "TopN@1.0": DerivedPassResult(
+                meta=PassMeta(
+                    name="TopN",
+                    version="1.0",
+                    created_at_utc="2026-04-22T00:00:00Z",
+                    notes="test",
+                ),
+                data={
+                    "assets": [
+                        {
+                            "asset_id": "A1",
+                            "inference": {
+                                "confidence": "medium",
+                                "evidence_rule_ids": ["public_ip", "finding_text_exposure_hint"],
+                            },
+                        }
+                    ],
+                    "findings_by_asset": {
+                        "A1": [
+                            {"finding_id": "F-TRACE", "asset_id": "A1", "rank": 1, "risk_band": "high"},
+                            {"finding_id": "F-TRACE2", "asset_id": "A1", "rank": 2, "risk_band": "critical"},
+                        ]
+                    },
+                },
+            ),
+            "ACI@1.0": DerivedPassResult(
+                meta=PassMeta(
+                    name="ACI",
+                    version="1.0",
+                    created_at_utc="2026-04-22T00:00:00Z",
+                    notes="test",
+                ),
+                data={
+                    "metrics": {
+                        "inferred_findings": 3,
+                        "chain_candidates_detected": {"chain_initial_to_credential": 2},
+                    }
+                },
+            ),
+        }
+    )
+
+    summary = SummaryPass().run(ctx, scan).data
+    trace = summary.decision_trace_summary
+
+    assert trace["assets_with_exposure_inference"] == 1
+    assert trace["exposure_confidence_counts"]["medium"] == 1
+    assert trace["exposure_rule_hit_counts"]["public_ip"] == 1
+    assert trace["aci_inferred_findings"] == 3
+    assert trace["aci_chain_candidates_detected"]["chain_initial_to_credential"] == 2
+    assert trace["findings_by_risk_band"]["high"] == 1
+    assert trace["findings_by_risk_band"]["critical"] == 1

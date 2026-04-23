@@ -255,6 +255,47 @@ Context Tags: Externally-Facing Inferred | Public-Service Ports Inferred | Expos
 OAL-2 tag legend: `Immediate Analyst Validation` = confidence >= 0.90, `Validate Next` = confidence >= 0.80 and < 0.90, `Monitor` = lower-confidence OAL-2.
 ```
 
+### Finding-Text Inference Hardening (v1)
+
+`finding_text_contains_any` is now tuned for conservative behavior and reproducible analyst traceability.
+
+Hardening principles:
+
+1. Bounded monotonicity with diminishing returns
+   - Additional text matches can increase evidence, but each incremental hit contributes less than earlier hits.
+   - Weighted evidence is capped by `finding_text_max_weighted_hits`.
+
+2. Source-quality weighting
+   - Matches in finding title are weighted highest, description next, plugin output lowest.
+   - Controlled with:
+     - `finding_text_title_weight`
+     - `finding_text_description_weight`
+     - `finding_text_plugin_output_weight`
+
+3. Negative constraints and conflict handling
+   - Contradictory lexical cues (for example internal-only language) reduce inferred finding-text weight.
+   - Controlled with:
+     - `finding_text_conflict_tokens`
+     - `finding_text_conflict_penalty`
+
+4. Explainability and reproducibility
+   - TopN evidence includes deterministic trace fragments for finding-text rules:
+     - total token hits
+     - source-specific hit counts
+     - weighted and bounded evidence values
+     - conflict-token hits
+     - final applied rule weight
+
+Default conservative starter profile:
+
+- `finding_text_min_token_matches: 2`
+- `finding_text_title_weight: 3`
+- `finding_text_description_weight: 2`
+- `finding_text_plugin_output_weight: 1`
+- `finding_text_max_weighted_hits: 4`
+- `finding_text_conflict_penalty: 2`
+- `finding_text_diminishing_factors: [1.0, 0.6, 0.4]`
+
 ## Related Docs
 
 - [Usage](Usage.md)

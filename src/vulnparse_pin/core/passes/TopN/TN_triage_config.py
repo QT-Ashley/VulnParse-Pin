@@ -156,6 +156,13 @@ def _safe_fallback_config() -> TNTriageConfig:
         public_service_ports_set=frozenset(),
         allow_predicates=frozenset({"ip_is_public", "ip_is_private", "any_port_in_public_list", "port_in", "hostname_contains_any", "finding_text_contains_any", "criticality_is"}),
         finding_text_min_token_matches=2,
+        finding_text_title_weight=3,
+        finding_text_description_weight=2,
+        finding_text_plugin_output_weight=1,
+        finding_text_max_weighted_hits=4,
+        finding_text_conflict_tokens=tuple(),
+        finding_text_conflict_penalty=2,
+        finding_text_diminishing_factors=(1.0, 0.6, 0.4),
         rules=(),
     )
 

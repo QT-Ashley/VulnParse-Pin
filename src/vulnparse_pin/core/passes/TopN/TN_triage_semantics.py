@@ -83,6 +83,13 @@ class InferenceConfig:
     public_service_ports_set: frozenset[int]
     allow_predicates: frozenset[str]
     finding_text_min_token_matches: int
+    finding_text_title_weight: int
+    finding_text_description_weight: int
+    finding_text_plugin_output_weight: int
+    finding_text_max_weighted_hits: int
+    finding_text_conflict_tokens: Tuple[str, ...]
+    finding_text_conflict_penalty: int
+    finding_text_diminishing_factors: Tuple[float, ...]
     rules: Tuple[ParsedRule, ...]
 
 
@@ -617,6 +624,130 @@ def _parse_inference(inf_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Op
         )
         finding_text_min_token_matches = min(10, max(1, finding_text_min_token_matches))
 
+    def _parse_int_with_range(path: str, raw_value: Any, default: int, min_value: int, max_value: int, code_prefix: str) -> int:
+        if not isinstance(raw_value, int):
+            issues.append(SemanticIssue(path, f"{path.split('/')[-1]} must be an integer", f"{code_prefix}_TYPE"))
+            value = default
+        else:
+            value = raw_value
+        if value < min_value or value > max_value:
+            issues.append(SemanticIssue(path, f"{path.split('/')[-1]} must be in range {min_value}..{max_value}", f"{code_prefix}_RANGE", detail=str(value)))
+            value = min(max_value, max(min_value, value))
+        return value
+
+    finding_text_title_weight = _parse_int_with_range(
+        "/inference/finding_text_title_weight",
+        inf_raw.get("finding_text_title_weight", 3),
+        3,
+        0,
+        10,
+        "FINDING_TEXT_TITLE_WEIGHT",
+    )
+    finding_text_description_weight = _parse_int_with_range(
+        "/inference/finding_text_description_weight",
+        inf_raw.get("finding_text_description_weight", 2),
+        2,
+        0,
+        10,
+        "FINDING_TEXT_DESCRIPTION_WEIGHT",
+    )
+    finding_text_plugin_output_weight = _parse_int_with_range(
+        "/inference/finding_text_plugin_output_weight",
+        inf_raw.get("finding_text_plugin_output_weight", 1),
+        1,
+        0,
+        10,
+        "FINDING_TEXT_PLUGIN_OUTPUT_WEIGHT",
+    )
+    finding_text_max_weighted_hits = _parse_int_with_range(
+        "/inference/finding_text_max_weighted_hits",
+        inf_raw.get("finding_text_max_weighted_hits", 4),
+        4,
+        1,
+        50,
+        "FINDING_TEXT_MAX_WEIGHTED_HITS",
+    )
+    finding_text_conflict_penalty = _parse_int_with_range(
+        "/inference/finding_text_conflict_penalty",
+        inf_raw.get("finding_text_conflict_penalty", 2),
+        2,
+        0,
+        10,
+        "FINDING_TEXT_CONFLICT_PENALTY",
+    )
+
+    conflict_tokens_raw = inf_raw.get("finding_text_conflict_tokens", [])
+    if not isinstance(conflict_tokens_raw, list):
+        issues.append(
+            SemanticIssue(
+                "/inference/finding_text_conflict_tokens",
+                "finding_text_conflict_tokens must be an array",
+                "FINDING_TEXT_CONFLICT_TOKENS_TYPE",
+            )
+        )
+        conflict_tokens_raw = []
+    conflict_tokens: List[str] = []
+    for idx, tok in enumerate(conflict_tokens_raw):
+        token = str(tok or "").strip().lower()
+        if not token:
+            continue
+        if len(token) > 64:
+            issues.append(
+                SemanticIssue(
+                    f"/inference/finding_text_conflict_tokens/{idx}",
+                    "conflict token too long (max 64)",
+                    "FINDING_TEXT_CONFLICT_TOKEN_LEN",
+                )
+            )
+            continue
+        conflict_tokens.append(token)
+    if len(conflict_tokens) > 50:
+        issues.append(
+            SemanticIssue(
+                "/inference/finding_text_conflict_tokens",
+                "finding_text_conflict_tokens max length is 50",
+                "FINDING_TEXT_CONFLICT_TOKEN_COUNT",
+                detail=str(len(conflict_tokens)),
+            )
+        )
+        conflict_tokens = conflict_tokens[:50]
+
+    diminishing_raw = inf_raw.get("finding_text_diminishing_factors", [1.0, 0.6, 0.4])
+    if not isinstance(diminishing_raw, list) or not diminishing_raw:
+        issues.append(
+            SemanticIssue(
+                "/inference/finding_text_diminishing_factors",
+                "finding_text_diminishing_factors must be a non-empty array",
+                "FINDING_TEXT_DIMINISHING_FACTORS_TYPE",
+            )
+        )
+        diminishing_raw = [1.0, 0.6, 0.4]
+    diminishing_factors: List[float] = []
+    for idx, value in enumerate(diminishing_raw):
+        if not isinstance(value, (int, float)):
+            issues.append(
+                SemanticIssue(
+                    f"/inference/finding_text_diminishing_factors/{idx}",
+                    "diminishing factor must be a number",
+                    "FINDING_TEXT_DIMINISHING_FACTOR_TYPE",
+                )
+            )
+            continue
+        fv = float(value)
+        if fv < 0.0 or fv > 1.0:
+            issues.append(
+                SemanticIssue(
+                    f"/inference/finding_text_diminishing_factors/{idx}",
+                    "diminishing factor must be in range 0.0..1.0",
+                    "FINDING_TEXT_DIMINISHING_FACTOR_RANGE",
+                    detail=str(fv),
+                )
+            )
+            fv = min(1.0, max(0.0, fv))
+        diminishing_factors.append(fv)
+    if not diminishing_factors:
+        diminishing_factors = [1.0]
+
     # Rules
     rules_raw = inf_raw.get("rules", [])
     if not isinstance(rules_raw, list):
@@ -691,6 +822,13 @@ def _parse_inference(inf_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Op
         public_service_ports_set=ports_set,
         allow_predicates=allow_pred_frozen,
         finding_text_min_token_matches=finding_text_min_token_matches,
+        finding_text_title_weight=finding_text_title_weight,
+        finding_text_description_weight=finding_text_description_weight,
+        finding_text_plugin_output_weight=finding_text_plugin_output_weight,
+        finding_text_max_weighted_hits=finding_text_max_weighted_hits,
+        finding_text_conflict_tokens=tuple(conflict_tokens),
+        finding_text_conflict_penalty=finding_text_conflict_penalty,
+        finding_text_diminishing_factors=tuple(diminishing_factors),
         rules=tuple(parsed_rules)
     )
 

@@ -76,7 +76,7 @@ jobs:
               run: |
                 ARCH="${{ runner.arch }}"
                 OS="${{ runner.os }}"
-                mv dist/vpp "dist/vpp-${OS}-${ARCH}"
+                mv dist/vpp "dist/vulnparse-pin-${OS}-${ARCH}"
 
             - name: Rename binary with OS/ARCH (Windows)
               if: runner.os == 'Windows'
@@ -84,7 +84,7 @@ jobs:
               run: |
                 $arch = "${{ runner.arch }}"
                 $os = "${{ runner.os }}"
-                Move-Item "dist/vpp.exe" "dist/vpp-${os}-${arch}.exe"
+                Move-Item "dist/vpp.exe" "dist/vulnparse-pin-${arch}.exe"
 
             - name: Upload Binary artifacts
               uses: actions/upload-artifact@v7

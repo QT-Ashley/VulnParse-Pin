@@ -113,6 +113,7 @@ class SummaryPass(Pass):
             top_risks=tuple(self._generate_top_risks(scan, scoring, finding_map)),
             enrichment_metrics=self._generate_enrichment_metrics(scan),
             remediation_priorities=self._generate_remediation_priorities(scan, scoring, finding_map),
+            decision_trace_summary=self._generate_decision_trace_summary(scan),
         )
         
         ctx.logger.print_success("Summary generation complete", label=self.name)
@@ -529,4 +530,74 @@ class SummaryPass(Pass):
             "high_priority": high_priority,
             "medium_priority": medium_priority,
             "immediate_cves": immediate_sample,
+        }
+
+    def _generate_decision_trace_summary(self, scan: "ScanResult") -> Dict[str, Any]:
+        """Aggregate compact TopN/ACI trace signals for downstream reporting."""
+        topn_result = scan.derived.get("TopN@1.0")
+        aci_result = scan.derived.get("ACI@1.0")
+
+        topn_data = getattr(topn_result, "data", None)
+        if not isinstance(topn_data, dict):
+            topn_data = {}
+
+        aci_data = getattr(aci_result, "data", None)
+        if not isinstance(aci_data, dict):
+            aci_data = {}
+
+        exposure_confidence_counts = {"high": 0, "medium": 0, "low": 0}
+        exposure_rule_hit_counts: Dict[str, int] = {}
+
+        for asset_row in topn_data.get("assets", []) or []:
+            if not isinstance(asset_row, dict):
+                continue
+            inference = asset_row.get("inference", {})
+            if not isinstance(inference, dict):
+                inference = {}
+            confidence = str(inference.get("confidence", "")).strip().lower()
+            if confidence in exposure_confidence_counts:
+                exposure_confidence_counts[confidence] += 1
+            for rid in inference.get("evidence_rule_ids", []) or []:
+                key = str(rid).strip()
+                if not key:
+                    continue
+                exposure_rule_hit_counts[key] = exposure_rule_hit_counts.get(key, 0) + 1
+
+        findings_by_risk_band: Dict[str, int] = {}
+        for flist in (topn_data.get("findings_by_asset", {}) or {}).values():
+            if not isinstance(flist, (list, tuple)):
+                continue
+            for frec in flist:
+                if not isinstance(frec, dict):
+                    continue
+                band = str(frec.get("risk_band", "") or "").strip().lower()
+                if not band:
+                    continue
+                findings_by_risk_band[band] = findings_by_risk_band.get(band, 0) + 1
+
+        aci_metrics = aci_data.get("metrics", {})
+        if not isinstance(aci_metrics, dict):
+            aci_metrics = {}
+        chain_candidates = aci_metrics.get("chain_candidates_detected", {})
+        if not isinstance(chain_candidates, dict):
+            chain_candidates = {}
+
+        _band_order = ("critical", "high", "medium", "low", "info")
+        findings_by_risk_band_sorted = {
+            b: findings_by_risk_band[b]
+            for b in _band_order
+            if b in findings_by_risk_band
+        }
+        # Append any unrecognised bands in sorted order
+        for b in sorted(findings_by_risk_band):
+            if b not in findings_by_risk_band_sorted:
+                findings_by_risk_band_sorted[b] = findings_by_risk_band[b]
+
+        return {
+            "assets_with_exposure_inference": int(sum(exposure_confidence_counts.values())),
+            "exposure_confidence_counts": exposure_confidence_counts,
+            "exposure_rule_hit_counts": dict(sorted(exposure_rule_hit_counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+            "findings_by_risk_band": findings_by_risk_band_sorted,
+            "aci_inferred_findings": int(aci_metrics.get("inferred_findings", 0) or 0),
+            "aci_chain_candidates_detected": dict(chain_candidates),
         }

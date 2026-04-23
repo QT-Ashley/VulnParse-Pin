@@ -123,6 +123,13 @@ def test_topn_semantics_accept_oal_aliases_and_finding_text_predicate() -> None:
         "criticality_is",
     ]
     payloads.topn_config["inference"]["finding_text_min_token_matches"] = 2
+    payloads.topn_config["inference"]["finding_text_title_weight"] = 3
+    payloads.topn_config["inference"]["finding_text_description_weight"] = 2
+    payloads.topn_config["inference"]["finding_text_plugin_output_weight"] = 1
+    payloads.topn_config["inference"]["finding_text_max_weighted_hits"] = 4
+    payloads.topn_config["inference"]["finding_text_conflict_tokens"] = ["internal only", "localhost"]
+    payloads.topn_config["inference"]["finding_text_conflict_penalty"] = 2
+    payloads.topn_config["inference"]["finding_text_diminishing_factors"] = [1.0, 0.6, 0.4]
     payloads.topn_config["inference"]["rules"].append(
         {
             "id": "finding_text_test_hint",
@@ -141,6 +148,13 @@ def test_topn_semantics_accept_oal_aliases_and_finding_text_predicate() -> None:
     assert normalized.triage_policy.oal1_risk_bands == ("critical", "high")
     assert normalized.triage_policy.oal2_risk_bands == ("critical", "high", "medium")
     assert normalized.inference.finding_text_min_token_matches == 2
+    assert normalized.inference.finding_text_title_weight == 3
+    assert normalized.inference.finding_text_description_weight == 2
+    assert normalized.inference.finding_text_plugin_output_weight == 1
+    assert normalized.inference.finding_text_max_weighted_hits == 4
+    assert normalized.inference.finding_text_conflict_tokens == ("internal only", "localhost")
+    assert normalized.inference.finding_text_conflict_penalty == 2
+    assert normalized.inference.finding_text_diminishing_factors == (1.0, 0.6, 0.4)
     assert any(rule.predicate.name == "finding_text_contains_any" for rule in normalized.inference.rules)
 
 

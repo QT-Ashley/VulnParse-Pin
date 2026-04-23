@@ -281,12 +281,14 @@ def test_markdown_reports_include_top_asset_finding_capability_mapping() -> None
     assert "F-100" in technical
     assert "Demo Finding Title" in executive
     assert "Demo Finding Title" in technical
+    assert "F-100 (Demo Finding Title)" in executive
+    assert "F-100 (Demo Finding Title)" in technical
     assert "remote_execution, credential_access" in executive
     assert "remote_execution, credential_access" in technical
     assert "OAL = Operational Action Lane" in executive
     assert "OAL = Operational Action Lane" in technical
-    assert "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |" in executive
-    assert "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |" in technical
+    assert "| Finding (ID / Title) | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |" in executive
+    assert "| Finding (ID / Title) | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |" in technical
     assert "OAL-2 High-Confidence Chain Path" in executive
     assert "OAL-2 High-Confidence Chain Path" in technical
     assert "Context Tags:" in executive

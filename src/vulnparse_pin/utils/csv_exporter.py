@@ -116,6 +116,7 @@ AUDIT_PROFILE_COLUMNS = ANALYST_PROFILE_COLUMNS + [
     "top_contributor_2_raw_contribution",
     "ghsa_references",
     "topn_inference_evidence",
+    "topn_inference_rule_hits",
 ]
 
 
@@ -459,6 +460,12 @@ def _build_csv_row(
     else:
         topn_inference_evidence = ""
 
+    rids = inf.get("evidence_rule_ids")
+    if isinstance(rids, (list, tuple)):
+        topn_inference_rule_hits = "|".join(str(x) for x in rids if x is not None)
+    else:
+        topn_inference_rule_hits = ""
+
     _avg_risk = getattr(asset, "avg_risk_score", None)
     _cvss = getattr(finding, "cvss_score", None)
     _epss = getattr(finding, "epss_score", None)
@@ -534,5 +541,6 @@ def _build_csv_row(
         "topn_exposure_confidence": topn_exposure_conf,
         "topn_externally_facing_inferred": topn_externally_facing_inferred,
         "topn_public_service_ports_inferred": topn_public_service_ports,
-        "topn_inference_evidence": topn_inference_evidence
+        "topn_inference_evidence": topn_inference_evidence,
+        "topn_inference_rule_hits": topn_inference_rule_hits,
     }

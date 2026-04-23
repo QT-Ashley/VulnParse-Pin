@@ -53,6 +53,9 @@ def build_post_enrichment_index(scan: ScanResult) -> PostEnrichmentIndex:
         findings_for_asset: List[Finding] = []
         open_ports: set[int] = set()
         finding_text_parts: List[str] = []
+        title_parts: List[str] = []
+        description_parts: List[str] = []
+        plugin_output_parts: List[str] = []
         
         for finding in asset.findings:
             # Core index: finding by ID
@@ -96,6 +99,12 @@ def build_post_enrichment_index(scan: ScanResult) -> PostEnrichmentIndex:
             ):
                 if text_value:
                     finding_text_parts.append(str(text_value))
+            if getattr(finding, "title", None):
+                title_parts.append(str(getattr(finding, "title")))
+            if getattr(finding, "description", None):
+                description_parts.append(str(getattr(finding, "description")))
+            if getattr(finding, "plugin_output", None):
+                plugin_output_parts.append(str(getattr(finding, "plugin_output")))
         
         # Store grouped findings
         findings_by_asset_id[asset_id] = findings_for_asset
@@ -108,6 +117,9 @@ def build_post_enrichment_index(scan: ScanResult) -> PostEnrichmentIndex:
             criticality=asset.criticality,
             open_ports=tuple(sorted(open_ports)),
             finding_text_blob=" ".join(finding_text_parts).lower(),
+            finding_title_blob=" ".join(title_parts).lower(),
+            finding_description_blob=" ".join(description_parts).lower(),
+            finding_plugin_output_blob=" ".join(plugin_output_parts).lower(),
         )
     
     return PostEnrichmentIndex(

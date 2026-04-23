@@ -634,6 +634,7 @@ def _generate_executive_report(
     remediation = summary.remediation_priorities
     asset_summary = summary.asset_summary
     enrichment = summary.enrichment_metrics
+    decision_trace = getattr(summary, "decision_trace_summary", {}) or {}
     source_status = _enrichment_source_status(args)
     ghsa_findings, ghsa_refs = _ghsa_reference_metrics(_scan)
     aci_metrics = _aci_metrics_snapshot(_scan)
@@ -754,6 +755,32 @@ Interpretation notes:
             md += f"- {note}\n"
         md += "\n"
 
+    if isinstance(decision_trace, dict) and decision_trace:
+        exposure_conf = decision_trace.get("exposure_confidence_counts", {})
+        if not isinstance(exposure_conf, dict):
+            exposure_conf = {}
+        top_rules = decision_trace.get("exposure_rule_hit_counts", {})
+        if not isinstance(top_rules, dict):
+            top_rules = {}
+        risk_band_counts = decision_trace.get("findings_by_risk_band", {})
+        if not isinstance(risk_band_counts, dict):
+            risk_band_counts = {}
+        md += "Decision trace snapshot:\n\n"
+        md += (
+            f"- Assets with exposure inference: {int(decision_trace.get('assets_with_exposure_inference', 0) or 0):,}\n"
+            f"- Exposure confidence buckets: high={int(exposure_conf.get('high', 0) or 0):,}, "
+            f"medium={int(exposure_conf.get('medium', 0) or 0):,}, low={int(exposure_conf.get('low', 0) or 0):,}\n"
+            f"- ACI inferred findings: {int(decision_trace.get('aci_inferred_findings', 0) or 0):,}\n"
+        )
+        if risk_band_counts:
+            band_parts = ", ".join(f"{b}={int(c):,}" for b, c in risk_band_counts.items())
+            md += f"- Findings by risk band: {band_parts}\n"
+        if top_rules:
+            md += "- Top exposure rule hits:\n"
+            for rid, count in list(top_rules.items())[:5]:
+                md += f"  - `{rid}`: {int(count):,}\n"
+        md += "\n"
+
     md += """
 
 ---
@@ -792,19 +819,19 @@ This view maps top-ranked assets to their top-ranked findings and inferred attac
                     )
                     oal2_legend_emitted = True
             md += (
-                "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |\n"
-                "|------------|---------------|-----------|--------------|-----------------------|------------------|------------|-----|\n"
+                "| Finding (ID / Title) | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |\n"
+                "|----------------------|-----------|--------------|-----------------------|------------------|------------|-----|\n"
             )
             if asset["findings"]:
                 for finding in asset["findings"]:
                     capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
                     chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
                     md += (
-                        f"| {finding['finding_id']} | {finding['finding_title']} | {finding['risk_band']} | {finding['score']:.2f} | "
+                        f"| {finding['finding_id']} ({finding['finding_title']}) | {finding['risk_band']} | {finding['score']:.2f} | "
                         f"{capabilities} | {chains} | {finding['confidence']:.2f} | {finding['policy_lane']} |\n"
                     )
             else:
-                md += "| _No ranked findings available_ | N/A | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
+                md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
             md += "\n"
     else:
         md += "No TopN/ACI mapping data available for asset-level capability projection.\n\n"
@@ -1000,6 +1027,7 @@ def _generate_technical_report(
     risk_dist = summary.risk_distribution
     top_risks = summary.top_risks
     enrichment = summary.enrichment_metrics
+    decision_trace = getattr(summary, "decision_trace_summary", {}) or {}
     source_status = _enrichment_source_status(args)
     ghsa_findings, ghsa_refs = _ghsa_reference_metrics(_scan)
     aci_metrics = _aci_metrics_snapshot(_scan)
@@ -1224,6 +1252,36 @@ All-finding confidence bucket counts (includes findings that did not meet infere
 
 ---
 
+## 🧾 Decision Trace Snapshot
+
+| Trace Signal | Value |
+|-------------|-------|
+| Assets with Exposure Inference | {int((decision_trace.get('assets_with_exposure_inference', 0) if isinstance(decision_trace, dict) else 0) or 0):,} |
+| ACI Inferred Findings | {int((decision_trace.get('aci_inferred_findings', 0) if isinstance(decision_trace, dict) else 0) or 0):,} |
+
+Findings by risk band:
+
+"""
+
+    _dts_risk_bands = (decision_trace.get("findings_by_risk_band", {}) if isinstance(decision_trace, dict) else {}) or {}
+    if isinstance(_dts_risk_bands, dict) and _dts_risk_bands:
+        for band, count in _dts_risk_bands.items():
+            md += f"- **{band.title()}**: {int(count):,}\n"
+    else:
+        md += "- No ranked finding data available.\n"
+
+    md += "\nTop exposure inference rule hits:\n\n"
+
+    if isinstance(decision_trace, dict) and isinstance(decision_trace.get("exposure_rule_hit_counts", {}), dict) and decision_trace.get("exposure_rule_hit_counts"):
+        for rid, count in list(decision_trace.get("exposure_rule_hit_counts", {}).items())[:10]:
+            md += f"- `{rid}`: {int(count):,}\n"
+    else:
+        md += "- No exposure rule-hit trace data available.\n"
+
+    md += """
+
+---
+
 ## 🗺️ Top Asset Capability Mapping
 
 This section maps top-ranked assets to top-ranked findings and their inferred attack capabilities for triage handoff.
@@ -1258,19 +1316,19 @@ This section maps top-ranked assets to top-ranked findings and their inferred at
                     )
                     oal2_legend_emitted = True
             md += (
-                "| Finding ID | Finding Title | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |\n"
-                "|------------|---------------|-----------|--------------|-----------------------|------------------|------------|-----|\n"
+                "| Finding (ID / Title) | Risk Band | Finding Risk | Inferred Capabilities | Chain Candidates | Confidence | OAL |\n"
+                "|----------------------|-----------|--------------|-----------------------|------------------|------------|-----|\n"
             )
             if asset["findings"]:
                 for finding in asset["findings"]:
                     capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
                     chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
                     md += (
-                        f"| {finding['finding_id']} | {finding['finding_title']} | {finding['risk_band']} | {finding['score']:.2f} | "
+                        f"| {finding['finding_id']} ({finding['finding_title']}) | {finding['risk_band']} | {finding['score']:.2f} | "
                         f"{capabilities} | {chains} | {finding['confidence']:.2f} | {finding['policy_lane']} |\n"
                     )
             else:
-                md += "| _No ranked findings available_ | N/A | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
+                md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
             md += "\n"
     else:
         md += "No TopN/ACI mapping data available for asset-level capability projection.\n\n"

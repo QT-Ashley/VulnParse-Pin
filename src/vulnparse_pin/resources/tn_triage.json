@@ -54,6 +54,19 @@
             "criticality_is"
         ],
         "finding_text_min_token_matches": 2,
+        "finding_text_title_weight": 3,
+        "finding_text_description_weight": 2,
+        "finding_text_plugin_output_weight": 1,
+        "finding_text_max_weighted_hits": 4,
+        "finding_text_conflict_tokens": [
+            "internal only",
+            "localhost",
+            "loopback",
+            "not externally accessible",
+            "not internet accessible"
+        ],
+        "finding_text_conflict_penalty": 2,
+        "finding_text_diminishing_factors": [1.0, 0.6, 0.4],
         "rules": [
             {
                 "id": "public_ip",

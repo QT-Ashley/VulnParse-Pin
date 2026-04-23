@@ -121,6 +121,9 @@ class AssetObservation:
     criticality: Optional[str] = None
     open_ports: Tuple[int, ...] = field(default_factory=tuple)
     finding_text_blob: str = ""
+    finding_title_blob: str = ""
+    finding_description_blob: str = ""
+    finding_plugin_output_blob: str = ""
 
 
 @dataclass(frozen=True)

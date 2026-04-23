@@ -61,6 +61,7 @@ class ExposureInference:
     externally_facing_inferred: bool
     public_service_ports_inferred: bool
     evidence: Tuple[str, ...]
+    evidence_rule_ids: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -184,3 +185,4 @@ class SummaryPassOutput:
     top_risks: Tuple[Dict[str, Any], ...]
     enrichment_metrics: Dict[str, Any]
     remediation_priorities: Dict[str, Any]
+    decision_trace_summary: Dict[str, Any] = field(default_factory=dict)

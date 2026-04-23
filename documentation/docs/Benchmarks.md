@@ -2,6 +2,57 @@
 
 This document summarizes observed performance behavior for VulnParse-Pin v1.0.0rc.1 under high-volume test scenarios.
 
+## Public benchmark update (April 22, 2026)
+
+This section is intended for external sharing and value communication. It summarizes
+the latest end-to-end runs with a consistent output set (JSON, CSV, executive Markdown,
+technical Markdown, and runmanifest).
+
+### Consolidated benchmark table
+
+| Scenario | Input | Assets | Findings | Scored findings | Scoring coverage | Enriched findings | Enrichment coverage | Runtime | Throughput |
+| ---------- | ------- | -------- | ---------- | ----------------- | ------------------ | ------------------- | --------------------- | --------- | ------------ |
+| Baseline lab (101) | Nessus | 2 | 101 | 5 | 4.95% | 4 | 3.96% | 3.333s | 30.30 findings/s |
+| Lab scaled 5k | Nessus | 10 | 5,000 | 5,000 | 100.00% | 2,236 | 44.72% | 11.663s | 428.69 findings/s |
+| OpenVAS stress 20k | OpenVAS | 20 | 20,000 | 140 | 0.70% | 20,000 | 100.00% | 24.796s | 806.57 findings/s |
+
+Source artifact: `tests_output/public_benchmark_comparison_apr22_2026.csv`
+
+### What this shows (public-facing value)
+
+1. Throughput scales strongly across larger workloads while still producing full output artifacts.
+1. Coverage behavior is dataset-sensitive, which is expected and useful for explaining risk context quality. The Lab 5k benchmark shows complete scoring coverage by construction, while OpenVAS 20k shows complete enrichment coverage with selective scoring coverage.
+1. Exposure-inference signals remain available at scale (rule-hit summaries and confidence buckets), enabling explainable prioritization rather than raw finding count reporting.
+
+### Feature value versus a regular scanner output
+
+| Feature area | VulnParse-Pin evidence from benchmark runs | Typical regular scanner output | Public-facing implication/value |
+| -------------- | --------------------------------------------- | ------------------------------- | --------------------------------- |
+| Cross-finding prioritization | Produces scored findings and ranked assets/findings across all runs; 5k run scored 5,000/5,000 findings | Usually reports per-finding severity and plugin output with limited cross-finding ranking logic | Teams can prioritize remediation by risk concentration and asset context, not just severity labels |
+| Exposure inference traceability | Decision trace summaries include exposure confidence and rule-hit counts (for example, `private_ip`, `public_service_port_hit`, `critical_asset_hint`) | Often provides host/open-port facts but not a transparent, countable inference trace for prioritization rules | Stakeholders can audit why an asset/finding moved up in priority and defend triage decisions |
+| Multi-artifact decision consistency | Same run emits JSON, CSV, executive and technical reports, plus runmanifest with aligned totals validated in this benchmark cycle | Output formats may exist, but consistency validation is commonly left to downstream tooling | Reduces reporting drift between technical and executive views and improves governance confidence |
+| Actionable risk shaping | Risk-band distributions and TopN-derived context are surfaced in summary artifacts (critical/high/medium/low/info + top assets) | Regular scanner views frequently center on scanner-native severity bins without policy-aware context | Provides clearer, operations-oriented remediation sequencing and communication to leadership |
+| Reproducible benchmark evidence | Public table and raw comparison CSV included from actual e2e runs | Benchmark narratives are often anecdotal or not tied to reusable artifacts | Improves trust in performance/value claims during customer or leadership review |
+
+### Benchmark claims (evidence-bound)
+
+1. VulnParse-Pin processed 20,000 OpenVAS findings in 24.796s while producing JSON, CSV, executive report, technical report, and runmanifest outputs in the same run.
+2. On the 5,000-finding Nessus benchmark, VulnParse-Pin achieved 100.00% scoring coverage (5,000 of 5,000 findings).
+3. Across benchmark scenarios, VulnParse-Pin maintained cross-artifact numeric consistency between JSON, CSV, markdown summaries, and runmanifest pass summaries.
+4. VulnParse-Pin exposes explainable prioritization traces through decision trace summaries (for example, exposure confidence buckets and rule-hit counts).
+5. Benchmark claims are backed by reproducible artifacts in `tests_output/public_benchmark_comparison_apr22_2026.csv` and scenario-specific profile/delta files.
+
+Claim boundaries:
+
+- These numbers describe the tested benchmark workloads and environment; they are not universal guarantees for all datasets.
+- Coverage percentages vary by input structure, enrichment density, and CVE distribution.
+
+### Important interpretation note
+
+Different datasets have different CVE density and structure. Coverage percentages should be interpreted
+as workload characteristics, not universal fixed rates. The value signal is that VulnParse-Pin keeps
+decision-support outputs and traceability available across both small and high-volume runs.
+
 ## Test environment
 
 - Date baseline: March 2026

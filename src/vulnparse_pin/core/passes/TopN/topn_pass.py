@@ -100,6 +100,23 @@ def _count_finding_text_token_hits(tokens: Tuple[str, ...], normalized_blob: str
     return hits
 
 
+def _count_conflict_token_hits(tokens: Tuple[str, ...], normalized_blob: str, blob_terms: set[str]) -> int:
+    if not tokens:
+        return 0
+    padded_blob = f" {normalized_blob} "
+    hits = 0
+    for tok in tokens:
+        token = str(tok or "").strip().lower()
+        if not token:
+            continue
+        if " " in token:
+            if f" {token} " in padded_blob:
+                hits += 1
+        elif token in blob_terms:
+            hits += 1
+    return hits
+
+
 # -------------------------------------------
 # TopN Pass
 # -------------------------------------------
@@ -442,6 +459,9 @@ class TopNPass(Pass):
                     "criticality": criticality,
                     "open_ports": tuple(obs.open_ports),
                     "finding_text_blob": obs.finding_text_blob,
+                    "finding_title_blob": obs.finding_title_blob,
+                    "finding_description_blob": obs.finding_description_blob,
+                    "finding_plugin_output_blob": obs.finding_plugin_output_blob,
                 }
         else:
             for asset in scan.assets:
@@ -450,29 +470,35 @@ class TopNPass(Pass):
                 hostname = getattr(asset, "hostname", None)
                 crit = getattr(asset, "criticality", None)
                 open_ports: set[int] = set()
+                title_parts: List[str] = []
+                description_parts: List[str] = []
+                plugin_output_parts: List[str] = []
                 for finding in asset.findings:
                     if aid is None:
                         aid = getattr(finding, "asset_id", None)
                     port = getattr(finding, "affected_port", None)
                     if isinstance(port, int):
                         open_ports.add(port)
+                    if getattr(finding, "title", None):
+                        title_parts.append(str(getattr(finding, "title")))
+                    if getattr(finding, "description", None):
+                        description_parts.append(str(getattr(finding, "description")))
+                    if getattr(finding, "plugin_output", None):
+                        plugin_output_parts.append(str(getattr(finding, "plugin_output")))
                 if aid is not None:
+                    title_blob = " ".join(title_parts).lower()
+                    description_blob = " ".join(description_parts).lower()
+                    plugin_output_blob = " ".join(plugin_output_parts).lower()
                     asset_obs_by_id[aid] = {
                         "asset_id": aid,
                         "ip": ip_addr,
                         "hostname": hostname,
                         "criticality": crit,
                         "open_ports": tuple(sorted(open_ports)),
-                        "finding_text_blob": " ".join(
-                            str(text_value)
-                            for finding in asset.findings
-                            for text_value in (
-                                getattr(finding, "title", None),
-                                getattr(finding, "description", None),
-                                getattr(finding, "plugin_output", None),
-                            )
-                            if text_value
-                        ).lower(),
+                        "finding_text_blob": " ".join((title_blob, description_blob, plugin_output_blob)).strip(),
+                        "finding_title_blob": title_blob,
+                        "finding_description_blob": description_blob,
+                        "finding_plugin_output_blob": plugin_output_blob,
                     }
 
         inference_cfg = {
@@ -482,6 +508,13 @@ class TopNPass(Pass):
             },
             "public_service_ports": tuple(int(p) for p in self.cfg.inference.public_service_ports_set),
             "finding_text_min_token_matches": int(self.cfg.inference.finding_text_min_token_matches),
+            "finding_text_title_weight": int(self.cfg.inference.finding_text_title_weight),
+            "finding_text_description_weight": int(self.cfg.inference.finding_text_description_weight),
+            "finding_text_plugin_output_weight": int(self.cfg.inference.finding_text_plugin_output_weight),
+            "finding_text_max_weighted_hits": int(self.cfg.inference.finding_text_max_weighted_hits),
+            "finding_text_conflict_tokens": tuple(self.cfg.inference.finding_text_conflict_tokens),
+            "finding_text_conflict_penalty": int(self.cfg.inference.finding_text_conflict_penalty),
+            "finding_text_diminishing_factors": tuple(float(x) for x in self.cfg.inference.finding_text_diminishing_factors),
             "rules": [
                 {
                     "rule_id": r.rule_id,
@@ -542,6 +575,7 @@ class TopNPass(Pass):
                             externally_facing_inferred=bool(inf["externally_facing_inferred"]),
                             public_service_ports_inferred=bool(inf["public_service_ports_inferred"]),
                             evidence=tuple(inf["evidence"]),
+                            evidence_rule_ids=tuple(inf.get("evidence_rule_ids", ())),
                         )
 
                     for aid, ranked_dicts in payload["findings"].items():
@@ -821,6 +855,9 @@ class TopNPass(Pass):
                     criticality=current_criticality if current_criticality is not None else obs.criticality,
                     open_ports=obs.open_ports,
                     finding_text_blob=obs.finding_text_blob,
+                    finding_title_blob=obs.finding_title_blob,
+                    finding_description_blob=obs.finding_description_blob,
+                    finding_plugin_output_blob=obs.finding_plugin_output_blob,
                 )
 
         ip = getattr(asset, "ip_address", None) if asset else None
@@ -829,6 +866,9 @@ class TopNPass(Pass):
         # Gather open ports
         ports: List[int] = []
         finding_text_parts: List[str] = []
+        title_parts: List[str] = []
+        description_parts: List[str] = []
+        plugin_output_parts: List[str] = []
         for fid in finding_ids:
             f = self._get_finding_by_id(scan, fid, ctx)
             if not f:
@@ -843,6 +883,12 @@ class TopNPass(Pass):
             ):
                 if text_value:
                     finding_text_parts.append(str(text_value))
+            if getattr(f, "title", None):
+                title_parts.append(str(getattr(f, "title")))
+            if getattr(f, "description", None):
+                description_parts.append(str(getattr(f, "description")))
+            if getattr(f, "plugin_output", None):
+                plugin_output_parts.append(str(getattr(f, "plugin_output")))
 
         ports = sorted(set(ports))
         crit = current_criticality
@@ -853,6 +899,9 @@ class TopNPass(Pass):
             criticality=crit,
             open_ports=tuple(ports),
             finding_text_blob=" ".join(finding_text_parts).lower(),
+            finding_title_blob=" ".join(title_parts).lower(),
+            finding_description_blob=" ".join(description_parts).lower(),
+            finding_plugin_output_blob=" ".join(plugin_output_parts).lower(),
         )
 
     def _get_finding_by_id(self, scan: "ScanResult", finding_id: str, ctx: Optional["RunContext"] = None) -> Optional[Any]:
@@ -1237,6 +1286,7 @@ class TopNPass(Pass):
     def _infer_exposure(self, obs: AssetObservation) -> ExposureInference:
         score = 0
         evidence: List[str] = []
+        evidence_rule_ids: List[str] = []
         hit_tags = set()
 
         ip = (obs.ip or "").strip()
@@ -1244,11 +1294,41 @@ class TopNPass(Pass):
         criticality = (obs.criticality or "").strip().lower()
         ports_set = set(obs.open_ports)
         finding_text_blob = str(obs.finding_text_blob or "").strip().lower()
+        finding_title_blob = str(obs.finding_title_blob or "").strip().lower()
+        finding_description_blob = str(obs.finding_description_blob or "").strip().lower()
+        finding_plugin_output_blob = str(obs.finding_plugin_output_blob or "").strip().lower()
         normalized_text_blob = _normalize_text_blob(finding_text_blob)
+        normalized_title_blob = _normalize_text_blob(finding_title_blob)
+        normalized_description_blob = _normalize_text_blob(finding_description_blob)
+        normalized_plugin_output_blob = _normalize_text_blob(finding_plugin_output_blob)
         text_terms = set(normalized_text_blob.split())
+        title_terms = set(normalized_title_blob.split())
+        description_terms = set(normalized_description_blob.split())
+        plugin_output_terms = set(normalized_plugin_output_blob.split())
 
         for rule in self.cfg.inference.rules:
             if not rule.enabled:
+                continue
+            if rule.predicate.name == "finding_text_contains_any":
+                matched, weighted_delta, trace = self._evaluate_finding_text_rule(
+                    pred=rule.predicate,
+                    normalized_text_blob=normalized_text_blob,
+                    text_terms=text_terms,
+                    normalized_title_blob=normalized_title_blob,
+                    title_terms=title_terms,
+                    normalized_description_blob=normalized_description_blob,
+                    description_terms=description_terms,
+                    normalized_plugin_output_blob=normalized_plugin_output_blob,
+                    plugin_output_terms=plugin_output_terms,
+                    base_weight=rule.weight,
+                )
+                if not matched:
+                    continue
+                score += weighted_delta
+                hit_tags.add(rule.tag)
+                evidence_rule_ids.append(rule.rule_id)
+                ev_base = rule.evidence.strip() if rule.evidence else f"{rule.rule_id} ({weighted_delta:+d})"
+                evidence.append(f"{ev_base} [{trace}]")
                 continue
             if self._predicate_matches(
                 rule.predicate,
@@ -1262,6 +1342,7 @@ class TopNPass(Pass):
             ):
                 score += rule.weight
                 hit_tags.add(rule.tag)
+                evidence_rule_ids.append(rule.rule_id)
                 ev = rule.evidence.strip() if rule.evidence else f"{rule.rule_id} ({rule.weight:+d})"
                 evidence.append(ev)
 
@@ -1272,14 +1353,76 @@ class TopNPass(Pass):
 
         #evidence order
         evidence_sorted = tuple(sorted(evidence))
+        evidence_rule_ids_sorted = tuple(sorted(set(evidence_rule_ids)))
 
         return ExposureInference(
             exposure_score=int(score),
             confidence=confidence,
             externally_facing_inferred=externally,
             public_service_ports_inferred=public_ports,
-            evidence=evidence_sorted
+            evidence=evidence_sorted,
+            evidence_rule_ids=evidence_rule_ids_sorted,
         )
+
+    def _evaluate_finding_text_rule(
+        self,
+        *,
+        pred: ParsedPredicate,
+        normalized_text_blob: str,
+        text_terms: set[str],
+        normalized_title_blob: str,
+        title_terms: set[str],
+        normalized_description_blob: str,
+        description_terms: set[str],
+        normalized_plugin_output_blob: str,
+        plugin_output_terms: set[str],
+        base_weight: int,
+    ) -> Tuple[bool, int, str]:
+        title_hits = _count_finding_text_token_hits(pred.tokens, normalized_title_blob, title_terms)
+        description_hits = _count_finding_text_token_hits(pred.tokens, normalized_description_blob, description_terms)
+        plugin_output_hits = _count_finding_text_token_hits(pred.tokens, normalized_plugin_output_blob, plugin_output_terms)
+        total_hits = _count_finding_text_token_hits(pred.tokens, normalized_text_blob, text_terms)
+
+        min_hits = int(self.cfg.inference.finding_text_min_token_matches)
+        if total_hits < min_hits:
+            return False, 0, f"token_hits={total_hits}, min_required={min_hits}"
+
+        weighted_hits = (
+            title_hits * int(self.cfg.inference.finding_text_title_weight)
+            + description_hits * int(self.cfg.inference.finding_text_description_weight)
+            + plugin_output_hits * int(self.cfg.inference.finding_text_plugin_output_weight)
+        )
+        weighted_hits = max(0, weighted_hits)
+
+        max_weighted_hits = max(1, int(self.cfg.inference.finding_text_max_weighted_hits))
+        factors = tuple(self.cfg.inference.finding_text_diminishing_factors) or (1.0,)
+
+        effective_weighted = 0.0
+        for idx in range(weighted_hits):
+            factor = float(factors[min(idx, len(factors) - 1)])
+            effective_weighted += max(0.0, factor)
+            if effective_weighted >= float(max_weighted_hits):
+                effective_weighted = float(max_weighted_hits)
+                break
+
+        scaled_weight = int(round(float(base_weight) * (effective_weighted / float(max_weighted_hits))))
+        if scaled_weight <= 0 and total_hits >= min_hits:
+            scaled_weight = 1
+
+        conflict_tokens = tuple(self.cfg.inference.finding_text_conflict_tokens)
+        conflict_hits = _count_conflict_token_hits(conflict_tokens, normalized_text_blob, text_terms)
+        conflict_penalty = min(
+            scaled_weight,
+            int(self.cfg.inference.finding_text_conflict_penalty) * conflict_hits,
+        )
+        final_weight = scaled_weight - conflict_penalty
+
+        trace = (
+            f"token_hits={total_hits}, source_hits=title:{title_hits}|description:{description_hits}|plugin_output:{plugin_output_hits}, "
+            f"weighted_hits={weighted_hits}, effective_weighted={effective_weighted:.2f}, conflict_hits={conflict_hits}, "
+            f"applied_weight={final_weight:+d}"
+        )
+        return True, final_weight, trace
 
     def _predicate_matches(
         self,
@@ -1292,6 +1435,7 @@ class TopNPass(Pass):
         normalized_text_blob: str,
         text_terms: set[str],
     ) -> bool:
+        _ = finding_text_blob
         name = pred.name
 
         if name == "ip_is_public":

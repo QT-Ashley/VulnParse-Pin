@@ -35,6 +35,16 @@ pytest tests/test_parser_smoke.py -v
 pytest tests/test_runmanifest.py -v
 ```
 
+### Inference reliability regression guard
+
+When modifying finding-text inference rules, conflict tokens, or source-weight knobs, run the dedicated benchmark module to catch positive/negative separation drift before committing:
+
+```bash
+pytest tests/test_topn_inference_reliability_benchmark.py -v
+```
+
+This benchmark asserts that high-signal positive cases score above the weighted threshold and that conflict tokens reliably suppress false-positive candidates. It should remain green on every change that touches `topn_pass.py`, `workers.py`, `TN_triage_semantics.py`, or the packaged `tn_triage.json` defaults.
+
 ## Contribution Scope and Quality Bar
 
 ### Documentation changes

@@ -157,6 +157,27 @@ def _count_finding_text_token_hits_worker(
     return hits
 
 
+def _count_conflict_token_hits_worker(
+    conflict_tokens: Tuple[str, ...],
+    normalized_blob: str,
+    blob_terms: set[str],
+) -> int:
+    if not conflict_tokens:
+        return 0
+    padded_blob = f" {normalized_blob} "
+    hits = 0
+    for tok in conflict_tokens:
+        token = str(tok or "").strip().lower()
+        if not token:
+            continue
+        if " " in token:
+            if f" {token} " in padded_blob:
+                hits += 1
+        elif token in blob_terms:
+            hits += 1
+    return hits
+
+
 def _predicate_matches_worker(
     pred_name: str,
     pred_ports: Tuple[int, ...],
@@ -171,6 +192,7 @@ def _predicate_matches_worker(
     text_terms: set[str],
     finding_text_min_token_matches: int,
 ) -> bool:
+    _ = finding_text_blob
     if pred_name == "ip_is_public":
         return _is_public_ip(ip)
     if pred_name == "ip_is_private":
@@ -191,12 +213,76 @@ def _predicate_matches_worker(
     return False
 
 
+def _evaluate_finding_text_rule_worker(
+    *,
+    pred_tokens: Tuple[str, ...],
+    normalized_text_blob: str,
+    text_terms: set[str],
+    normalized_title_blob: str,
+    title_terms: set[str],
+    normalized_description_blob: str,
+    description_terms: set[str],
+    normalized_plugin_output_blob: str,
+    plugin_output_terms: set[str],
+    min_token_matches: int,
+    title_weight: int,
+    description_weight: int,
+    plugin_output_weight: int,
+    max_weighted_hits: int,
+    diminishing_factors: Tuple[float, ...],
+    conflict_tokens: Tuple[str, ...],
+    conflict_penalty: int,
+    base_weight: int,
+) -> Tuple[bool, int, str]:
+    title_hits = _count_finding_text_token_hits_worker(pred_tokens, normalized_title_blob, title_terms)
+    description_hits = _count_finding_text_token_hits_worker(pred_tokens, normalized_description_blob, description_terms)
+    plugin_output_hits = _count_finding_text_token_hits_worker(pred_tokens, normalized_plugin_output_blob, plugin_output_terms)
+    total_hits = _count_finding_text_token_hits_worker(pred_tokens, normalized_text_blob, text_terms)
+
+    if total_hits < int(min_token_matches):
+        return False, 0, f"token_hits={total_hits}, min_required={int(min_token_matches)}"
+
+    weighted_hits = (
+        title_hits * int(title_weight)
+        + description_hits * int(description_weight)
+        + plugin_output_hits * int(plugin_output_weight)
+    )
+    weighted_hits = max(0, weighted_hits)
+
+    bounded_max_hits = max(1, int(max_weighted_hits))
+    factors = tuple(diminishing_factors) or (1.0,)
+
+    effective_weighted = 0.0
+    for idx in range(weighted_hits):
+        factor = float(factors[min(idx, len(factors) - 1)])
+        effective_weighted += max(0.0, factor)
+        if effective_weighted >= float(bounded_max_hits):
+            effective_weighted = float(bounded_max_hits)
+            break
+
+    scaled_weight = int(round(float(base_weight) * (effective_weighted / float(bounded_max_hits))))
+    if scaled_weight <= 0 and total_hits >= int(min_token_matches):
+        scaled_weight = 1
+
+    conflict_hits = _count_conflict_token_hits_worker(conflict_tokens, normalized_text_blob, text_terms)
+    penalty = min(scaled_weight, int(conflict_penalty) * conflict_hits)
+    final_weight = scaled_weight - penalty
+
+    trace = (
+        f"token_hits={total_hits}, source_hits=title:{title_hits}|description:{description_hits}|plugin_output:{plugin_output_hits}, "
+        f"weighted_hits={weighted_hits}, effective_weighted={effective_weighted:.2f}, conflict_hits={conflict_hits}, "
+        f"applied_weight={final_weight:+d}"
+    )
+    return True, final_weight, trace
+
+
 def _infer_exposure_worker(
     obs: Dict[str, Any],
     inference_cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
     score = 0
     evidence: List[str] = []
+    evidence_rule_ids: List[str] = []
     hit_tags = set()
 
     ip = (obs.get("ip") or "").strip()
@@ -204,11 +290,49 @@ def _infer_exposure_worker(
     criticality = str(obs.get("criticality") or "").strip().lower()
     ports_set = set(obs.get("open_ports", ()))
     finding_text_blob = str(obs.get("finding_text_blob") or "").strip().lower()
+    finding_title_blob = str(obs.get("finding_title_blob") or "").strip().lower()
+    finding_description_blob = str(obs.get("finding_description_blob") or "").strip().lower()
+    finding_plugin_output_blob = str(obs.get("finding_plugin_output_blob") or "").strip().lower()
     normalized_text_blob = _normalize_text_blob_worker(finding_text_blob)
+    normalized_title_blob = _normalize_text_blob_worker(finding_title_blob)
+    normalized_description_blob = _normalize_text_blob_worker(finding_description_blob)
+    normalized_plugin_output_blob = _normalize_text_blob_worker(finding_plugin_output_blob)
     text_terms = set(normalized_text_blob.split())
+    title_terms = set(normalized_title_blob.split())
+    description_terms = set(normalized_description_blob.split())
+    plugin_output_terms = set(normalized_plugin_output_blob.split())
 
     for rule in inference_cfg["rules"]:
         if not rule["enabled"]:
+            continue
+        if rule["predicate_name"] == "finding_text_contains_any":
+            matched, weighted_delta, trace = _evaluate_finding_text_rule_worker(
+                pred_tokens=tuple(rule["predicate_tokens"]),
+                normalized_text_blob=normalized_text_blob,
+                text_terms=text_terms,
+                normalized_title_blob=normalized_title_blob,
+                title_terms=title_terms,
+                normalized_description_blob=normalized_description_blob,
+                description_terms=description_terms,
+                normalized_plugin_output_blob=normalized_plugin_output_blob,
+                plugin_output_terms=plugin_output_terms,
+                min_token_matches=int(inference_cfg.get("finding_text_min_token_matches", 2)),
+                title_weight=int(inference_cfg.get("finding_text_title_weight", 3)),
+                description_weight=int(inference_cfg.get("finding_text_description_weight", 2)),
+                plugin_output_weight=int(inference_cfg.get("finding_text_plugin_output_weight", 1)),
+                max_weighted_hits=int(inference_cfg.get("finding_text_max_weighted_hits", 4)),
+                diminishing_factors=tuple(inference_cfg.get("finding_text_diminishing_factors", (1.0, 0.6, 0.4))),
+                conflict_tokens=tuple(inference_cfg.get("finding_text_conflict_tokens", ())),
+                conflict_penalty=int(inference_cfg.get("finding_text_conflict_penalty", 2)),
+                base_weight=int(rule["weight"]),
+            )
+            if not matched:
+                continue
+            score += int(weighted_delta)
+            hit_tags.add(rule["tag"])
+            evidence_rule_ids.append(str(rule["rule_id"]))
+            ev = rule["evidence"].strip() if rule["evidence"] else f"{rule['rule_id']} ({int(weighted_delta):+d})"
+            evidence.append(f"{ev} [{trace}]")
             continue
         if _predicate_matches_worker(
             rule["predicate_name"],
@@ -226,6 +350,7 @@ def _infer_exposure_worker(
         ):
             score += int(rule["weight"])
             hit_tags.add(rule["tag"])
+            evidence_rule_ids.append(str(rule["rule_id"]))
             ev = rule["evidence"].strip() if rule["evidence"] else f"{rule['rule_id']} ({int(rule['weight']):+d})"
             evidence.append(ev)
 
@@ -239,6 +364,7 @@ def _infer_exposure_worker(
         "externally_facing_inferred": externally,
         "public_service_ports_inferred": public_ports,
         "evidence": tuple(sorted(evidence)),
+        "evidence_rule_ids": tuple(sorted(set(evidence_rule_ids))),
     }
 
 

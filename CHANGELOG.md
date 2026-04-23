@@ -93,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Summary metrics now consume `Scoring@2.0` trace union flags and contributor metadata so overview counts, top-risk entries, and remediation priority buckets reflect aggregated CVE context rather than only finding-level booleans.
 - Output orchestration now threads `--csv-profile` through CSV export generation.
 - TopN process-pool worker ranking logic now mirrors sequential tie-break behavior for whole-of-CVEs contributor breadth signals, preserving deterministic ordering parity across execution paths.
+- TopN `finding_text` inference hardening: source-weighted token scoring (title/description/plugin_output with configurable weights), diminishing-return scaling on repeated token hits, bounded weighted cap, conflict-token penalty layer, and deterministic per-finding evidence traces; all knobs are configurable via `tn_triage` inference policy.
 - Regression coverage expanded for output-presentation workflows (`--csv-profile`, markdown report rendering, and CLI output flag matrix behavior).
 
 ### Performance
