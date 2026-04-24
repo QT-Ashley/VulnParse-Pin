@@ -13,6 +13,7 @@ import argparse
 import os
 from pathlib import Path
 from typing import Optional, Sequence, Union
+from urllib.parse import urlsplit
 
 from vulnparse_pin import __version__
 
@@ -92,6 +93,18 @@ def valid_nmap_adapter_file(path: PathLikeSimple) -> Path:
     return resolved
 
 
+def valid_https_url(value: str) -> str:
+    url = str(value).strip()
+    parts = urlsplit(url)
+    if parts.scheme.lower() != "https":
+        raise argparse.ArgumentTypeError("Webhook endpoint must use https.")
+    if not parts.netloc:
+        raise argparse.ArgumentTypeError("Webhook endpoint must include a host.")
+    if parts.username or parts.password:
+        raise argparse.ArgumentTypeError("Webhook endpoint must not embed credentials.")
+    return url
+
+
 def valid_log_level(level):
     levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     lvl = level.upper()
@@ -150,6 +163,13 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     output_group.add_argument("--output-md", "-oM", type=str, metavar="PATH", help="Generate executive summary Markdown report")
     output_group.add_argument("--output-md-technical", "-oMT", type=str, metavar="PATH", help="Generate detailed technical Markdown report")
     output_group.add_argument("--output-runmanifest", "-oRM", type=str, metavar="PATH", help="Generate run manifest JSON artifact with embedded decision ledger")
+    output_group.add_argument("--webhook-endpoint", type=valid_https_url, metavar="URL", help="Override configured webhook delivery target with a single HTTPS endpoint.")
+    output_group.add_argument(
+        "--webhook-oal-filter",
+        choices=["all", "P1", "P1b", "P2"],
+        metavar="LANE",
+        help="Override webhook OAL lane filter for configured or CLI-specified endpoints.",
+    )
     output_group.add_argument(
         "--runmanifest-mode",
         choices=["compact", "expanded"],
@@ -229,6 +249,9 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             parser.error(f"--verify-runmanifest: file does not exist or is not a file: {args.verify_runmanifest}")
         if not os.access(verify_path, os.R_OK):
             parser.error(f"--verify-runmanifest: file is not readable: {args.verify_runmanifest}")
+
+    if args.webhook_oal_filter and not (args.webhook_endpoint or args.file or args.demo):
+        parser.error("--webhook-oal-filter requires a normal scan execution context.")
 
     if args.output:
         output_dir = os.path.dirname(os.path.abspath(args.output)) or '.'

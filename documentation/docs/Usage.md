@@ -248,6 +248,47 @@ vpp -f <input_file> --output-csv out_audit.csv --csv-profile audit
 
 Note: non-default profiles require `--output-csv`.
 
+#### --webhook-endpoint
+
+- `--webhook-endpoint <HTTPS_URL>`: Send a signed webhook event for the run to a specific HTTPS endpoint. This is a one-off runtime override and does not require editing config files.
+
+```bash
+set VP_WEBHOOK_HMAC_KEY=replace_with_strong_random_secret
+vpp -f scan.nessus -o results.json --webhook-endpoint https://hooks.example.org/vpp
+```
+
+#### --webhook-oal-filter
+
+- `--webhook-oal-filter <all|P1|P1b|P2>`: Restrict webhook `top_findings` payload content to one Operational Action Lane. Use with `--webhook-endpoint`.
+
+```bash
+vpp -f scan.nessus -o results.json --webhook-endpoint https://hooks.example.org/vpp --webhook-oal-filter P1
+```
+
+#### Persistent webhook config (config.yaml)
+
+Use the `webhook` block in `src/vulnparse_pin/resources/config.yaml` for persistent endpoint delivery.
+
+```yaml
+webhook:
+  enabled: true
+  signing_key_env: VP_WEBHOOK_HMAC_KEY
+  key_id: primary
+  timeout_seconds: 5
+  connect_timeout_seconds: 3
+  read_timeout_seconds: 5
+  max_retries: 2
+  max_payload_bytes: 262144
+  replay_window_seconds: 300
+  allow_spool: true
+  spool_subdir: webhook_spool
+  endpoints:
+    - url: https://hooks.example.org/vpp
+      enabled: true
+      oal_filter: all
+      format: generic
+```
+
 #### --output-md
 
 - `--output-md [-oM] <md_file>`: This option allows you to specify a Markdown file where the output will be saved in Markdown format. This type of output is useful for generating human-readable reports for executives or stakeholders. Use it as follows:

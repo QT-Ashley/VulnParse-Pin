@@ -66,7 +66,9 @@ Delivery focus this quarter is balanced across:
 - [in progress] **More scanner support** (Qualys integrated; Nmap adapter path integrated; additional scanner connectors and parser-quality promotion work pending).
 - [in progress] **Expanded intelligence sources** (GHSA integrated with online/offline modes and cache hardening; additional external sources and source-confidence normalization pending).
 - [done] **TopN asset context tags in markdown reports** — project asset-level context labels (for example: externally-facing inferred, public-service-port inferred, criticality class, and concentration hints) into executive/technical asset mapping sections.
-- [planned] **Third-party integrations** (webhook, API, SIEM forwarding).
+- [done] **Webhook delivery integration** — HMAC-SHA256 signed scan-complete events over HTTPS with OAL lane filtering, spool fallback, full RunManifest ledger traceability, and `--webhook-endpoint` / `--webhook-oal-filter` CLI overrides.
+- [planned] **SIEM forwarding adapters** (Splunk HEC, Elasticsearch / OpenSearch index push, CEF syslog output).
+- [planned] **Notification channel adapters** (Slack, Microsoft Teams, and PagerDuty alert routing with severity-gated delivery policy).
 - [planned] **Advanced filtering and custom scoring/triage policies**.
 
 ## v1.3.0-1.5.0+
@@ -76,3 +78,7 @@ Delivery focus this quarter is balanced across:
 - Automated remediation recommendations
 - Machine learning-based exposure prediction
 - Extended enrichment ecosystem
+- REST API server mode: expose scan-trigger, status, and result-query endpoints for CI/CD pipeline integration
+- Ticketing system adapters: Jira and ServiceNow issue creation from OAL-filtered findings with deduplication and state-sync
+- Custom output adapter plugin interface: third-party format targets without patching core output orchestration
+- Webhook replay tooling: CLI command to re-deliver spooled payloads with signature refresh and configurable retry policy

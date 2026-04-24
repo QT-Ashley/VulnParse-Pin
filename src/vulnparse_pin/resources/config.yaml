@@ -63,3 +63,17 @@ nmap_ctx:
   port_tiebreak_enabled: true
   scoring_port_bonus: 0.0
 
+webhook:
+  enabled: false
+  signing_key_env: VP_WEBHOOK_HMAC_KEY
+  key_id: primary
+  timeout_seconds: 5
+  connect_timeout_seconds: 3
+  read_timeout_seconds: 5
+  max_retries: 2
+  max_payload_bytes: 262144
+  replay_window_seconds: 300
+  allow_spool: true
+  spool_subdir: webhook_spool
+  endpoints: []
+

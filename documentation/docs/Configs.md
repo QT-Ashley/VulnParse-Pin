@@ -30,6 +30,40 @@ Path layout is resolved by `AppPaths` (`src/vulnparse_pin/core/apppaths.py`).
 
 `config.yaml` controls feed cache policy, NVD feed policy, enrichment policy (including GHSA), Nmap context policy, and summary options.
 
+### Webhook controls
+
+`webhook` controls signed scan-complete event delivery over HTTPS.
+
+Canonical keys:
+
+- `enabled`
+- `signing_key_env`
+- `key_id`
+- `timeout_seconds`
+- `connect_timeout_seconds`
+- `read_timeout_seconds`
+- `max_retries`
+- `max_payload_bytes`
+- `replay_window_seconds`
+- `allow_spool`
+- `spool_subdir`
+- `endpoints[]` with `url`, `enabled`, `oal_filter`, `format`
+
+Validation and safety rules:
+
+- Endpoints must use `https://`.
+- Embedded credentials in endpoint URLs are rejected.
+- `timeout_seconds` must be greater than or equal to `max(connect_timeout_seconds, read_timeout_seconds)`.
+- When `enabled: true`, at least one endpoint must be enabled.
+- `oal_filter` values: `all`, `P1`, `P1b`, `P2`.
+
+Runtime notes:
+
+- Signature header uses HMAC-SHA256 with the secret from the env var named by `signing_key_env`.
+- Failures can spool payloads under `<output_dir>/<spool_subdir>/` when `allow_spool: true`.
+- CLI `--webhook-endpoint` enables one-off webhook delivery without editing config files.
+- CLI `--webhook-oal-filter` overrides lane filtering (`all`, `P1`, `P1b`, `P2`).
+
 ### Feed TTL controls
 
 - `feed_cache.defaults.ttl_hours`
@@ -216,6 +250,11 @@ GHSA enrichment:
 
 - `--ghsa [PATH|online]`: enable GHSA enrichment; bare flag = online mode, `--ghsa <path>` = offline advisory database directory
 - `--ghsa-budget <COUNT>`: override online prefetch CVE budget (online mode only, must be ≥ 1)
+
+Webhook delivery:
+
+- `--webhook-endpoint <HTTPS_URL>`: send signed webhook payloads to a specific endpoint for that run.
+- `--webhook-oal-filter <all|P1|P1b|P2>`: restrict webhook payload findings to a specific OAL lane.
 
 Cache and enrichment behavior:
 

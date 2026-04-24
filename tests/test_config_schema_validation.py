@@ -329,6 +329,115 @@ def test_global_config_schema_rejects_invalid_ghsa_budget():
         ConfigValidator._validate_schema(invalid, "config.schema.json", label="Global config")
 
 
+def test_global_config_schema_accepts_secure_webhook_block():
+    payloads = _load_default_payloads()
+    payloads = RawConfigPayloads(
+        global_config={
+            **payloads.global_config,
+            "webhook": {
+                "enabled": True,
+                "signing_key_env": "VP_WEBHOOK_HMAC_KEY",
+                "key_id": "primary",
+                "timeout_seconds": 5,
+                "connect_timeout_seconds": 3,
+                "read_timeout_seconds": 5,
+                "max_retries": 2,
+                "max_payload_bytes": 262144,
+                "replay_window_seconds": 300,
+                "allow_spool": True,
+                "spool_subdir": "webhook_spool",
+                "endpoints": [
+                    {
+                        "url": "https://hooks.example.internal/vpp",
+                        "enabled": True,
+                        "oal_filter": "P1",
+                        "format": "generic",
+                    }
+                ],
+            },
+        },
+        scoring_config=payloads.scoring_config,
+        topn_config=payloads.topn_config,
+    )
+    ctx = _DummyCtx()
+
+    result = ConfigValidator.validate(ctx, payloads)
+
+    assert result.ok is True
+
+
+def test_global_config_schema_rejects_insecure_webhook_endpoint_scheme():
+    payloads = _load_default_payloads()
+    payloads = RawConfigPayloads(
+        global_config={
+            **payloads.global_config,
+            "webhook": {
+                "enabled": True,
+                "signing_key_env": "VP_WEBHOOK_HMAC_KEY",
+                "key_id": "primary",
+                "timeout_seconds": 5,
+                "connect_timeout_seconds": 3,
+                "read_timeout_seconds": 5,
+                "max_retries": 2,
+                "max_payload_bytes": 262144,
+                "replay_window_seconds": 300,
+                "allow_spool": True,
+                "spool_subdir": "webhook_spool",
+                "endpoints": [
+                    {
+                        "url": "http://hooks.example.internal/vpp",
+                        "enabled": True,
+                        "oal_filter": "all",
+                        "format": "generic",
+                    }
+                ],
+            },
+        },
+        scoring_config=payloads.scoring_config,
+        topn_config=payloads.topn_config,
+    )
+    ctx = _DummyCtx()
+
+    with pytest.raises(RuntimeError, match="Webhook endpoint must use https"):
+        ConfigValidator.validate(ctx, payloads)
+
+
+def test_global_config_schema_rejects_enabled_webhook_without_enabled_endpoints():
+    payloads = _load_default_payloads()
+    payloads = RawConfigPayloads(
+        global_config={
+            **payloads.global_config,
+            "webhook": {
+                "enabled": True,
+                "signing_key_env": "VP_WEBHOOK_HMAC_KEY",
+                "key_id": "primary",
+                "timeout_seconds": 5,
+                "connect_timeout_seconds": 3,
+                "read_timeout_seconds": 5,
+                "max_retries": 2,
+                "max_payload_bytes": 262144,
+                "replay_window_seconds": 300,
+                "allow_spool": True,
+                "spool_subdir": "webhook_spool",
+                "endpoints": [
+                    {
+                        "url": "https://hooks.example.internal/vpp",
+                        "enabled": False,
+                        "oal_filter": "all",
+                        "format": "generic",
+                    }
+                ],
+            },
+        },
+        scoring_config=payloads.scoring_config,
+        topn_config=payloads.topn_config,
+    )
+    ctx = _DummyCtx()
+
+    with pytest.raises(RuntimeError, match="enabled but no enabled endpoints"):
+        ConfigValidator.validate(ctx, payloads)
+
+
 def test_safe_fallback_aci_rules_track_packaged_topn_defaults() -> None:
     payloads = _load_default_payloads()
     fallback = _safe_fallback_config()

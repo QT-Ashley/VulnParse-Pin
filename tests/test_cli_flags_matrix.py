@@ -35,6 +35,8 @@ CLI_FLAG_CASES: list[tuple[str, list[str]]] = [
     ("csv-profile-analyst", ["--output-csv", "out.csv", "--csv-profile", "analyst"]),
     ("output-md", ["--output-md", "summary.md"]),
     ("output-md-technical", ["--output-md-technical", "technical.md"]),
+    ("webhook-endpoint", ["--webhook-endpoint", "https://hooks.example.org/vpp"]),
+    ("webhook-oal-filter", ["--webhook-endpoint", "https://hooks.example.org/vpp", "--webhook-oal-filter", "P1"]),
     ("allow-large", ["--allow-large"]),
     ("no-csv-sanitize-with-output", ["--output-csv", "out.csv", "--no-csv-sanitize"]),
     ("forbid-symlinks-read", ["--forbid-symlinks_read"]),
@@ -188,6 +190,16 @@ def test_ghsa_budget_requires_online_mode(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_nmap_adapter_requires_xml_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     argv = _build_base_argv(tmp_path) + _materialize_paths(tmp_path, ["--nmap-ctx", "nmap.txt"])
+    monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        get_args(argv)
+
+    assert excinfo.value.code == 2
+
+
+def test_webhook_endpoint_requires_https(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    argv = _build_base_argv(tmp_path) + ["--webhook-endpoint", "http://hooks.example.org/vpp"]
     monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
 
     with pytest.raises(SystemExit) as excinfo:

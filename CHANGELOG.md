@@ -63,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RunManifest pass-summary metric alignment for whole-of-CVEs semantics: Scoring, TopN, and Summary now surface aggregated-context counters needed for audit and operator traceability.
 - Output interpretation documentation for analyst workflows, including JSON/CSV/Markdown/RunManifest reading order and practical triage guidance.
 
+- HMAC-SHA256 signed webhook delivery (`utils/webhook_delivery.py`): scan-complete events are POSTed to one or more configured HTTPS endpoints with `X-VPP-Signature`, `X-VPP-Timestamp`, `X-VPP-Nonce`, `X-VPP-Key-Id`, and `X-VPP-Event` headers; redirects are blocked.
+- Webhook config block in `config.schema.json` and `resources/config.yaml`: 13 validated fields including `signing_key_env`, `key_id`, connect/read/total timeouts, `max_retries`, `max_payload_bytes`, `replay_window_seconds`, `allow_spool`, `spool_subdir`, and a typed `endpoints` array (max 32) each with `url`, `oal_filter`, and `format`.
+- `WebhookEndpointConfig` and `WebhookRuntimeConfig` frozen dataclasses added to the domain model; `Services` carries a `webhook_config` field populated at bootstrap.
+- Semantic validation for webhook config in `ConfigValidator._validate_webhook_config()`: enforces HTTPS-only URLs, no embedded credentials, total timeout ≥ max(connect, read), and at least one enabled endpoint when `enabled: true`.
+- `--webhook-endpoint URL` CLI flag for one-off HTTPS delivery without a config file change; `--webhook-oal-filter LANE` restricts payload to a single Operational Action Lane (`all`, `P1`, `P1b`, `P2`).
+- OAL lane filtering in webhook payload construction: `top_findings` are filtered to the configured lane before serialisation; `oal_filter_applied` field in the payload body records which lane was active.
+- Spool fallback (`webhook_spool/webhook_<ts>_<nonce>.json`) written when HTTP POST fails or raises an exception, so no event is silently dropped.
+- Six new `DecisionReasonCodes` constants (`WEBHOOK_EMIT_STARTED`, `WEBHOOK_EMIT_SUCCEEDED`, `WEBHOOK_EMIT_FAILED`, `WEBHOOK_EMIT_SKIPPED_DISABLED`, `WEBHOOK_EMIT_SKIPPED_POLICY`, `WEBHOOK_EMIT_SPOOLED_FOR_RETRY`) recorded via `LedgerService.append_event()` for full RunManifest traceability.
+- Webhook emission called in `run_output_and_summary()` before RunManifest snapshot, guaranteeing all delivery events appear in the final audit trail.
+
 ### Changed
 
 - TopN now explicitly requires `ACI@1.0`; when ACI output is missing, TopN emits a soft no-op artifact with dependency-aware status/error metadata and decision-ledger evidence.

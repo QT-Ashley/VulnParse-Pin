@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from importlib import resources
+from urllib.parse import urlsplit
 from typing import TYPE_CHECKING
 
 from jsonschema import validators
@@ -48,6 +49,7 @@ class ConfigValidator:
         ConfigValidator._validate_schema(payloads.global_config, "config.schema.json", label="Global config")
         ConfigValidator._validate_schema(payloads.scoring_config, "scoring.schema.json", label="Scoring config")
         ConfigValidator._validate_schema(payloads.topn_config, "topN.schema.json", label="TopN config")
+        ConfigValidator._validate_webhook_config(payloads.global_config)
 
         warnings: list[str] = []
         global_version = payloads.global_config.get("version")
@@ -90,3 +92,37 @@ class ConfigValidator:
         except JsonSchemaValidationError as exc:
             path = "/".join(str(part) for part in exc.path) if exc.path else "<root>"
             raise RuntimeError(f"{label} schema validation failed at {path}: {exc.message}") from exc
+
+    @staticmethod
+    def _validate_webhook_config(global_config: dict) -> None:
+        webhook_cfg = global_config.get("webhook")
+        if webhook_cfg is None:
+            return
+        if not isinstance(webhook_cfg, dict):
+            raise RuntimeError("Global config webhook section must be an object.")
+
+        endpoints = webhook_cfg.get("endpoints", [])
+        if not isinstance(endpoints, list):
+            raise RuntimeError("Global config webhook endpoints must be a list.")
+
+        enabled = bool(webhook_cfg.get("enabled", False))
+        if enabled and not any(bool(endpoint.get("enabled", False)) for endpoint in endpoints if isinstance(endpoint, dict)):
+            raise RuntimeError("Webhook config is enabled but no enabled endpoints are configured.")
+
+        connect_timeout = int(webhook_cfg.get("connect_timeout_seconds", 0))
+        read_timeout = int(webhook_cfg.get("read_timeout_seconds", 0))
+        total_timeout = int(webhook_cfg.get("timeout_seconds", 0))
+        if total_timeout < max(connect_timeout, read_timeout):
+            raise RuntimeError("Webhook timeout_seconds must be >= connect_timeout_seconds and read_timeout_seconds.")
+
+        for endpoint in endpoints:
+            if not isinstance(endpoint, dict):
+                raise RuntimeError("Webhook endpoints must contain only objects.")
+            url = str(endpoint.get("url", "")).strip()
+            parts = urlsplit(url)
+            if parts.scheme.lower() != "https":
+                raise RuntimeError(f"Webhook endpoint must use https: {url}")
+            if not parts.netloc:
+                raise RuntimeError(f"Webhook endpoint must include a host: {url}")
+            if parts.username or parts.password:
+                raise RuntimeError(f"Webhook endpoint must not embed credentials: {url}")

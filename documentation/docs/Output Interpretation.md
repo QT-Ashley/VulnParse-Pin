@@ -12,6 +12,31 @@ VulnParse-Pin can emit:
 4. Technical markdown (`--output-md-technical`): detailed tables for practitioners.
 5. RunManifest (`--output-runmanifest`): verifiable audit artifact for provenance and integrity.
 
+## Webhook Output Interpretation
+
+Webhook delivery is an output-side integration that emits a compact signed event when configured.
+
+Primary operator checks:
+
+1. Confirm headers expected by your receiver: `X-VPP-Signature`, `X-VPP-Timestamp`, `X-VPP-Nonce`, `X-VPP-Key-Id`, `X-VPP-Event`.
+2. Validate `oal_filter_applied` and `top_findings` shape in the posted body.
+3. Confirm delivery status in RunManifest decision ledger reason codes.
+
+Reason-code outcomes in RunManifest:
+
+1. `WEBHOOK_EMIT_STARTED`
+2. `WEBHOOK_EMIT_SUCCEEDED`
+3. `WEBHOOK_EMIT_FAILED`
+4. `WEBHOOK_EMIT_SKIPPED_DISABLED`
+5. `WEBHOOK_EMIT_SKIPPED_POLICY`
+6. `WEBHOOK_EMIT_SPOOLED_FOR_RETRY`
+
+Spool fallback behavior:
+
+- If delivery fails and spooling is enabled, payloads are written under `<output_dir>/<spool_subdir>/`.
+- Default subdirectory is `webhook_spool`.
+- Files follow `webhook_<timestamp>_<nonce>.json` naming for replay-friendly handling.
+
 ## JSON Structure: What to Read First
 
 High-value sections for triage:

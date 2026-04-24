@@ -371,6 +371,119 @@
           "maximum": 5.0
         }
       }
+    },
+    "webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "signing_key_env",
+        "key_id",
+        "timeout_seconds",
+        "connect_timeout_seconds",
+        "read_timeout_seconds",
+        "max_retries",
+        "max_payload_bytes",
+        "replay_window_seconds",
+        "allow_spool",
+        "spool_subdir",
+        "endpoints"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "signing_key_env": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "connect_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "read_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "max_payload_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 10485760
+        },
+        "replay_window_seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 86400
+        },
+        "allow_spool": {
+          "type": "boolean"
+        },
+        "spool_subdir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "endpoints": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url",
+              "enabled",
+              "oal_filter",
+              "format"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 12,
+                "maxLength": 2048
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "oal_filter": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "P1",
+                  "P1b",
+                  "P2"
+                ]
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "generic"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

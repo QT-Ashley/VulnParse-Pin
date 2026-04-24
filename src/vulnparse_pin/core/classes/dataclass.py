@@ -174,6 +174,31 @@ class Services:
     ledger: Optional["LedgerService"] = None
     runmanifest_mode: str = "compact"
     nmap_ctx_config: Optional[dict] = None
+    webhook_config: Optional["WebhookRuntimeConfig"] = None
+
+
+@dataclass(frozen=True)
+class WebhookEndpointConfig:
+    url: str
+    enabled: bool = True
+    oal_filter: str = "all"
+    format: str = "generic"
+
+
+@dataclass(frozen=True)
+class WebhookRuntimeConfig:
+    enabled: bool = False
+    signing_key_env: str = "VP_WEBHOOK_HMAC_KEY"
+    key_id: str = "primary"
+    timeout_seconds: int = 5
+    connect_timeout_seconds: int = 3
+    read_timeout_seconds: int = 5
+    max_retries: int = 2
+    max_payload_bytes: int = 262144
+    replay_window_seconds: int = 300
+    allow_spool: bool = True
+    spool_subdir: str = "webhook_spool"
+    endpoints: Tuple[WebhookEndpointConfig, ...] = field(default_factory=tuple)
 
 @dataclass(frozen = True)
 class RunContext:

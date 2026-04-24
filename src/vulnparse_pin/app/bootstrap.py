@@ -17,7 +17,7 @@ from typing import Any
 
 from vulnparse_pin import __version__
 from vulnparse_pin.core.apppaths import AppPaths, ensure_user_configs, load_config
-from vulnparse_pin.core.classes.dataclass import FeedSpec, RunContext, Services
+from vulnparse_pin.core.classes.dataclass import FeedSpec, RunContext, Services, WebhookEndpointConfig, WebhookRuntimeConfig
 from vulnparse_pin.core.classes.execution_manifest import LedgerService
 from vulnparse_pin.core.classes.pass_classes import PassRunner
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
@@ -58,6 +58,54 @@ class RuntimeBootstrapState:
     detector: SchemaDetector
     passesList: list[Any]
     passOrchestrator: PassRunner
+
+
+def _build_webhook_runtime_config(cfg_yaml: dict, args: Any) -> WebhookRuntimeConfig:
+    webhook_cfg = cfg_yaml.get("webhook", {}) if isinstance(cfg_yaml, dict) else {}
+    if not isinstance(webhook_cfg, dict):
+        webhook_cfg = {}
+
+    filter_override = getattr(args, "webhook_oal_filter", None)
+    cli_endpoint = getattr(args, "webhook_endpoint", None)
+
+    endpoints: list[WebhookEndpointConfig] = []
+    if cli_endpoint:
+        endpoints.append(
+            WebhookEndpointConfig(
+                url=str(cli_endpoint),
+                enabled=True,
+                oal_filter=str(filter_override or "all"),
+                format="generic",
+            )
+        )
+    else:
+        for raw_endpoint in webhook_cfg.get("endpoints", []):
+            if not isinstance(raw_endpoint, dict):
+                continue
+            endpoints.append(
+                WebhookEndpointConfig(
+                    url=str(raw_endpoint.get("url", "")).strip(),
+                    enabled=bool(raw_endpoint.get("enabled", False)),
+                    oal_filter=str(filter_override or raw_endpoint.get("oal_filter", "all")),
+                    format=str(raw_endpoint.get("format", "generic")),
+                )
+            )
+
+    enabled = bool(cli_endpoint) or bool(webhook_cfg.get("enabled", False))
+    return WebhookRuntimeConfig(
+        enabled=enabled,
+        signing_key_env=str(webhook_cfg.get("signing_key_env", "VP_WEBHOOK_HMAC_KEY")),
+        key_id=str(webhook_cfg.get("key_id", "primary")),
+        timeout_seconds=int(webhook_cfg.get("timeout_seconds", 5)),
+        connect_timeout_seconds=int(webhook_cfg.get("connect_timeout_seconds", 3)),
+        read_timeout_seconds=int(webhook_cfg.get("read_timeout_seconds", 5)),
+        max_retries=int(webhook_cfg.get("max_retries", 2)),
+        max_payload_bytes=int(webhook_cfg.get("max_payload_bytes", 262144)),
+        replay_window_seconds=int(webhook_cfg.get("replay_window_seconds", 300)),
+        allow_spool=bool(webhook_cfg.get("allow_spool", True)),
+        spool_subdir=str(webhook_cfg.get("spool_subdir", "webhook_spool")),
+        endpoints=tuple(endpoints),
+    )
 
 
 def initialize_runtime(args) -> RuntimeBootstrapState:
@@ -157,6 +205,7 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
         ledger=LedgerService(),
         runmanifest_mode=getattr(args, "runmanifest_mode", "compact"),
         nmap_ctx_config=nmap_ctx_cfg,
+        webhook_config=_build_webhook_runtime_config(cfg_yaml, args),
     )
     ctx = RunContext(paths=paths, pfh=pfh, logger=logger, services=services)
 
