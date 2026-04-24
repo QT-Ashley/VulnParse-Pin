@@ -137,6 +137,36 @@ def sample_qualys_xml_no_ip(tmp_path):
     return file_path
 
 
+@pytest.fixture
+def sample_qualys_xml_variant_tags(tmp_path):
+    """Create a Qualys-like XML variant with alternate tag names and root."""
+    xml_content = dedent("""
+    <?xml version="1.0" encoding="UTF-8"?>
+    <SCAN_REPORT id="variant_scan">
+        <SCAN_DATE>2026-04-13T10:00:00Z</SCAN_DATE>
+        <HOST>
+            <IP_ADDRESS>172.16.1.25</IP_ADDRESS>
+            <VULNERABILITY>
+                <VULN_ID>44444</VULN_ID>
+                <NAME>Variant Tag Vulnerability</NAME>
+                <DETAILS>Variant details text</DETAILS>
+                <SERVICE_PORT>udp/53</SERVICE_PORT>
+                <THREAT>4</THREAT>
+                <CVSS3_BASE>8.0</CVSS3_BASE>
+                <CVSS3_VECTOR>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L</CVSS3_VECTOR>
+                <CVES>CVE-2025-11111, CVE-2025-22222</CVES>
+                <EVIDENCE>Packet capture evidence</EVIDENCE>
+                <REMEDIATION>Apply latest DNS patch</REMEDIATION>
+            </VULNERABILITY>
+        </HOST>
+    </SCAN_REPORT>
+    """).strip()
+
+    file_path = tmp_path / "qualys_variant.xml"
+    file_path.write_text(xml_content, encoding="utf-8")
+    return file_path
+
+
 # Detection tests
 class TestQualysDetection:
     def test_detect_qualys_xml_valid(self, sample_qualys_xml_file):
@@ -175,6 +205,12 @@ class TestQualysDetection:
         
         confidence, evidence = QualysXMLParser.detect_file(xml_file)
         assert confidence == 0.0
+
+    def test_detect_qualys_xml_variant_root(self, sample_qualys_xml_variant_tags):
+        """Should recognize SCAN_REPORT root and variant tag layout."""
+        confidence, evidence = QualysXMLParser.detect_file(sample_qualys_xml_variant_tags)
+        assert confidence >= 0.7
+        assert any(k == "root_tag" for k, _ in evidence)
 
 
 # Parsing tests
@@ -246,6 +282,27 @@ class TestQualysParsing:
         
         # All assets without IP should be dropped
         assert len(scan.assets) == 0
+
+    def test_parse_qualys_xml_variant_tags(self, ctx, sample_qualys_xml_variant_tags):
+        """Should parse schema variants with alternate root and field names."""
+        parser = QualysXMLParser(ctx, filepath=str(sample_qualys_xml_variant_tags))
+        scan = parser.parse()
+
+        assert len(scan.assets) == 1
+        asset = scan.assets[0]
+        assert asset.ip_address == "172.16.1.25"
+        assert len(asset.findings) == 1
+
+        finding = asset.findings[0]
+        assert finding.vuln_id == "44444"
+        assert finding.title == "Variant Tag Vulnerability"
+        assert finding.affected_port == 53
+        assert finding.protocol == "udp"
+        assert finding.severity == "High"
+        assert "CVE-2025-11111" in finding.cves
+        assert finding.source_format == "qualys-xml"
+        assert finding.fidelity_tier in {"full", "partial", "minimal"}
+        assert isinstance(finding.confidence_reasons, list)
 
     def test_parse_requires_filepath(self, ctx):
         """Should raise error if filepath is None."""

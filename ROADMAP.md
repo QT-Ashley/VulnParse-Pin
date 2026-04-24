@@ -63,13 +63,21 @@ Delivery focus this quarter is balanced across:
 - [done] **ACI phrase-quality benchmark harness** — curated positive/negative phrase benchmark cases added to detect inference drift and guard against regression in semantic precision.
 - [done] **Triage policy operationalization (config-backed)** — `triage_policy` controls added to TopN config schema/semantics and surfaced in markdown mapping via per-finding policy lanes.
 - [in progress] **Decision explainability graph and provenance query tooling** (built on RunManifest + DecisionLedger).
-- [in progress] **More scanner support** (Qualys integrated; Nmap adapter path integrated; additional scanner connectors and parser-quality promotion work pending).
+- [done] **Resilient ingestion guardrails for constrained scanner exports** — minimum-signal contract, deterministic ingestion confidence tiers, and strict/min-confidence normalization gates (`--strict-ingestion`, `--allow-degraded-input`, `--min-ingestion-confidence`, `--show-ingestion-summary`).
+- [done] **CSV parser hardening for Nessus + Qualys** — delimiter sniffing, size caps, malformed-row skipping, schema-variant header aliases, and ingestion metadata propagation.
+- [done] **Ingestion decision-ledger coverage** — RunManifest now captures ingestion rejection and row-drop/skipped-malformed decision events for auditability.
+- [in progress] **More scanner support** (Qualys CSV integrated; Nmap adapter path integrated; additional scanner connectors and parser-quality promotion work pending).
 - [in progress] **Expanded intelligence sources** (GHSA integrated with online/offline modes and cache hardening; additional external sources and source-confidence normalization pending).
 - [done] **TopN asset context tags in markdown reports** — project asset-level context labels (for example: externally-facing inferred, public-service-port inferred, criticality class, and concentration hints) into executive/technical asset mapping sections.
 - [done] **Webhook delivery integration** — HMAC-SHA256 signed scan-complete events over HTTPS with OAL lane filtering, spool fallback, full RunManifest ledger traceability, and `--webhook-endpoint` / `--webhook-oal-filter` CLI overrides.
 - [planned] **SIEM forwarding adapters** (Splunk HEC, Elasticsearch / OpenSearch index push, CEF syslog output).
 - [planned] **Notification channel adapters** (Slack, Microsoft Teams, and PagerDuty alert routing with severity-gated delivery policy).
 - [planned] **Advanced filtering and custom scoring/triage policies**.
+
+### Release validation caveat (v1.2.0 hardening)
+
+- Nessus and Qualys parser hardening in this cycle was validated through targeted synthetic/adversarial fixtures and public-format references.
+- A newly bundled Nessus sample and any bundled Qualys sample are deferred; release is shipping with documented parser guardrails and regression coverage instead.
 
 ## v1.3.0-1.5.0+
 

@@ -191,6 +191,10 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     output_group.add_argument("--overlay-mode", choices=["flatten", "namespace"], default="flatten", help="Overlay mode used with --presentation. "
                               "'flatten' injects scoring fields at finding root; "
                               "'namespace' stores scoring under finding.derived.")
+    gen_group.add_argument("--allow-degraded-input", action=argparse.BooleanOptionalAction, default=True, help="Allow partial/minimal ingestion findings to continue through pipeline (default behavior).")
+    gen_group.add_argument("--strict-ingestion", action="store_true", default=False, help="Fail normalization if degraded ingestion findings are present.")
+    gen_group.add_argument("--min-ingestion-confidence", type=float, default=0.0, metavar="0.0-1.0", help="Reject findings whose ingestion confidence falls below this threshold.")
+    gen_group.add_argument("--show-ingestion-summary", action="store_true", default=False, help="Print ingestion quality summary after parser normalization.")
 
     args = parser.parse_args(argv)
 
@@ -260,6 +264,12 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     if args.overlay_mode != "flatten" and (not args.presentation):
         parser.error("--overlay-mode requires --presentation")
+
+    if args.min_ingestion_confidence < 0.0 or args.min_ingestion_confidence > 1.0:
+        parser.error("--min-ingestion-confidence must be between 0.0 and 1.0")
+
+    if args.strict_ingestion:
+        args.allow_degraded_input = False
 
     if (not args.output_csv) and args.no_csv_sanitize:
         parser.error("[Security Warning] --no-csv-sanitize requires --output-csv")

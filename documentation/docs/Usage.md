@@ -210,6 +210,43 @@ vpp -f <input_file> -o <output_file> --allow-regen
 vpp -f <input_file> -o <output_file> --no-nvd
 ```
 
+### Ingestion Quality Options
+
+Use these flags to control how strictly VulnParse-Pin accepts degraded parser input (for example constrained CSV exports):
+
+#### --allow-degraded-input / --no-allow-degraded-input
+
+- `--allow-degraded-input` (default) allows degraded findings to pass normalization.
+- `--no-allow-degraded-input` rejects runs that contain degraded findings.
+
+```bash
+vpp -f <input_file> -o <output_file> --no-allow-degraded-input
+```
+
+#### --strict-ingestion
+
+- `--strict-ingestion`: strict gate that rejects any degraded findings. This flag overrides `--allow-degraded-input`.
+
+```bash
+vpp -f <input_file> -o <output_file> --strict-ingestion
+```
+
+#### --min-ingestion-confidence
+
+- `--min-ingestion-confidence <0.0-1.0>`: reject the run if any finding's ingestion confidence is below the threshold.
+
+```bash
+vpp -f <input_file> -o <output_file> --min-ingestion-confidence 0.60
+```
+
+#### --show-ingestion-summary
+
+- `--show-ingestion-summary`: print ingestion quality summary metrics (average confidence, degraded counts, fidelity distribution).
+
+```bash
+vpp -f <input_file> -o <output_file> --show-ingestion-summary
+```
+
 ### Output Options
 
 #### --output

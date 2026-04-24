@@ -5,6 +5,8 @@ from .openvasXML_parser import OpenVASXMLParser
 from .nessusXML_parser import NessusXMLParser
 from .qualys_parser import QualysXMLParser
 from .nmap_parser import NmapXMLParser
+from .nessus_csv_parser import NessusCSVParser
+from .qualys_csv_parser import QualysCSVParser
 
 PARSER_SPECS = [
     ParserSpec(name="openvas-xml", parser_cls=OpenVASXMLParser,
@@ -31,4 +33,12 @@ PARSER_SPECS = [
                formats=("json", "nessus"), scanner="nessus", priority=20,
                stability="experimental", deprecated=True,
                deprecation_notice="JSON parser paths are experimental and may be removed in a future release."),
+
+    ParserSpec(name="nessus-csv", parser_cls=NessusCSVParser,
+               formats=("csv",), scanner="nessus", priority=18,
+               stability="stable"),
+
+    ParserSpec(name="qualys-csv", parser_cls=QualysCSVParser,
+               formats=("csv",), scanner="qualys", priority=16,
+               stability="stable"),
 ]

@@ -49,6 +49,10 @@ CLI_FLAG_CASES: list[tuple[str, list[str]]] = [
     ("portable", ["--portable"]),
     ("presentation", ["--presentation"]),
     ("overlay-mode-namespace", ["--presentation", "--overlay-mode", "namespace"]),
+    ("strict-ingestion", ["--strict-ingestion"]),
+    ("no-allow-degraded-input", ["--no-allow-degraded-input"]),
+    ("show-ingestion-summary", ["--show-ingestion-summary"]),
+    ("min-ingestion-confidence", ["--min-ingestion-confidence", "0.65"]),
 ]
 
 
@@ -190,6 +194,16 @@ def test_ghsa_budget_requires_online_mode(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_nmap_adapter_requires_xml_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     argv = _build_base_argv(tmp_path) + _materialize_paths(tmp_path, ["--nmap-ctx", "nmap.txt"])
+    monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        get_args(argv)
+
+    assert excinfo.value.code == 2
+
+
+def test_min_ingestion_confidence_must_be_between_zero_and_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    argv = _build_base_argv(tmp_path) + ["--min-ingestion-confidence", "1.2"]
     monkeypatch.setattr(sys, "argv", ["vulnparse-pin"])
 
     with pytest.raises(SystemExit) as excinfo:

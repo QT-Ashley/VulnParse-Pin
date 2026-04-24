@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GHSA online lookup budget override via CLI (`--ghsa-budget`) with config default support through `enrichment.ghsa_online_prefetch_budget`.
 - GHSA GitHub token env configuration (`enrichment.ghsa_token_env`) now defaults to `VP_GHSA_TK` with fallback to `GITHUB_TOKEN` for authenticated advisory API sessions.
 - Qualys parser integration (`qualys_parser.py`) with detector wiring and regression coverage in `test_qualys_parser.py`.
+- Qualys XML parser guardrails and schema-variant support upgrades: root/tag aliases (`SCAN`/`SCAN_REPORT`, `ASSET`/`HOST`, `VULN`/`VULNERABILITY`), defensive size/value bounds, and broader CVSS/CVE field extraction compatibility.
+- New Qualys CSV parser (`qualys_csv_parser.py`) with detector registration, schema-variant header aliases, delimiter sniffing, malformed-row skipping, and ingestion metadata propagation.
+- Ingestion quality controls on normalization path: `--allow-degraded-input` (bool optional), `--strict-ingestion`, `--min-ingestion-confidence`, and `--show-ingestion-summary`.
+- Ingestion metadata fields on findings are now first-class output contract elements (`source_format`, `fidelity_tier`, `missing_fields`, `degraded_input`, `ingestion_confidence`, `confidence_reasons`) with schema and CSV coverage.
+- RunManifest decision-ledger ingestion events for parser row quality and ingestion gate outcomes (dropped rows, malformed rows skipped, strict-mode rejection, min-confidence threshold rejection).
 - Nmap parser scaffold (`nmap_parser.py`) added as an experimental foundation path for future enrichment/context signals.
 - GHSA enrichment metadata on findings (`enrichment_sources`, `confidence`, `confidence_evidence`) with schema coverage updates.
 - Global packaged enrichment config support for GHSA source selection and confidence policy tuning (`resources/config.yaml` + config schema).
@@ -83,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TopN config model now includes `triage_policy` controls for operational lane policy (`P1`/`P1b`/`P2`) with schema + semantic validation and packaged defaults in `tn_triage.json`.
 - Markdown ACI mapping tables now render policy-lane classification per finding (config-backed), so analyst handoff includes explicit lane context alongside confidence and chain signals.
 - Markdown ACI asset mapping now includes TopN-derived asset context tags (for example externally-facing inference, public-service-port inference, exposure confidence, criticality, and concentration hints).
+- Default JSON output now suppresses presentation-only score overlay fields unless `--presentation` is enabled, while preserving derived scoring pass artifacts for auditability.
 
 - Security hardening stream completed for feed/download surfaces: decompression size caps, HTTPS-only feed override handling, and response-size guardrails for external threat-intel fetch paths.
 - PFH hardening and reliability updates landed, including chmod error-path handling and tighter policy enforcement behavior under protected write/read flows.
@@ -127,6 +133,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - GHSA SQLite signature write path now matches PFH open/write API contract, preventing cache-init disablement under strict handler validation.
 - GHSA test context fixture now roots cache paths under pytest temp roots, preventing false PFH root-policy failures during test runs.
+- Defensive CSV parsing bug fix in Nessus CSV path: row iteration now stays inside file-handle context to avoid closed-file runtime errors under malformed input handling.
+
+### Notes
+
+- Release hardening completed without adding a newly bundled Nessus sample or a bundled Qualys sample artifact. Validation is based on targeted synthetic/adversarial fixtures, focused parser regression suites, and public-format references.
 
 ### Deferred
 

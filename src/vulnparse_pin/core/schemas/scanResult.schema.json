@@ -277,6 +277,39 @@
             "type": "integer"
           }
         },
+        "source_format": {
+          "type": ["string", "null"],
+          "description": "Parser/source format identifier for ingestion quality tracking"
+        },
+        "fidelity_tier": {
+          "type": ["string", "null"],
+          "enum": ["full", "partial", "minimal", null],
+          "description": "Ingestion fidelity tier based on scanner export richness"
+        },
+        "missing_fields": {
+          "type": ["array", "null"],
+          "description": "Missing optional scanner fields detected during normalization",
+          "items": {
+            "type": "string"
+          }
+        },
+        "degraded_input": {
+          "type": ["boolean", "null"],
+          "description": "True when finding was normalized from partial/minimal scanner signal"
+        },
+        "ingestion_confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence score for ingestion quality and field completeness (0-1)"
+        },
+        "confidence_reasons": {
+          "type": ["array", "null"],
+          "description": "Deterministic reasons used to derive ingestion confidence",
+          "items": {
+            "type": "string"
+          }
+        },
         "raw_risk_score": {
           "type": ["number", "null"],
           "description": "Initial risk score calculated by scoring pass before adjustments",

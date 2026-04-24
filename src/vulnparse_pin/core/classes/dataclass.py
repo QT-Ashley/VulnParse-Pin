@@ -57,6 +57,12 @@ class Finding:
     enrichment_sources: List[str] = field(default_factory=list)
     confidence: int = 0
     confidence_evidence: Dict[str, int] = field(default_factory=dict)
+    source_format: Optional[str] = None
+    fidelity_tier: Optional[str] = None
+    missing_fields: List[str] = field(default_factory=list)
+    degraded_input: bool = False
+    ingestion_confidence: Optional[float] = None
+    confidence_reasons: List[str] = field(default_factory=list)
     asset_id: Optional[str] = None
 
 @dataclass

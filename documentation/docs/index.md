@@ -9,9 +9,6 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 - [Upgrade and Migration](Upgrade%20and%20Migration.md)
 - [Troubleshooting](Troubleshooting.md)
 - [Output Interpretation](Output%20Interpretation.md)
-- [Upgrade and Migration](Upgrade%20and%20Migration.md)
-- [Troubleshooting](Troubleshooting.md)
-- [Output Interpretation](Output%20Interpretation.md)
 - [RunManifest Overview](RunManifest.md)
 
 ## Product and strategy
@@ -20,16 +17,11 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 - [Mission Statement](Mission%20Statement.md)
 - [CVSS vs VulnParse Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)
 - [Value Proposition One Pager](Value_Proposition_One_Pager.md)
-- [CVSS vs VulnParse Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)
-- [Value Proposition One Pager](Value_Proposition_One_Pager.md)
 - [Licensing](Licensing.md)
 
 ## Technical internals
 
 - [Architecture](Architecture.md)
-- [Extension Playbooks](Extension%20Playbooks.md)
-- [Enrichment Seam Contract](Enrichment%20Seam%20Contract.md)
-- [Config Seam Contract](Config%20Seam%20Contract.md)
 - [Extension Playbooks](Extension%20Playbooks.md)
 - [Enrichment Seam Contract](Enrichment%20Seam%20Contract.md)
 - [Config Seam Contract](Config%20Seam%20Contract.md)

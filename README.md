@@ -117,7 +117,7 @@ VulnParse-Pin:
 
 - Produces explainable scoring artifacts so analysts can **defend** remediation decisions.
 
-- Works with existing scanner workflows (currently Nessus and OpenVAS), no platform lock-in.
+- Works with existing scanner workflows (Nessus and OpenVAS XML, plus resilient Nessus/Qualys CSV ingestion paths), no platform lock-in.
 
 - Secure-by-design:
   - No shell execution or unsafe deserialization
@@ -141,7 +141,7 @@ VulnParse-Pin:
 
 ## Where It Fits
 
-1. Run vulnerability scans as usual with your existing tools (Nessus/OpenVAS supported currently, more coming).
+1. Run vulnerability scans as usual with your existing tools (Nessus/OpenVAS XML supported, plus Nessus/Qualys CSV constrained-export ingestion).
 2. **Export** results in supported formats.
 3. Use VulnParse-Pin to ***ingest, enrich, and prioritize*** findings based on real-world risk signals and configurable policies.
 4. **Review** the prioritized outputs for triage and remediation planning.

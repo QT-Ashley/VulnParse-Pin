@@ -69,6 +69,15 @@ The embedded `decision_ledger` stores append-only entries with a hash chain:
 
 This provides tamper evidence at the event level rather than only at the file level.
 
+In current ingestion-hardening workflows, the ledger also records parser and normalization quality gates, including:
+
+- CSV row drops for minimum-signal contract failures.
+- CSV malformed-row skips for schema-shape violations.
+- Strict-ingestion rejections.
+- Minimum ingestion-confidence threshold rejections.
+
+This makes degraded-input handling auditable in the same artifact as scoring and TopN decisions.
+
 ## Output Modes
 
 RunManifest supports two detail levels:

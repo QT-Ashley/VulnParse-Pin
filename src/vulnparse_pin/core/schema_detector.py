@@ -130,6 +130,10 @@ class SchemaDetector:
             return "json"
         if head.startswith(b"<"):
             return "xml"
+        has_row_break = (b"\n" in head or b"\r" in head)
+        has_csv_delim = any(d in head for d in (b",", b";", b"\t", b"|"))
+        if has_row_break and has_csv_delim:
+            return "csv"
         return "unknown"
 
     def _call_parser_detect_file(self, ctx, spec: ParserSpec, path: Path, sniff: str) -> DetectionResult:

@@ -48,6 +48,21 @@ These parsers have been tested extensively with real-world fixtures and are reco
 
 The JSON parsers are marked experimental and are not the default path for production workflows. Their behavior and output format may evolve in future releases, and should not be relied upon for long-term integrations. Use XML formats where possible for v1.0.
 
+### Resilient CSV ingestion paths (v1.2 hardening)
+
+- `NessusCSVParser` (`src/vulnparse_pin/parsers/nessus_csv_parser.py`)
+- `QualysCSVParser` (`src/vulnparse_pin/parsers/qualys_csv_parser.py`)
+
+These parsers are intended for constrained exports where rich XML is not available. They enforce defensive contracts rather than assuming scanner-perfect CSV:
+
+- Maximum file-size guardrail (500 MB).
+- Delimiter sniffing across common variants (comma, semicolon, tab, pipe).
+- Header-contract checks (minimum vulnerability signal fields required).
+- Malformed-row skip behavior when row shape exceeds header schema.
+- Deterministic ingestion quality metadata per finding (`fidelity_tier`, `ingestion_confidence`, `missing_fields`, `degraded_input`).
+
+When malformed or minimum-signal-invalid rows are dropped, parser decisions are also emitted to the decision ledger and therefore become visible in RunManifest artifacts.
+
 ## Parser lifecycle policy (v1.2 hardening)
 
 Parser specs now carry lifecycle metadata for governance and runtime visibility.
@@ -164,6 +179,8 @@ Tests cover malformed or sparse scanner output, including:
 - Malformed port/protocol strings
 - Missing titles/descriptions
 - Real-world XML parser regression cases
+- CSV schema variants (alternate header names and delimiters)
+- Malformed CSV row-shape handling and minimum-signal contract drops
 
 See tests in `tests/test_openvas_*` and `tests/test_xml_parsers_realworld.py`.
 

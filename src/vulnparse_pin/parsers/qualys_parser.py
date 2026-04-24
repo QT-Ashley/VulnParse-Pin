@@ -13,7 +13,8 @@ from pathlib import Path
 import os
 import re
 from datetime import datetime, timezone
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Iterable, Optional, TYPE_CHECKING
+from xml.etree.ElementTree import ParseError
 from defusedxml.ElementTree import fromstring
 
 from vulnparse_pin.parsers.base_parser import BaseParser
@@ -22,6 +23,31 @@ from vulnparse_pin.core.id import make_asset_id, make_finding_base_canon, make_f
 
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext
+
+
+_CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
+_MAX_XML_BYTES = 500 * 1024 * 1024
+
+
+def _local_name(tag: str) -> str:
+    if not tag:
+        return ""
+    return str(tag).split("}")[-1].strip().upper()
+
+
+def _iter_by_local(root, names: Iterable[str]):
+    wanted = {str(n).strip().upper() for n in names}
+    for elem in root.iter():
+        if _local_name(elem.tag) in wanted:
+            yield elem
+
+
+def _first_text_by_local(root, names: Iterable[str]) -> Optional[str]:
+    for elem in _iter_by_local(root, names):
+        text = (elem.text or "").strip()
+        if text:
+            return text
+    return None
 
 
 class QualysXMLParser(BaseParser):
@@ -55,56 +81,60 @@ class QualysXMLParser(BaseParser):
         """
         evidence: list[tuple[str, str]] = []
 
-        if filepath.suffix != ".xml":
+        path = Path(filepath)
+        if path.suffix.lower() != ".xml":
             return 0.0, [("extension", f"rejected:{filepath.suffix}")]
 
         try:
-            if os.path.getsize(filepath) > 500 * 1024 * 1024:
+            if os.path.getsize(filepath) > _MAX_XML_BYTES:
                 return 0.0, [("size", "exceeds_500MB")]
-            raw = Path(filepath).read_bytes()
+            raw = path.read_bytes()
             root = fromstring(raw)
-        except (OSError, ValueError, Exception):
+        except (OSError, ValueError, ParseError):
             return 0.0, [("parse", "failed")]
 
         score = 0.0
 
         # Root tag signal — SCAN is the canonical Qualys root element
-        if root.tag == "SCAN":
+        root_name = _local_name(root.tag)
+        if root_name in {"SCAN", "SCAN_REPORT"}:
             score += 0.30
-            evidence.append(("root_tag", "SCAN"))
-        elif root.tag != "SCAN":
+            evidence.append(("root_tag", root_name))
+        else:
             # Hard reject if root is not SCAN-like
-            return 0.0, [("root_tag", f"rejected:{root.tag}")]
+            return 0.0, [("root_tag", f"rejected:{root_name or root.tag}")]
 
         # ASSET elements — primary organizational unit in Qualys
-        assets = root.findall(".//ASSET")
+        assets = list(_iter_by_local(root, {"ASSET", "HOST"}))
         if len(assets) > 0:
             score += 0.25
             evidence.append(("structure", f"asset_count={len(assets)}"))
 
         # VULN elements — specific vulnerability findings
-        vulns = root.findall(".//VULN")
+        vulns = list(_iter_by_local(root, {"VULN", "VULNERABILITY"}))
         if len(vulns) > 0:
             score += 0.25
             evidence.append(("structure", f"vuln_count={len(vulns)}"))
 
         # QID heuristic — Qualys-specific numeric plugin identifier
-        first_vuln = root.find(".//VULN")
+        first_vuln = next(iter(vulns), None)
         if first_vuln is not None:
-            qid = first_vuln.findtext("QID")
+            qid = _first_text_by_local(first_vuln, {"QID", "QID_ID", "VULN_ID"})
             if qid and re.match(r'^\d+$', qid.strip()):
                 score += 0.10
                 evidence.append(("qid", f"numeric:{qid[:10]}"))
 
         # CVSS presence — either BASE score or VECTOR
-        first_cvss = (root.findtext(".//CVSS_BASE") or
-                      root.findtext(".//CVSS_VECTOR"))
+        first_cvss = (
+            _first_text_by_local(root, {"CVSS_BASE", "CVSS3_BASE", "CVSS_SCORE"})
+            or _first_text_by_local(root, {"CVSS_VECTOR", "CVSS3_VECTOR"})
+        )
         if first_cvss:
             score += 0.05
             evidence.append(("meta", "cvss_present"))
 
         # IP or FQDN signal — network identifier for asset
-        first_ip = root.findtext(".//IP") or root.findtext(".//FQDN")
+        first_ip = _first_text_by_local(root, {"IP", "IP_ADDRESS", "FQDN", "HOSTNAME", "DNS"})
         if first_ip:
             score += 0.05
             evidence.append(("asset_id", "ip_or_fqdn"))
@@ -119,7 +149,7 @@ class QualysXMLParser(BaseParser):
         # Guard: file size check
         try:
             size = os.path.getsize(self.filepath)
-            if size > 500 * 1024 * 1024:
+            if size > _MAX_XML_BYTES:
                 raise ValueError(f"Refusing to parse files larger than 500MB: {self.filepath}")
         except OSError as e:
             raise ValueError(f"Failed to stat file {self.filepath}: {e}") from e
@@ -128,21 +158,33 @@ class QualysXMLParser(BaseParser):
         raw = Path(self.filepath).read_bytes()
         try:
             root = fromstring(raw)
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, ParseError) as e:
             raise ValueError(f"Failed to parse XML: {e}") from e
+
+        root_name = _local_name(root.tag)
+        if root_name not in {"SCAN", "SCAN_REPORT"}:
+            raise ValueError(f"Qualys XML missing expected root tag. got={root_name or root.tag}")
 
         assets: Dict[str, Asset] = {}
         dropped = 0
 
         # Extract scan metadata
-        scan_date = root.findtext("SCAN_DATETIME") or "SENTINEL:Date_Unavailable"
-        scan_name = root.findtext("TITLE") or root.attrib.get("id") or "SENTINEL:Not_Found"
+        parsed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        scan_date = (
+            _first_text_by_local(root, {"SCAN_DATETIME", "SCAN_DATE", "DATETIME", "CREATED"})
+            or parsed_at
+        )
+        scan_name = (
+            _first_text_by_local(root, {"TITLE", "SCAN_TITLE", "NAME"})
+            or root.attrib.get("id")
+            or Path(self.filepath).stem
+        )
 
         # Parse all assets and their vulnerabilities
-        for asset in root.findall(".//ASSET"):
+        for asset in _iter_by_local(root, {"ASSET", "HOST"}):
             # Primary asset identifier (prefer IP over FQDN)
-            raw_ip = asset.findtext("IP")
-            raw_fqdn = asset.findtext("FQDN")
+            raw_ip = _first_text_by_local(asset, {"IP", "IP_ADDRESS", "HOST_IP"})
+            raw_fqdn = _first_text_by_local(asset, {"FQDN", "HOSTNAME", "DNS"})
             host = None
 
             if raw_ip and raw_ip.strip():
@@ -169,44 +211,82 @@ class QualysXMLParser(BaseParser):
                 )
 
             # Parse vulnerabilities for this asset
-            for vuln in asset.findall(".//VULN"):
-                qid = self._safe_text(vuln.findtext("QID"))
-                title = self._safe_text(vuln.findtext("TITLE")) or "SENTINEL:No_Title"
-                description = self._safe_text(vuln.findtext("DESCRIPTION")) or "SENTINEL:No_Description"
+            for vuln in _iter_by_local(asset, {"VULN", "VULNERABILITY"}):
+                qid = self._safe_text(_first_text_by_local(vuln, {"QID", "QID_ID", "VULN_ID"}))
+                title = self._safe_text(_first_text_by_local(vuln, {"TITLE", "NAME", "VULN_TITLE"})) or "SENTINEL:No_Title"
+                description = self._safe_text(_first_text_by_local(vuln, {"DESCRIPTION", "DIAGNOSIS", "DETAILS"})) or "SENTINEL:No_Description"
                 
                 # Extract port and protocol if available
                 port = None
                 protocol = None
-                port_text = vuln.findtext("PORT")
+                port_text = _first_text_by_local(vuln, {"PORT", "SERVICE_PORT", "AFFECTED_PORT"})
                 if port_text:
-                    port = self._safe_int(port_text.split("/")[0]) if "/" in port_text else self._safe_int(port_text)
-                    if port_text and "/" in port_text:
-                        # "443/tcp" format
-                        protocol = port_text.split("/")[1].lower()
+                    parts = [p.strip().lower() for p in str(port_text).split("/") if p.strip()]
+                    if len(parts) == 2 and parts[0].isdigit():
+                        port = self._safe_int(parts[0])
+                        protocol = parts[1]
+                    elif len(parts) == 2 and parts[1].isdigit():
+                        protocol = parts[0]
+                        port = self._safe_int(parts[1])
+                    else:
+                        port = self._safe_int(parts[0] if parts else port_text)
                 
                 # Normalize protocol
                 protocol = protocol or "tcp"
                 protocol_str = protocol if isinstance(protocol, str) else str(protocol).lower()
+                if protocol_str not in {"tcp", "udp", "icmp"}:
+                    protocol_str = "tcp"
+                if port is not None and not (0 <= int(port) <= 65535):
+                    port = None
                 
                 # CVSS scoring
                 cvss_score = None
                 cvss_vector = None
                 
-                cvss_base = vuln.findtext("CVSS_BASE")
+                cvss_base = _first_text_by_local(vuln, {"CVSS_BASE", "CVSS3_BASE", "CVSS_SCORE"})
                 if cvss_base:
                     cvss_score = self._safe_float(cvss_base)
+                    if cvss_score is not None and not (0.0 <= cvss_score <= 10.0):
+                        cvss_score = None
                 
-                cvss_vector_node = vuln.findtext("CVSS_VECTOR")
+                cvss_vector_node = _first_text_by_local(vuln, {"CVSS_VECTOR", "CVSS3_VECTOR"})
                 if cvss_vector_node:
                     cvss_vector = self._safe_text(cvss_vector_node)
 
                 # CVE extraction
                 cves = []
-                cve_text = vuln.findtext("CVE_ID")
+                cve_text = _first_text_by_local(vuln, {"CVE_ID", "CVE", "CVES"})
                 if cve_text:
                     # CVE_ID may be comma-separated; extract all CVE-YYYY-NNNNN identifiers
-                    cve_matches = re.findall(r'CVE-\d{4}-\d{4,7}', cve_text, re.IGNORECASE)
-                    cves.extend(cve_matches)
+                    cve_matches = _CVE_RE.findall(cve_text)
+                    cves.extend(sorted({m.upper() for m in cve_matches}))
+
+                solution = self._safe_text(_first_text_by_local(vuln, {"SOLUTION", "FIX", "REMEDIATION"})) or "SENTINEL:No_Solution"
+                plugin_output = self._safe_text(_first_text_by_local(vuln, {"RESULT", "EVIDENCE", "DIAGNOSIS"})) or "SENTINEL:No_Plugin_Output"
+
+                missing_fields = []
+                if not cves:
+                    missing_fields.append("cves")
+                if not cvss_vector:
+                    missing_fields.append("cvss_vector")
+                if plugin_output == "SENTINEL:No_Plugin_Output":
+                    missing_fields.append("plugin_output")
+                if port is None:
+                    missing_fields.append("affected_port")
+
+                if not missing_fields:
+                    fidelity_tier = "full"
+                    ingestion_confidence = 0.95
+                    confidence_reasons = ["base:full=0.95"]
+                elif len(missing_fields) <= 2:
+                    fidelity_tier = "partial"
+                    ingestion_confidence = 0.70
+                    confidence_reasons = ["base:partial=0.70"]
+                else:
+                    fidelity_tier = "minimal"
+                    ingestion_confidence = 0.45
+                    confidence_reasons = ["base:minimal=0.45"]
+                degraded_input = fidelity_tier != "full"
 
                 # Build canonical finding using the proper signature
                 scanner_sig = f"qualys:{qid}" if qid else "qualys:unknown"
@@ -226,15 +306,23 @@ class QualysXMLParser(BaseParser):
                     vuln_id=qid or "SENTINEL:No_QID",
                     title=title,
                     description=description,
-                    severity="Unknown",  # Qualys severity mapped separately if needed
-                    cves=tuple(cves),
+                    severity=self._map_qualys_severity(_first_text_by_local(vuln, {"SEVERITY", "THREAT", "RISK"})),
+                    cves=list(cves),
                     cvss_score=cvss_score,
                     cvss_vector=cvss_vector,
                     affected_port=port,
                     protocol=protocol_str,
                     detection_plugin=f"Qualys:{qid}" if qid else "Qualys:unknown",
-                    plugin_output="SENTINEL:No_Plugin_Output",
+                    plugin_output=plugin_output,
+                    plugin_evidence=[plugin_output] if plugin_output != "SENTINEL:No_Plugin_Output" else ["SENTINEL:No_Evidence"],
+                    solution=solution,
                     asset_id=asset_id,
+                    source_format="qualys-xml",
+                    fidelity_tier=fidelity_tier,
+                    missing_fields=missing_fields,
+                    degraded_input=degraded_input,
+                    ingestion_confidence=ingestion_confidence,
+                    confidence_reasons=confidence_reasons,
                 )
 
                 assets[asset_id].findings.append(finding)
@@ -244,13 +332,13 @@ class QualysXMLParser(BaseParser):
 
         asset_count = len(assets)
         vuln_count = sum(len(asset.findings) for asset in assets.values())
-        parsed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
         # Build scan metadata
         scan_metadata = ScanMetaData(
             source="Qualys",
             scan_name=scan_name,
             scan_date=scan_date,
+            source_file=str(self.filepath),
             asset_count=asset_count,
             vulnerability_count=vuln_count,
             parsed_at=parsed_at,
@@ -260,3 +348,21 @@ class QualysXMLParser(BaseParser):
             scan_metadata=scan_metadata,
             assets=list(assets.values()),
         )
+
+    @staticmethod
+    def _map_qualys_severity(raw: Optional[str]) -> str:
+        val = str(raw or "").strip().lower()
+        mapping = {
+            "5": "Critical",
+            "4": "High",
+            "3": "Medium",
+            "2": "Low",
+            "1": "Informational",
+            "critical": "Critical",
+            "high": "High",
+            "medium": "Medium",
+            "low": "Low",
+            "info": "Informational",
+            "informational": "Informational",
+        }
+        return mapping.get(val, "Unknown")

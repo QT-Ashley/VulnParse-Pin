@@ -369,7 +369,16 @@ def main(argv: Optional[Sequence[str]] = None):
     kev_source = io_state.kev_source
     epss_source = io_state.epss_source
 
-    normalization = normalize_input(ctx, detector, scanner_input, allow_large=args.allow_large)
+    normalization = normalize_input(
+        ctx,
+        detector,
+        scanner_input,
+        allow_large=args.allow_large,
+        allow_degraded_input=args.allow_degraded_input,
+        strict_ingestion=args.strict_ingestion,
+        min_ingestion_confidence=args.min_ingestion_confidence,
+        show_ingestion_summary=args.show_ingestion_summary,
+    )
     scan_result: ScanResult = normalization.scan_result
 
     enrich_state = run_enrichment_pipeline(
