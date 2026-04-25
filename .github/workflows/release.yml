@@ -125,8 +125,18 @@ jobs:
 
       - name: Ensure Tag is on main
         run: |
-          git fetch --tags origin main
-          TAG_SHA="$(git rev-list -n 1 "$RELEASE_TAG")"
+          git fetch origin main
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_SHA="${GITHUB_SHA}"
+          else
+            # Resolve annotated tag target first; fallback supports lightweight tags.
+            TAG_SHA="$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}' | head -n1)"
+            if [[ -z "$TAG_SHA" ]]; then
+              TAG_SHA="$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}' | head -n1)"
+            fi
+          fi
+
           if [[ -z "$TAG_SHA" ]]; then
             echo "Could not resolve tag commit for $RELEASE_TAG"
             exit 1
