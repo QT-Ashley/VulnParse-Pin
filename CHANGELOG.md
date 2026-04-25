@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Packaged scoring config is now `version: v2` to reflect new scoring semantics and trace fields. Review custom 'scoring.json' files for compatibility before upgrading.
 - Default JSON output suppresses presentation-only score overlay fields unless `--presentation` is enabled, while preserving derived scoring artifacts for auditability.
 
-## [1.2.1] - Hotfix Release for NVD Enrichment Skip Issue
+## [Unreleased]
 
 ## [1.2.1] - Hotfix Release for NVD Enrichment Skip Issue
 
