@@ -47,6 +47,7 @@
         "allow_predicates": [
             "ip_is_public",
             "ip_is_private",
+            "ip_is_private_no_public_ports",
             "any_port_in_public_list",
             "port_in",
             "hostname_contains_any",
@@ -80,9 +81,17 @@
                 "id": "private_ip",
                 "enabled": true,
                 "tag": "externally_facing",
-                "weight": -4,
+                "weight": -3,
                 "when": "ip_is_private",
-                "evidence": "RFC1918/private IP observed (-4)"
+                "evidence": "RFC1918/private IP observed (-3)"
+            },
+            {
+                "id": "private_ip_no_public_ports",
+                "enabled": true,
+                "tag": "externally_facing",
+                "weight": -4,
+                "when": "ip_is_private_no_public_ports",
+                "evidence": "Private IP with no internet-service ports - likely internal-only (-4)"
             },
             {
                 "id": "public_service_port_hit",
@@ -91,22 +100,6 @@
                 "weight": 2,
                 "when": "any_port_in_public_list",
                 "evidence": "Common public-service port observed (+2)"
-            },
-            {
-                "id": "web_ports",
-                "enabled": true,
-                "tag": "public_service_ports",
-                "weight": 2,
-                "when": "port_in:[80,443,8080,8443]",
-                "evidence": "Web service port observed (+2)"
-            },
-            {
-                "id": "remote_admin_ports",
-                "enabled": true,
-                "tag": "externally_facing",
-                "weight": 2,
-                "when": "port_in:[22,3389,5900]",
-                "evidence": "Remote administration port observed (+2)"
             },
             {
                 "id": "edge_hostname_hint",

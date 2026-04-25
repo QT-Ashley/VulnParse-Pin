@@ -7,9 +7,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) where practical.
 
+## Upgrade Notes
+
+- GHSA is now explicit CLI opt-in only. Use `--ghsa` for online mode or `--ghsa <path>` for offline advisory enrichment.
+- TopN now expects `ACI@1.0` output; when missing, it emits a soft no-op artifact with error metadata instead of failing.
+- Scoring semantics changes under `Scoring@2.0` to whole-of-CVEs aggregation with bounded decay; scoring traces now include contributor-level metadata for auditability.
+- Packaged scoring config is now `version: v2` to reflect new scoring semantics and trace fields. Review custom 'scoring.json' files for compatibility before upgrading.
+- Default JSON output suppresses presentation-only score overlay fields unless `--presentation` is enabled, while preserving derived scoring artifacts for auditability.
+
 ## [Unreleased]
 
 ### Added
+
+#### Attack Capability Inference (ACI)
 
 - Attack Capability Inference pass integration in default pipeline (`ACI@1.0`) between `Scoring@2.0` and `TopN@1.0`, including typed output contracts for finding semantics, asset semantics, and ACI metrics.
 - ACI configuration model in TopN policy semantics and schema (`topN.schema.json` / `tn_triage.json`), including capability rules, chain rules, token governance (`token_mode`, `signal_aliases`, `disabled_core_tokens`), bounded uplift controls, and exploit-boost tuning.
@@ -21,20 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analyst tabletop prioritization guidance in documentation: explicit Operational Action Lane (`OAL`) categories, default precedence rule, and escalation exception criteria for exploitability-vs-chain decisions.
 - Repeatable ACI phrase-quality benchmark harness (`tests/test_aci_phrase_benchmark.py`) with curated positive/negative phrase cases (`tests/benchmarks/aci_phrase_benchmark.json`) to track inference drift over time.
 
+#### Whole-of-CVEs Scoring
+
 - Whole-of-CVEs scoring in `ScoringPass` (`Scoring@2.0`): findings with `cve_analysis` now score across all retained CVE records using bounded decay aggregation rather than selecting one authoritative CVE for score calculation.
 - Per-finding `score_trace` persistence on normalized finding objects and in scoring derived output, including contributor CVE IDs, per-CVE raw contribution, decay weight, CVSS/EPSS/KEV/exploit metadata, and final scoring rationale.
 - Scoring policy knobs for finding-level CVE aggregation in `scoring.json`: `aggregation.finding_cve_score`, `aggregation.finding_cve_decay`, and `aggregation.finding_cve_max_contributors`.
 
+#### GHSA Enrichment
+
 - GHSA CLI-first activation contract: `--ghsa` is now the explicit opt-in path, with bare flag meaning online mode and `--ghsa <path>` meaning offline local advisory source.
 - GHSA online lookup budget override via CLI (`--ghsa-budget`) with config default support through `enrichment.ghsa_online_prefetch_budget`.
 - GHSA GitHub token env configuration (`enrichment.ghsa_token_env`) now defaults to `VP_GHSA_TK` with fallback to `GITHUB_TOKEN` for authenticated advisory API sessions.
-- Qualys parser integration (`qualys_parser.py`) with detector wiring and regression coverage in `test_qualys_parser.py`.
-- Qualys XML parser guardrails and schema-variant support upgrades: root/tag aliases (`SCAN`/`SCAN_REPORT`, `ASSET`/`HOST`, `VULN`/`VULNERABILITY`), defensive size/value bounds, and broader CVSS/CVE field extraction compatibility.
-- New Qualys CSV parser (`qualys_csv_parser.py`) with detector registration, schema-variant header aliases, delimiter sniffing, malformed-row skipping, and ingestion metadata propagation.
-- Ingestion quality controls on normalization path: `--allow-degraded-input` (bool optional), `--strict-ingestion`, `--min-ingestion-confidence`, and `--show-ingestion-summary`.
-- Ingestion metadata fields on findings are now first-class output contract elements (`source_format`, `fidelity_tier`, `missing_fields`, `degraded_input`, `ingestion_confidence`, `confidence_reasons`) with schema and CSV coverage.
-- RunManifest decision-ledger ingestion events for parser row quality and ingestion gate outcomes (dropped rows, malformed rows skipped, strict-mode rejection, min-confidence threshold rejection).
-- Nmap parser scaffold (`nmap_parser.py`) added as an experimental foundation path for future enrichment/context signals.
 - GHSA enrichment metadata on findings (`enrichment_sources`, `confidence`, `confidence_evidence`) with schema coverage updates.
 - Global packaged enrichment config support for GHSA source selection and confidence policy tuning (`resources/config.yaml` + config schema).
 - Enrichment seam flow completion across source loading, application, and post-enrichment handoff/indexing boundaries.
@@ -51,6 +58,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GHSA pipeline online source mode enabled via `enrichment.ghsa_source: online`; loader now prefetches a bounded CVE set for run-time enrichment without local advisory files.
 - GHSA package-based fallback matching wired: findings now derive package tokens from title/description/plugin text and match against GHSA advisory package index when CVE-based GHSA misses.
 - GHSA confidence policy now supports advisory-derived signal tuning through `confidence.ghsa_signals`, including bounded advisory bonuses and optional high-severity exploitability promotion.
+
+#### Qualys and Ingestion Quality Controls
+
+- Qualys parser integration (`qualys_parser.py`) with detector wiring and regression coverage in `test_qualys_parser.py`.
+- Qualys XML parser guardrails and schema-variant support upgrades: root/tag aliases (`SCAN`/`SCAN_REPORT`, `ASSET`/`HOST`, `VULN`/`VULNERABILITY`), defensive size/value bounds, and broader CVSS/CVE field extraction compatibility.
+- New Qualys CSV parser (`qualys_csv_parser.py`) with detector registration, schema-variant header aliases, delimiter sniffing, malformed-row skipping, and ingestion metadata propagation.
+- Ingestion quality controls on normalization path: `--allow-degraded-input` (bool optional), `--strict-ingestion`, `--min-ingestion-confidence`, and `--show-ingestion-summary`.
+- Ingestion metadata fields on findings are now first-class output contract elements (`source_format`, `fidelity_tier`, `missing_fields`, `degraded_input`, `ingestion_confidence`, `confidence_reasons`) with schema and CSV coverage.
+- RunManifest decision-ledger ingestion events for parser row quality and ingestion gate outcomes (dropped rows, malformed rows skipped, strict-mode rejection, min-confidence threshold rejection).
+
+#### Nmap Context Integration
+
+- Nmap parser scaffold (`nmap_parser.py`) added as an experimental foundation path for future enrichment/context signals.
 - `NmapAdapterPass` (`nmap_adapter@1.0`) wired as a derived-context pass: parses Nmap XML output, maps open ports and NSE CVEs to scan asset IDs, and writes a `DerivedPassResult` that downstream passes consume without mutating findings.
 - `--nmap-ctx` / `-nmap` CLI flag: accepts a path to a Nmap XML file (`.xml` extension enforced); opt-in only, `None` by default.
 - TopN ranking tiebreak on Nmap-confirmed open ports: equal-score findings and assets that have a confirmed open port rank higher than those without, producing deterministic ordering without changing numeric scores.
@@ -61,12 +81,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Services.nmap_ctx_config`: passes the runtime `nmap_ctx` config dict to all passes without re-reading config files.
 - Decision ledger events for all four `NmapAdapterPass` execution paths (`NMAP_CTX_DISABLED`, `NMAP_CTX_ENABLED`, `NMAP_CTX_FAILED`, `NMAP_CTX_INVALID_FORMAT`) with structured evidence fields (host count, matched asset count, join rate, source file, error text).
 - `DecisionReasonCodes` extended with four new nmap_ctx reason codes.
+
+#### Reporting and Export
+
 - CSV output presentation profiles via `--csv-profile` (`full`, `analyst`, `audit`) with default backward-compatible schema preserved under `full`.
 - Markdown report enrichment to surface aggregated whole-of-CVEs context in top-risk sections (Finding Agg CVEs, Agg Exploitable, Agg KEV).
 - Executive and technical markdown quality sections: Decision Context, Data Quality Scorecard, Remediation Plan by Time Horizon, Risk Concentration, Tie-Break Explainability, Analyst Caveats, and Trust and Provenance framing.
 - Markdown terminology clarification: top-risk tables now use `Finding Agg CVEs` to explicitly denote finding-level score-contributor breadth.
 - RunManifest pass-summary metric alignment for whole-of-CVEs semantics: Scoring, TopN, and Summary now surface aggregated-context counters needed for audit and operator traceability.
 - Output interpretation documentation for analyst workflows, including JSON/CSV/Markdown/RunManifest reading order and practical triage guidance.
+
+#### Webhooks and External Integrations
 
 - HMAC-SHA256 signed webhook delivery (`utils/webhook_delivery.py`): scan-complete events are POSTed to one or more configured HTTPS endpoints with `X-VPP-Signature`, `X-VPP-Timestamp`, `X-VPP-Nonce`, `X-VPP-Key-Id`, and `X-VPP-Event` headers; redirects are blocked.
 - Webhook config block in `config.schema.json` and `resources/config.yaml`: 13 validated fields including `signing_key_env`, `key_id`, connect/read/total timeouts, `max_retries`, `max_payload_bytes`, `replay_window_seconds`, `allow_spool`, `spool_subdir`, and a typed `endpoints` array (max 32) each with `url`, `oal_filter`, and `format`.
@@ -79,6 +104,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Webhook emission called in `run_output_and_summary()` before RunManifest snapshot, guaranteeing all delivery events appear in the final audit trail.
 
 ### Changed
+
+- Dependency baseline refresh for release packaging:
+  - `requests >= 2.33.1`
+  - `platformdirs >= 4.9.6`
+  - `pytest (dev) >= 9.0.3`
+  - `cyclonedx-bom (sbom) >= 7.3.0`
+- Packaging metadata now explicitly advertises Python 3.13 and 3.14 classifier support.
+- README Python support badge corrected to match package minimum (`3.11+`).
 
 - TopN now explicitly requires `ACI@1.0`; when ACI output is missing, TopN emits a soft no-op artifact with dependency-aware status/error metadata and decision-ledger evidence.
 - TopN ranking keys now incorporate bounded ACI uplift as deterministic tie-break signal at finding/global/asset ordering layers while preserving score semantics.

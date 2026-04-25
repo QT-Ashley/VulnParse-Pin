@@ -197,6 +197,8 @@ def _predicate_matches_worker(
         return _is_public_ip(ip)
     if pred_name == "ip_is_private":
         return _is_private_ip(ip)
+    if pred_name == "ip_is_private_no_public_ports":
+        return _is_private_ip(ip) and not any(p in public_service_ports_set for p in ports_set)
     if pred_name == "any_port_in_public_list":
         return any(p in public_service_ports_set for p in ports_set)
     if pred_name == "port_in":

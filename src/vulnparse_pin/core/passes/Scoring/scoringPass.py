@@ -329,6 +329,12 @@ class ScoringPass(Pass):
                 reason_code=DecisionReasonCodes.SCORING_SUMMARY_COMPUTED,
                 reason_text="Scoring summary metrics computed for this run.",
                 factor_refs=["coverage", "avg_scored_risk", "avg_operational_risk"],
+                weight_context=(
+                    f"kev={self.policy.kev_evd}*{self.policy.w_kev}, "
+                    f"exploit={self.policy.exploit_evd}*{self.policy.w_exploit}, "
+                    f"epss_scale={self.policy.epss_scale}, "
+                    f"decay={self.policy.cve_aggregation_decay}"
+                ),
                 evidence={
                     "total_findings": total,
                     "scored_findings": scored,

@@ -14,7 +14,7 @@ authors = [
 maintainers = [
     {name = "Quashawn Ashley", email = "qt.ashley@vulnparse-pin.com"}
 ]
-dependencies = ["defusedxml>=0.7.1", "cvss>=3.6", "requests>=2.32.5", "ruamel.yaml>=0.19.1", "platformdirs>=4.9.4", "colorama>=0.4.6", "jsonschema>=4.26.0", "ijson>=3.5.0"]
+dependencies = ["defusedxml>=0.7.1", "cvss>=3.6", "requests>=2.33.1", "ruamel.yaml>=0.19.1", "platformdirs>=4.9.6", "colorama>=0.4.6", "jsonschema>=4.26.0", "ijson>=3.5.0"]
 license = { text = "AGPL-3.0-or-later" }
 classifiers = [
     "Intended Audience :: Information Technology",
@@ -22,6 +22,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Development Status :: 5 - Production/Stable",
     "Natural Language :: English",
@@ -33,8 +35,8 @@ classifiers = [
 keywords = ["vulnerability", "vm", "vulnerability-management", "security-tools", "security", "defensive-security", "nessus", "openvas", "triage", "cvss", "nvd", "cisa-kev", "epss", "threat-intel"]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0.2"]
-sbom = ["cyclonedx-bom>=7.2.2"]
+dev = ["pytest>=9.0.3"]
+sbom = ["cyclonedx-bom>=7.3.0"]
 
 [project.urls]
 Homepage = "https://github.com/QT-Ashley/VulnParse-Pin"
@@ -53,6 +55,7 @@ where = ["src"]
 vulnparse_pin = [
     "resources/*.yaml",
     "resources/*.json",
+    "resources/*.xml",
     "resources/*.nessus",
     "core/schemas/*.json",
 ]

@@ -32,11 +32,20 @@ VulnParse-Pin also supports additional options to customize the analysis process
 
 #### --demo
 
-- `--demo`: This option runs the tool in demo mode, which uses a predefined dataset to demonstrate the capabilities of VulnParse-Pin. Use it like this:
+- `--demo`: Runs the packaged full-pipeline demo profile using OpenVAS XML + Nmap context with GHSA online budget defaults. Use it like this:
 
 ```bash
 vpp --demo
 ```
+
+Demo profile defaults:
+
+- Input file: packaged `openvas_updated_test.xml` (15 assets / 2,000 findings)
+- Nmap context: packaged `base_test_nmap.xml`
+- GHSA mode: forced online (`--ghsa online` semantics)
+- GHSA budget: forced to `25`
+- Enrichment: KEV/EPSS/Exploit enabled, NVD enabled
+- Artifacts: JSON, CSV, executive markdown, technical markdown, runmanifest
 
 #### --pretty-print
 

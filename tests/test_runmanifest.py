@@ -54,8 +54,20 @@ def _make_scan_result() -> ScanResult:
 def _make_scan_result_with_passes() -> ScanResult:
     scan = _make_scan_result()
 
+    nmap_adapter = DerivedPassResult(
+        meta=PassMeta(name="nmap_adapter", version="1.0", created_at_utc="2026-03-29T00:00:00Z"),
+        data={
+            "status": "enabled",
+            "source_file": "sample_nmap.xml",
+            "host_count": 1,
+            "matched_asset_count": 1,
+            "unmatched_asset_ids": ["asset-b"],
+            "asset_open_ports": {"asset-a": [22, 443]},
+            "nse_cves_by_asset": {"asset-a": ["CVE-2021-44228"]},
+        },
+    )
     scoring = DerivedPassResult(
-        meta=PassMeta(name="Scoring", version="1.0", created_at_utc="2026-03-29T00:00:00Z"),
+        meta=PassMeta(name="Scoring", version="1.0", created_at_utc="2026-03-29T00:00:01Z"),
         data={
             "coverage": {"total_findings": 10, "scored_findings": 8, "coverage_ratio": 0.8},
             "asset_scores": {"asset-a": 7.5, "asset-b": 5.1},
@@ -67,7 +79,7 @@ def _make_scan_result_with_passes() -> ScanResult:
         },
     )
     topn = DerivedPassResult(
-        meta=PassMeta(name="TopN", version="1.0", created_at_utc="2026-03-29T00:00:01Z"),
+        meta=PassMeta(name="TopN", version="1.0", created_at_utc="2026-03-29T00:00:02Z"),
         data={
             "rank_basis": "operational",
             "k": 3,
@@ -78,7 +90,7 @@ def _make_scan_result_with_passes() -> ScanResult:
         },
     )
     summary = DerivedPassResult(
-        meta=PassMeta(name="Summary", version="1.0", created_at_utc="2026-03-29T00:00:02Z"),
+        meta=PassMeta(name="Summary", version="1.0", created_at_utc="2026-03-29T00:00:03Z"),
         data={
             "overview": {"total_assets": 2, "total_findings": 10},
             "top_risks": [{"finding_id": "f-1"}],
@@ -87,6 +99,7 @@ def _make_scan_result_with_passes() -> ScanResult:
 
     scan.derived = DerivedContext(
         passes={
+            "nmap_adapter@1.0": nmap_adapter,
             "Scoring@1.0": scoring,
             "TopN@1.0": topn,
             "Summary@1.0": summary,
@@ -240,6 +253,11 @@ def test_runmanifest_populates_pass_metrics_and_mode(tmp_path: Path):
 
     assert manifest["runmanifest_mode"] == "expanded"
     metrics_by_name = {p["name"]: p["metrics"] for p in manifest["pass_summaries"]}
+    assert metrics_by_name["nmap_adapter"]["status"] == "enabled"
+    assert metrics_by_name["nmap_adapter"]["host_count"] == 1
+    assert metrics_by_name["nmap_adapter"]["matched_asset_count"] == 1
+    assert metrics_by_name["nmap_adapter"]["assets_with_open_ports"] == 1
+    assert metrics_by_name["nmap_adapter"]["open_port_bindings"] == 2
     assert metrics_by_name["Scoring"]["scored_findings"] == 8
     assert metrics_by_name["TopN"]["ranked_assets"] == 1
     assert metrics_by_name["Summary"]["total_assets"] == 2

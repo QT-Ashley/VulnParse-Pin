@@ -19,25 +19,34 @@ from vulnparse_pin import __version__
 
 PathLikeSimple = Union[str, Path]
 
-_DEMO_SAMPLE_NAME = "Lab_test_scaled_5k.nessus"
+_DEMO_NMAP_SAMPLE_NAME = "base_test_nmap.xml"
+_DEMO_OPENVAS_SAMPLE_NAME = "openvas_updated_test.xml"
 
-def _resolve_demo_sample() -> Optional[Path]:
-    """Return the absolute path to the bundled demo sample, or None if not found.
+def _resolve_demo_inputs() -> tuple[Optional[Path], Optional[Path]]:
+    """Return (openvas_sample_path, nmap_sample_path) for demo mode.
 
-    Uses importlib.resources so the file is correctly located whether the package
-    is installed via pip (as a wheel/egg) or run directly from source.
+    OpenVAS and Nmap samples are resolved from packaged vulnparse_pin.resources
+    so demo mode works consistently in source and installed environments.
     """
+    openvas_path: Optional[Path] = None
+    nmap_path: Optional[Path] = None
+
+    # Resolve packaged OpenVAS + Nmap demo samples.
     from importlib import resources
     try:
-        # Python 3.9+ path — returns a traversable that survives zip/wheel installs.
-        ref = resources.files("vulnparse_pin.resources").joinpath(_DEMO_SAMPLE_NAME)
+        openvas_ref = resources.files("vulnparse_pin.resources").joinpath(_DEMO_OPENVAS_SAMPLE_NAME)
+        if openvas_ref.is_file():
+            with resources.as_file(openvas_ref) as p:
+                openvas_path = p.resolve()
+
+        ref = resources.files("vulnparse_pin.resources").joinpath(_DEMO_NMAP_SAMPLE_NAME)
         if ref.is_file():
-            # Materialize to a real filesystem path (works with zipimport too).
             with resources.as_file(ref) as p:
-                return p.resolve()
+                nmap_path = p.resolve()
     except (TypeError, FileNotFoundError, ModuleNotFoundError):
         pass
-    return None
+
+    return openvas_path, nmap_path
 
 
 def parse_mode(value: str) -> int:
@@ -126,7 +135,7 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     port_group = parser.add_argument_group("Portability", "Options to run VulnParse in a portable setting.")
     output_group = parser.add_argument_group("Output Options", "Flags that deal with output such as output location or presentation modes.")
     gen_group.add_argument("--file", "-f", help="Path to vulnerability scan file", required=False, default=None, type=valid_input_file)
-    gen_group.add_argument("--demo", action="store_true", default=False, help="Run a full end-to-end pipeline demo using the bundled Lab_test.nessus sample. Takes no additional input.")
+    gen_group.add_argument("--demo", action="store_true", default=False, help="Run a full end-to-end demo using OpenVAS XML + Nmap context with GHSA online budget defaults.")
     enrich_group.add_argument("--no-kev", action="store_true", default=False, help="Disable KEV enrichment.")
     enrich_group.add_argument("--no-epss", action="store_true", default=False, help="Disable EPSS enrichment.")
     enrich_group.add_argument("--no-exploit", action="store_true", default=False, help="Disable Exploit-DB enrichment.")
@@ -200,15 +209,23 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     # --demo: inject hardcoded sample path — takes no user input.
     if args.demo:
-        demo_path = _resolve_demo_sample()
-        if demo_path is None:
+        demo_openvas_path, demo_nmap_path = _resolve_demo_inputs()
+        if demo_openvas_path is None or demo_nmap_path is None:
             parser.error(
-                "--demo: sample file not found. Expected at "
-                "'samples/nessus/Lab_test.nessus' relative to the project root or CWD."
+                "--demo: required demo samples not found. Expected OpenVAS fixture at "
+                "packaged resource 'openvas_updated_test.xml' and packaged Nmap context "
+                "sample 'base_test_nmap.xml'."
             )
-        if not os.access(demo_path, os.R_OK):
-            parser.error(f"--demo: sample file is not readable: {demo_path}")
-        args.file = demo_path
+        if not os.access(demo_openvas_path, os.R_OK):
+            parser.error(f"--demo: OpenVAS sample file is not readable: {demo_openvas_path}")
+        if not os.access(demo_nmap_path, os.R_OK):
+            parser.error(f"--demo: Nmap sample file is not readable: {demo_nmap_path}")
+
+        args.file = demo_openvas_path
+        args.nmap_ctx = demo_nmap_path
+        args.ghsa = "online"
+        args.ghsa_budget = 25
+
         # Demo mode is always online and runs a full end-to-end artifact set.
         args.no_kev = False
         args.no_epss = False
@@ -224,14 +241,16 @@ def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         if not args.output_runmanifest:
             args.output_runmanifest = "demo_runmanifest.json"
         print(
-            "\n[DEMO MODE] Running full pipeline on bundled sample: "
-            f"{demo_path}\n"
+            "\n[DEMO MODE] Running full pipeline on OpenVAS + Nmap context samples:\n"
+            f"OpenVAS: {demo_openvas_path}\n"
+            f"Nmap ctx: {demo_nmap_path}\n"
             "Enrichment forced: KEV/EPSS/Exploit enabled with online sources (NVD enabled).\n"
-            "Artifacts enabled: JSON, CSV, executive Markdown, technical Markdown.\n"
+            "GHSA forced: online mode with budget=25.\n"
+            "Artifacts enabled: JSON, CSV, executive Markdown, technical Markdown, runmanifest.\n"
             "Output will be written to the configured output directory.\n"
         )
     elif args.file is None and not args.verify_runmanifest:
-        parser.error("the following arguments are required: --file/-f (or use --demo to run on the bundled sample)")
+        parser.error("the following arguments are required: --file/-f (or use --demo to run the OpenVAS + Nmap demo profile)")
 
     # Individual flags, if explicitly provided, take precedence.
     if args.output_all:

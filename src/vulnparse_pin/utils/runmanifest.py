@@ -180,6 +180,33 @@ def _summarize_pass_metrics(pass_name: str, data: Any) -> Dict[str, Any]:
             "confidence_high": int(conf.get("high", 0) or 0),
         }
 
+    if name == "nmap_adapter":
+        asset_open_ports = data.get("asset_open_ports") if isinstance(data.get("asset_open_ports"), dict) else {}
+        nse_cves_by_asset = data.get("nse_cves_by_asset") if isinstance(data.get("nse_cves_by_asset"), dict) else {}
+        unmatched_asset_ids = data.get("unmatched_asset_ids") if isinstance(data.get("unmatched_asset_ids"), (list, tuple)) else []
+
+        open_port_bindings = 0
+        for ports in asset_open_ports.values():
+            if isinstance(ports, (list, tuple, set)):
+                open_port_bindings += len(ports)
+
+        nse_cve_bindings = 0
+        for cves in nse_cves_by_asset.values():
+            if isinstance(cves, (list, tuple, set)):
+                nse_cve_bindings += len(cves)
+
+        return {
+            "status": data.get("status"),
+            "source_file": data.get("source_file"),
+            "host_count": int(data.get("host_count", 0) or 0),
+            "matched_asset_count": int(data.get("matched_asset_count", 0) or 0),
+            "unmatched_asset_count": len(unmatched_asset_ids),
+            "assets_with_open_ports": len(asset_open_ports),
+            "assets_with_nse_cves": len(nse_cves_by_asset),
+            "open_port_bindings": open_port_bindings,
+            "nse_cve_bindings": nse_cve_bindings,
+        }
+
     return {}
 
 

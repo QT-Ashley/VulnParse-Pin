@@ -840,6 +840,7 @@ def _parse_inference(inf_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Op
 _SUPPORTED_FORMS = frozenset({
     "ip_is_public",
     "ip_is_private",
+    "ip_is_private_no_public_ports",
     "any_port_in_public_list",
     "port_in",
     "hostname_contains_any",
@@ -884,7 +885,7 @@ def _parse_when_predicate(
         return None
 
     # No-arg preds
-    if name in ("ip_is_public", "ip_is_private", "any_port_in_public_list"):
+    if name in ("ip_is_public", "ip_is_private", "ip_is_private_no_public_ports", "any_port_in_public_list"):
         if rest:
             issues.append(SemanticIssue(rule_path, f"predicate '{name}' does not take arguments", "PRED_UNEXPECTED_ARGS", detail=rest))
             return None
