@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- _None yet._
+
+## [1.2.0] - 2026-04-24 ACI, Whole-of-CVEs, and Release Hardening
+
+### Added
+
 #### Attack Capability Inference (ACI)
 
 - Attack Capability Inference pass integration in default pipeline (`ACI@1.0`) between `Scoring@2.0` and `TopN@1.0`, including typed output contracts for finding semantics, asset semantics, and ACI metrics.
@@ -406,7 +412,9 @@ Incident Response, forensics, and compliance teams can now rely on the RunManife
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.1...v1.2.0
+[1.1.1]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/VulnParse-Pin/VulnParse-Pin/releases/tag/v1.0.2

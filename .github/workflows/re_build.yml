@@ -10,6 +10,11 @@ on:
                 required: false
                 default: "3.14"
                 type: string
+            enable_rebuild_gate:
+                description: Run optional clean rebuild verification for python distributions
+                required: false
+                default: false
+                type: boolean
 
 jobs:
     build-python-dist:
@@ -24,7 +29,7 @@ jobs:
               uses: actions/setup-python@v6.2.0
               with:
                 python-version: ${{ inputs.python-version }}
-            
+
             - name: Install build tools
               run: |
                 python -m pip install --upgrade pip
@@ -37,6 +42,23 @@ jobs:
             - name: Build sdist and wheel
               run: |
                 python -m build --sdist --wheel
+
+            - name: Capture initial distribution manifest
+              if: ${{ inputs.enable_rebuild_gate }}
+              run: |
+                find dist -maxdepth 1 -type f -printf '%f\n' | sort > /tmp/python_dist_manifest_first.txt
+
+            - name: Optional rebuild gate (clean rebuild)
+              if: ${{ inputs.enable_rebuild_gate }}
+              run: |
+                rm -rf dist build ./*.egg-info src/*.egg-info
+                python -m build --sdist --wheel
+
+            - name: Verify optional rebuild manifest stability
+              if: ${{ inputs.enable_rebuild_gate }}
+              run: |
+                find dist -maxdepth 1 -type f -printf '%f\n' | sort > /tmp/python_dist_manifest_second.txt
+                diff -u /tmp/python_dist_manifest_first.txt /tmp/python_dist_manifest_second.txt
 
             - name: Upload python dist artifacts
               uses: actions/upload-artifact@v7
