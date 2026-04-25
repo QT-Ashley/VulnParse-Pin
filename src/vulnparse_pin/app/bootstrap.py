@@ -33,7 +33,7 @@ from vulnparse_pin.parsers import PARSER_SPECS
 from vulnparse_pin.utils.banner import print_banner
 from vulnparse_pin.utils.feed_cache import FeedCacheManager
 from vulnparse_pin.utils.logger import LoggerWrapper
-from vulnparse_pin.utils.nvdcacher import NVDFeedCache
+from vulnparse_pin.utils.nvdcacher import NVDFeedCache, nvd_policy_from_config
 
 from vulnparse_pin.app.runtime_helpers import _require, build_feed_cache_policy, build_run_log, load_score_policy
 
@@ -185,11 +185,13 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
 
     feed_cache = FeedCacheManager.from_ctx(ctx, specs=FEED_SPECS, policy=feed_policy)
 
+    # Load NVD Policy
+    nvd_policy = nvd_policy_from_config(cfg_yaml)
+    nvdpol_start_y = nvd_policy["start_year"]
+    nvdpol_end_y = nvd_policy["end_year"]
     if not args.no_nvd:
         nvd_cache = NVDFeedCache(ctx)
         nvd_status = "Enabled"
-        nvdpol_start_y = cfg_yaml.get("feed_cache", {}).get("nvd", {}).get("start_year", (datetime.now().year - 1))
-        nvdpol_end_y = cfg_yaml.get("feed_cache", {}).get("nvd", {}).get("end_year", datetime.now().year)
     else:
         nvd_cache = None
         nvd_status = "Disabled (--no-nvd)"

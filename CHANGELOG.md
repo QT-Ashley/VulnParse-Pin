@@ -15,11 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Packaged scoring config is now `version: v2` to reflect new scoring semantics and trace fields. Review custom 'scoring.json' files for compatibility before upgrading.
 - Default JSON output suppresses presentation-only score overlay fields unless `--presentation` is enabled, while preserving derived scoring artifacts for auditability.
 
-## [Unreleased]
+## [1.2.1] - Hotfix Release for NVD Enrichment Skip Issue
 
-### Added
+### Fixed
 
-- _None yet._
+- NVD enrichment no longer skips when using default config: bootstrap initialization now correctly reads NVD year policy from canonical path (`feed_cache.feeds.nvd`) with fallback to legacy path (`feed_cache.nvd`), matching the path hierarchy used by enrichment layers and preventing silent skips on demo/standard runs.
+- Updated packaged `config.yaml` nvd start year path to match the canonical path (`feed_cache.feeds.nvd.start_year`) to prevent confusion and ensure consistency across config and code.
 
 ## [1.2.0] - 2026-04-24 ACI, Whole-of-CVEs, and Release Hardening
 
