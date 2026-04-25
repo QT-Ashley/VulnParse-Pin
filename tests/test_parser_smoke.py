@@ -26,6 +26,9 @@ from vulnparse_pin.utils.logger import LoggerWrapper
 from vulnparse_pin.io.pfhandler import PermFileHandler
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 @pytest.fixture
 def ctx(tmp_path) -> RunContext:
     logger = LoggerWrapper(log_file=str(tmp_path / "parser.log"))
@@ -81,15 +84,17 @@ def _make_policy() -> ScoringPolicyV1:
     ],
 )
 def test_parse_normalize_enrich_passes_smoke(ctx, parser_cls, input_path, use_file, xfail):
+    # allow xfail for experimental json parsers before attempting I/O
+    if xfail:
+        pytest.xfail("experimental/disabled parser")
+
+    input_path = REPO_ROOT / input_path
+
     # load data
     data = None
     if not use_file:
         with open(input_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-
-    # allow xfail for experimental json parsers
-    if xfail:
-        pytest.xfail("experimental/disabled parser")
 
     # instantiate parser
     if use_file:
