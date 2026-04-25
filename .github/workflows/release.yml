@@ -227,4 +227,5 @@ jobs:
       - name: Publish to PyPi via Trusted Publishing
         uses: pypa/gh-action-pypi-publish@release/v1.13
         with:
+          skip-existing: true
           verbose: true

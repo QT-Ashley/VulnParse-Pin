@@ -26,7 +26,7 @@ feed_cache:
       enabled: true
       ttl_yearly: 24
       ttl_modified: 2
-      start_year: 2000
+      start_year: 2002
       end_year: 2025
       sqlite_enforce_permissions: true
       sqlite_file_mode: "0o600"
