@@ -208,6 +208,7 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
         runmanifest_mode=getattr(args, "runmanifest_mode", "compact"),
         nmap_ctx_config=nmap_ctx_cfg,
         webhook_config=_build_webhook_runtime_config(cfg_yaml, args),
+        global_config=cfg_yaml,
     )
     ctx = RunContext(paths=paths, pfh=pfh, logger=logger, services=services)
 

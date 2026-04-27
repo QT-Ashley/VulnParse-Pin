@@ -347,3 +347,33 @@ def test_csv_profiles_surface_ghsa_visibility_fields(tmp_path):
     with audit_csv.open("r", encoding="utf-8", newline="") as fh:
         row = next(csv.DictReader(fh))
     assert "GHSA-xxxx-yyyy-zzzz" in row["ghsa_references"]
+
+
+def test_csv_export_does_not_write_doubled_crlf_on_windows_style_writer(tmp_path):
+    from datetime import datetime
+    from vulnparse_pin.core.classes.dataclass import ScanResult, ScanMetaData, Asset, Finding, RunContext, AppPaths
+    from vulnparse_pin.utils.csv_exporter import export_to_csv
+    from vulnparse_pin.utils.logger import LoggerWrapper
+    from vulnparse_pin.io.pfhandler import PermFileHandler
+
+    logger = LoggerWrapper(log_file=str(tmp_path / "test.log"))
+    pfh = PermFileHandler(logger, root_dir=tmp_path, allowed_roots=[tmp_path])
+    ctx = RunContext(paths=AppPaths.resolve(portable=True), pfh=pfh, logger=logger)
+
+    meta = ScanMetaData(source="unit", scan_date=datetime.now(), asset_count=1, vulnerability_count=1)
+    finding = Finding(
+        finding_id="FCRLF",
+        vuln_id="VCRLF",
+        title="Example",
+        description="desc",
+        severity="Low",
+        cves=["CVE-2026-0001"],
+        asset_id="ACRLF",
+    )
+    asset = Asset(hostname="host-crlf", ip_address="10.0.0.10", findings=[finding])
+    scan = ScanResult(scan_metadata=meta, assets=[asset])
+
+    csvfile = tmp_path / "newline.csv"
+    export_to_csv(ctx, scan, csv_path=csvfile)
+
+    assert b"\r\r\n" not in csvfile.read_bytes()

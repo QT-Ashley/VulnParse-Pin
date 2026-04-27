@@ -294,19 +294,32 @@ def emit_configured_webhooks(
                 "X-VPP-Key-Id": str(getattr(webhook_cfg, "key_id", "primary")),
                 "X-VPP-Signature": signature,
             }
-            response = requests.post(
-                endpoint.url,
-                data=body.encode("utf-8"),
-                headers=headers,
-                timeout=(
-                    int(getattr(webhook_cfg, "connect_timeout_seconds", 3)),
-                    int(getattr(webhook_cfg, "read_timeout_seconds", 5)),
-                ),
-                allow_redirects=False,
-            )
-            if str(getattr(response, "url", endpoint.url)) != str(endpoint.url):
-                raise RuntimeError("Webhook delivery encountered an unexpected redirect target.")
-            response.raise_for_status()
+            max_retries = max(int(getattr(webhook_cfg, "max_retries", 2)), 0)
+            last_exc: Exception | None = None
+            response = None
+            for attempt in range(max_retries + 1):
+                try:
+                    response = requests.post(
+                        endpoint.url,
+                        data=body.encode("utf-8"),
+                        headers=headers,
+                        timeout=(
+                            int(getattr(webhook_cfg, "connect_timeout_seconds", 3)),
+                            int(getattr(webhook_cfg, "read_timeout_seconds", 5)),
+                        ),
+                        allow_redirects=False,
+                    )
+                    if str(getattr(response, "url", endpoint.url)) != str(endpoint.url):
+                        raise RuntimeError("Webhook delivery encountered an unexpected redirect target.")
+                    response.raise_for_status()
+                    last_exc = None
+                    break
+                except (requests.RequestException, RuntimeError, ValueError, OSError) as exc:
+                    last_exc = exc
+                    if attempt >= max_retries:
+                        raise
+            if response is None or last_exc is not None:
+                raise last_exc or RuntimeError("Webhook delivery failed without a response.")
             summary["sent"] += 1
             logger.print_success(f"Webhook delivered: {endpoint.url}", label="Webhook")
             if ledger is not None:
@@ -316,7 +329,11 @@ def emit_configured_webhooks(
                     subject_ref=f"webhook:{endpoint.url}",
                     reason_code=DecisionReasonCodes.WEBHOOK_EMIT_SUCCEEDED,
                     reason_text="Webhook delivery completed successfully.",
-                    evidence={"endpoint": endpoint.url, "status_code": getattr(response, "status_code", None)},
+                    evidence={
+                        "endpoint": endpoint.url,
+                        "status_code": getattr(response, "status_code", None),
+                        "attempts": attempt + 1,
+                    },
                 )
         except (requests.RequestException, RuntimeError, ValueError, OSError) as exc:
             summary["failed"] += 1

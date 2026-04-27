@@ -172,11 +172,15 @@ def load_epss(ctx: RunContext, *, path_url: str, force_refresh: bool, allow_rege
                     "stored_as": "csv",
                     "source_type": "url",
                 },
+                max_response_bytes=MAX_REMOTE_FEED_BYTES,
+                enforce_https_redirect=True,
             )
 
             fc.ensure_feed_checksum(key, allow_regen = True)
             fc.print_cache_metadata(key)
             return parse_csv(cache_path)
+        except RuntimeError:
+            raise
         except Exception as e:
             ctx.logger.exception("EPSS update failed %s", e)
 

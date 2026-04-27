@@ -203,6 +203,48 @@ def test_emit_configured_webhooks_spools_failed_delivery(tmp_path: Path, monkeyp
     assert "WEBHOOK_EMIT_SPOOLED_FOR_RETRY" in reason_codes
 
 
+def test_emit_configured_webhooks_retries_before_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    webhook_cfg = WebhookRuntimeConfig(
+        enabled=True,
+        endpoints=(WebhookEndpointConfig(url="https://hooks.example.org/vpp", oal_filter="P1"),),
+        max_retries=2,
+        allow_spool=True,
+    )
+    ctx = _make_ctx(tmp_path, webhook_cfg)
+    scan = _make_scan()
+    monkeypatch.setenv("VP_WEBHOOK_HMAC_KEY", "super-secret")
+
+    call_count = {"value": 0}
+
+    class _Resp:
+        status_code = 202
+        url = "https://hooks.example.org/vpp"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _fake_post(*args, **kwargs):
+        call_count["value"] += 1
+        if call_count["value"] < 3:
+            raise RuntimeError("transient network down")
+        return _Resp()
+
+    monkeypatch.setattr("vulnparse_pin.utils.webhook_delivery.requests.post", _fake_post)
+
+    result = emit_configured_webhooks(
+        ctx=ctx,
+        scan_result=scan,
+        scanner_input=Path("scan.nessus"),
+        output_paths={"json": tmp_path / "out.json", "runmanifest": tmp_path / "manifest.json"},
+    )
+
+    assert result == {"sent": 1, "failed": 0, "spooled": 0, "skipped": 0}
+    assert call_count["value"] == 3
+    reason_codes = [entry.why.reason_code for entry in ctx.services.ledger.snapshot().entries]
+    assert "WEBHOOK_EMIT_SUCCEEDED" in reason_codes
+    assert "WEBHOOK_EMIT_FAILED" not in reason_codes
+
+
 def test_emit_configured_webhooks_records_disabled_skip(tmp_path: Path) -> None:
     ctx = _make_ctx(tmp_path, WebhookRuntimeConfig(enabled=False))
     scan = _make_scan()

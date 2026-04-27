@@ -89,7 +89,7 @@ def load_tn_config(
             raise TriageSchemaValidationError(semantic_issues)
 
         fallback = _safe_fallback_config()
-        ctx.print_warning("tn_triage: semantics invalid; using SAFE FALLBACK config (inference disabled).", label = "TopN-Config")
+        ctx.logger.print_warning("tn_triage: semantics invalid; using SAFE FALLBACK config (inference disabled).", label = "TopN-Config")
         return TriageConfigLoadResult(
             config=fallback,
             schema_issues=(),
@@ -154,7 +154,7 @@ def _safe_fallback_config() -> TNTriageConfig:
         confidence_thresholds=ConfidenceThreshold(low=2, medium=5, high=8),
         public_service_ports=(),
         public_service_ports_set=frozenset(),
-        allow_predicates=frozenset({"ip_is_public", "ip_is_private", "any_port_in_public_list", "port_in", "hostname_contains_any", "finding_text_contains_any", "criticality_is"}),
+        allow_predicates=frozenset({"ip_is_public", "ip_is_private", "ip_is_private_no_public_ports", "any_port_in_public_list", "port_in", "hostname_contains_any", "finding_text_contains_any", "criticality_is"}),
         finding_text_min_token_matches=2,
         finding_text_title_weight=3,
         finding_text_description_weight=2,

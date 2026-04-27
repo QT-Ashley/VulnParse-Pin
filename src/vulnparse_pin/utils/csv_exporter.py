@@ -346,7 +346,7 @@ def export_to_csv(
     scan_timestamp = str(scan_timestamp_raw) if scan_timestamp_raw is not None else ""
 
     # Stream CSV output - write header first, then process findings one by one
-    with ctx.pfh.open_for_write(csv_path, mode = "w", encoding = "utf-8", label = "CSV-Output") as f:
+    with ctx.pfh.open_for_write(csv_path, mode = "w", encoding = "utf-8", label = "CSV-Output", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         rows_written = 0

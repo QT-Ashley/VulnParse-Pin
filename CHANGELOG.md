@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-04-27
+
+### Fixed
+
+- TopN config fallback path now correctly logs via `ctx.logger.print_warning` under non-strict semantic failures instead of raising `AttributeError` on `ctx.print_warning`.
+- TopN inference `allow_predicates` normalization is now additive over supported defaults to prevent bundled rule invalidation during partial predicate overrides.
+- EPSS online stream ingestion now fails closed on HTTPS downgrade redirects and enforces response-size guardrails from `Content-Length` before decompression.
+- NVD SQLite security policy now reads runtime validated global config from `services.global_config`, with compatibility fallback for legacy `ctx.config` callers.
+- Webhook delivery now honors `webhook.max_retries` and retries transient failures before marking endpoint delivery failed/spooled.
+- CSV export on Windows no longer emits doubled CRLF row separators; CSV writer now opens text output with `newline=""`.
+
+### Added
+
+- Regression tests for TopN non-strict fallback behavior, EPSS redirect/size hardening, NVD runtime SQLite policy wiring, webhook retry semantics, and Windows CSV newline behavior.
+
 ## [1.2.1] - Hotfix Release for NVD Enrichment Skip Issue
 
 ### Fixed
@@ -415,7 +430,8 @@ Incident Response, forensics, and compliance teams can now rely on the RunManife
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.2.1...v1.2.2
 [1.2.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.0.3...v1.1.0
