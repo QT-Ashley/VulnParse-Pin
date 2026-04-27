@@ -10,6 +10,7 @@ import pytest
 
 from vulnparse_pin.app.io_resolution import resolve_io_paths_and_modes
 from vulnparse_pin.core.classes.dataclass import FeedCachePolicy, FeedSpec, RunContext, Services
+from vulnparse_pin.utils.enricher import load_epss
 from vulnparse_pin.utils.enricher import load_kev
 from vulnparse_pin.utils.exploit_enrichment_service import load_exploit_data
 from vulnparse_pin.utils.feed_cache import FeedCacheManager
@@ -146,6 +147,19 @@ def test_load_kev_rejects_https_downgrade_redirect(tmp_path: Path, monkeypatch: 
         load_kev(ctx, "https://example.com/kev.json", force_refresh=True, allow_regen=True)
 
 
+def test_load_epss_rejects_https_downgrade_redirect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _make_ctx(tmp_path)
+    compressed = gzip.compress(b"cve,epss\nCVE-2026-1234,0.9\n")
+
+    def _fake_get(*args, **kwargs):
+        return _FakeResp(body=compressed, url="http://evil.test/epss.csv.gz", content_length=len(compressed))
+
+    monkeypatch.setattr("vulnparse_pin.utils.feed_cache.requests.get", _fake_get)
+
+    with pytest.raises(RuntimeError, match="non-HTTPS"):
+        load_epss(ctx, path_url="https://example.com/epss.csv.gz", force_refresh=True, allow_regen=True)
+
+
 def test_load_kev_rejects_oversized_response_by_content_length(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = _make_ctx(tmp_path)
     kev_json = b'{"vulnerabilities": []}'
@@ -157,6 +171,19 @@ def test_load_kev_rejects_oversized_response_by_content_length(tmp_path: Path, m
 
     with pytest.raises(RuntimeError, match="size limit"):
         load_kev(ctx, "https://example.com/kev.json", force_refresh=True, allow_regen=True)
+
+
+def test_load_epss_rejects_oversized_response_by_content_length(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _make_ctx(tmp_path)
+    compressed = gzip.compress(b"cve,epss\nCVE-2026-1234,0.9\n")
+
+    def _fake_get(*args, **kwargs):
+        return _FakeResp(body=compressed, url="https://example.com/epss.csv.gz", content_length=300 * 1024 * 1024)
+
+    monkeypatch.setattr("vulnparse_pin.utils.feed_cache.requests.get", _fake_get)
+
+    with pytest.raises(RuntimeError, match="size limit"):
+        load_epss(ctx, path_url="https://example.com/epss.csv.gz", force_refresh=True, allow_regen=True)
 
 
 def test_load_exploit_data_rejects_oversized_response_by_content_length(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

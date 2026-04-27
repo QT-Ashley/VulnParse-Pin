@@ -592,7 +592,9 @@ def _parse_inference(inf_raw: Dict[str, Any], issues: List[SemanticIssue]) -> Op
     if not isinstance(ap, list) or not ap:
         issues.append(SemanticIssue("/inference/allow_predicates", "allow_predicates must be a non-empty array", "ALLOW_PRED_EMPTY"))
         return None
-    allow_predicates: Set[str] = set()
+    # Treat explicit allow_predicates as additive overrides over the packaged
+    # supported defaults so partial config overrides do not invalidate bundled rules.
+    allow_predicates: Set[str] = set(_SUPPORTED_FORMS)
     for i, name in enumerate(ap):
         if not isinstance(name, str) or not name.strip():
             issues.append(SemanticIssue(f"/inference/allow_predicates/{i}", "predicate name must be a non-empty string.", "ALLOW_PRED_TYPE"))

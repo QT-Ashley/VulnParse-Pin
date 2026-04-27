@@ -313,7 +313,7 @@ class PermFileHandler:
                                       f" Resolved path: {p}\n"
                                       f" Underlying error:") from e
 
-    def open_for_write(self, path: PathLike, mode: str = 'w', encoding: Optional[str] = "utf-8", *, label: str = "output file", create_parents: bool = True, overwrite: bool = True) -> IO[Any]:
+    def open_for_write(self, path: PathLike, mode: str = 'w', encoding: Optional[str] = "utf-8", *, label: str = "output file", create_parents: bool = True, overwrite: bool = True, newline: Optional[str] = None) -> IO[Any]:
         """
         Safe wrapper around open() writing.
         """
@@ -326,7 +326,7 @@ class PermFileHandler:
             if "b" in mode:
                 fh = p.open(mode)
             else:
-                fh = p.open(mode, encoding=encoding)
+                fh = p.open(mode, encoding=encoding, newline=newline)
         except Exception as e:
             raise FilePermissionError(
                 f"Failed to open {label} for writing: {self.format_for_log(p)} ({e})"

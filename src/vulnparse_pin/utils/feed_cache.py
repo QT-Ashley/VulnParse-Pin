@@ -18,6 +18,7 @@ import json
 import hashlib
 import hmac
 import os
+from urllib.parse import urlsplit
 
 import requests
 from vulnparse_pin import UA
@@ -582,6 +583,8 @@ class FeedCacheManager:
         extra_meta: Optional[Dict[str, Any]] = None,
         chunk_size: int = 1024 * 1024,
         max_decompressed_bytes: int = 2 * 1024 * 1024 * 1024,
+        max_response_bytes: Optional[int] = None,
+        enforce_https_redirect: bool = False,
     ) -> Path:
         """
         Stream-download a gzip feed and atomically cache its *decompressed* bytes.
@@ -614,6 +617,23 @@ class FeedCacheManager:
         # Stream download
         with requests.get(source_url, stream = True, timeout = timeout, headers = headers) as resp:
             resp.raise_for_status()
+            if enforce_https_redirect:
+                if urlsplit(str(getattr(resp, "url", source_url) or source_url)).scheme.lower() != "https":
+                    raise RuntimeError(
+                        f"{spec.label} download redirected to a non-HTTPS target, which is forbidden."
+                    )
+            if max_response_bytes is not None:
+                content_length = resp.headers.get("Content-Length")
+                if content_length:
+                    try:
+                        length = int(content_length)
+                    except (TypeError, ValueError):
+                        length = None
+                    if length is not None and length > max_response_bytes:
+                        raise RuntimeError(
+                            f"{spec.label} response exceeds configured size limit. "
+                            f"Reported={length} bytes, limit={max_response_bytes} bytes."
+                        )
 
             resp.raw.decode_content = False
 

@@ -58,7 +58,10 @@ class NVDFeedCache:
         return raw.encode("utf-8")
 
     def _sqlite_security_policy(self) -> Dict[str, Any]:
-        cfg = getattr(self.ctx, "config", {}) or {}
+        services = getattr(self.ctx, "services", None)
+        cfg = getattr(services, "global_config", None)
+        if not isinstance(cfg, dict):
+            cfg = getattr(self.ctx, "config", {}) or {}
         nvd = _cfg_get(cfg, ["feed_cache", "feeds", "nvd"], {}) or {}
         return {
             "enforce_permissions": _cfg_bool(cfg, ["feed_cache", "feeds", "nvd", "sqlite_enforce_permissions"], True),

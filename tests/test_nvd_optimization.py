@@ -11,7 +11,9 @@ import json
 import gzip
 import pytest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock
+from vulnparse_pin.core.classes.dataclass import Services
 from vulnparse_pin.utils.nvdcacher import NVDFeedCache, nvd_policy_from_config
 from vulnparse_pin.utils.logger import LoggerWrapper
 
@@ -306,4 +308,28 @@ def test_nvd_policy_prefers_centralized_nvd_ttl_keys():
     policy = nvd_policy_from_config(cfg)
     assert policy["ttl_yearly"] == 30
     assert policy["ttl_modified"] == 4
+
+
+def test_sqlite_security_policy_reads_runtime_global_config(tmp_path):
+    ctx = make_mock_ctx(tmp_path)
+    ctx.services = Services(global_config={
+        "feed_cache": {
+            "feeds": {
+                "nvd": {
+                    "sqlite_enforce_permissions": False,
+                    "sqlite_max_age_hours": 48,
+                    "sqlite_max_rows": 1234,
+                    "sqlite_file_mode": "0o640",
+                }
+            }
+        }
+    })
+
+    cache = NVDFeedCache(ctx)
+    policy = cache._sqlite_security_policy()
+
+    assert policy["enforce_permissions"] is False
+    assert policy["max_age_hours"] == 48
+    assert policy["max_rows"] == 1234
+    assert policy["file_mode"] == "0o640"
 

@@ -6,6 +6,7 @@ from ruamel.yaml import YAML
 
 from vulnparse_pin.core.config_source import RawConfigPayloads
 from vulnparse_pin.core.config_validator import ConfigValidator
+from vulnparse_pin.core.passes.TopN.TN_triage_config import load_tn_config
 from vulnparse_pin.core.passes.TopN.TN_triage_config import _safe_fallback_config
 from vulnparse_pin.core.passes.TopN.TN_triage_semantics import validate_and_normalize_semantics
 
@@ -21,9 +22,17 @@ def _load_default_payloads() -> RawConfigPayloads:
 class _DummyLogger:
     def __init__(self) -> None:
         self.warnings = []
+        self.infos = []
+        self.errors = []
 
     def print_warning(self, message: str, label: str | None = None) -> None:
         self.warnings.append((message, label))
+
+    def info(self, message: str, *args) -> None:
+        self.infos.append((message, args))
+
+    def error(self, message: str, *args) -> None:
+        self.errors.append((message, args))
 
 
 class _DummyCtx:
@@ -186,6 +195,19 @@ def test_config_validation_unsupported_global_version_fails():
 
     with pytest.raises(RuntimeError, match="Global config schema validation failed at version"):
         ConfigValidator.validate(ctx, payloads)
+
+
+def test_topn_load_non_strict_returns_fallback_on_semantic_error() -> None:
+    payloads = _load_default_payloads()
+    payloads.topn_config["inference"]["confidence_thresholds"] = {"low": 5, "medium": 5, "high": 3}
+
+    ctx = _DummyCtx()
+    result = load_tn_config(ctx, payloads.topn_config, strict=False)
+
+    assert result.used_fallback is True
+    assert result.semantic_issues
+    assert result.config == _safe_fallback_config()
+    assert len(ctx.logger.warnings) == 1
 
 
 def test_global_config_schema_accepts_enrichment_block():
