@@ -1,266 +1,111 @@
 # ACI Technical Deep Dive
 
-This deep dive documents ACI internals end to end: data flow, rule semantics, confidence computation, ranking integration, reporting integration, and validation boundaries.
+This deep dive documents `ACI@2.0` (`ACIV2Pass`) internals end to end: DuckDB SQL join enrichment, normalized `scanner_sig` token matching parity, Track B integration, confidence and uplift math, ledger persistence, and validation boundaries.
 
-## Scope and implementation map
+## Scope and Implementation Map
 
 Primary implementation files:
 
-- `src/vulnparse_pin/core/passes/ACI/aci_pass.py`
-- `src/vulnparse_pin/core/passes/TopN/TN_triage_semantics.py`
-- `src/vulnparse_pin/core/passes/TopN/TN_triage_config.py`
-- `src/vulnparse_pin/core/schemas/topN.schema.json`
-- `src/vulnparse_pin/core/passes/TopN/topn_pass.py`
-- `src/vulnparse_pin/utils/markdown_report.py`
-
-## Pass dependency and lifecycle
-
-Default derived pass order includes:
-
-1. `Scoring@2.0`
-2. `ACI@1.0`
-3. `TopN@1.0`
-4. `Summary@1.0`
-
-`AttackCapabilityInferencePass` declares:
-
-- `name = "ACI"`
-- `version = "1.0"`
-- `requires_passes = ("Scoring@2.0",)`
-
-`TopNPass` depends on `ACI@1.0` output for ranking behavior.
-
-## Signal extraction pipeline
-
-Signal extraction is centralized in `_extract_signals(...)` and pulls from:
-
-- finding-level flags: exploit and KEV
-- finding affected port (remote service signal list)
-- CVE analysis entries
-- title/description/plugin output
-- reference URLs/text
-
-Normalization behavior:
-
-- lowercase matching
-- substring match against effective token vocabulary
-
-Effective token vocabulary is built by `_effective_text_tokens(cfg)` using:
-
-- core tokens (maintainer baseline)
-- alias overlays (`signal_aliases`)
-- optional core token suppression (`disabled_core_tokens`)
-- replacement mode (`token_mode = replace`)
-
-## Rule evaluation model
-
-### Capability rules
-
-For each finding:
-
-1. collect normalized signals
-2. iterate enabled capability rules
-3. match if any rule signal is present in finding signals
-4. append capability and add rule weight to confidence base
-
-Confidence base is capped at `1.0`.
-
-### Exploit bonus
-
-If exploit boost is enabled and exploit evidence exists:
-
-- exploit bonus is computed from base confidence and capped by `max_bonus`
-- confidence factors include `exploit_boost` when bonus applies
-
-### Final confidence
-
-Final confidence:
-
-`confidence = min(1.0, confidence_base + exploit_bonus)`
-
-Bucket mapping:
-
-- `high` if `>= 0.8`
-- `medium` if `>= 0.5`
-- `low` otherwise
-
-## Chain inference model
-
-ACI evaluates enabled chain rules after capabilities are resolved.
-
-Chain match condition:
-
-- `set(rule.requires_all)` is a subset of matched capabilities
-
-Matched chain labels are emitted in finding semantics, and rule hit counts are aggregated in metrics.
-
-## Rank uplift model
-
-Finding-level uplift uses thresholded linear interpolation:
-
-If `confidence >= min_confidence`:
-
-`uplift = max_uplift * ((confidence - min_confidence) / (1.0 - min_confidence))`
-
-Else:
-
-`uplift = 0`
-
-Then clamp:
-
-`uplift = clamp(uplift, 0, max_uplift)`
-
-Asset-level uplift aggregates finding uplifts and scales by `asset_uplift_weight`, then clamps by `max_uplift`.
-
-## Output contracts
-
-### Finding semantic contract
-
-Each finding semantic record includes:
-
-- `finding_id`
-- `asset_id`
-- `confidence`
-- `confidence_factors`
-- `capabilities`
-- `chain_candidates`
-- `cwe_ids`
-- `evidence`
-- `exploit_boost_applied`
-- `rank_uplift`
-
-### Asset semantic contract
-
-Each asset semantic record includes:
-
-- `asset_id`
-- `weighted_confidence`
-- `max_confidence`
-- `capability_count`
-- `chain_candidate_count`
-- `ranked_finding_count`
-- `rank_uplift`
-
-### Metrics contract
-
-Metrics include:
-
-- `total_findings`
-- `inferred_findings`
-- `coverage_ratio`
-- `capabilities_detected`
-- `chain_candidates_detected`
-- `confidence_buckets`
-- `uplifted_findings`
-
-## Decision ledger integration
-
-ACI writes structured ledger events when ledger service is present:
-
-1. pass-level summary event
-2. preview of inferred finding events (bounded sample)
-
-Evidence fields include capabilities, chain candidates, confidence, and uplift, enabling review and runmanifest traceability.
-
-## Configuration and validation boundaries
-
-### Schema layer
-
-`topN.schema.json` validates structure and ranges for:
-
-- `aci.enabled`
-- confidence and uplift parameters
-- token mode and alias arrays
-- capability rule shapes
-- chain rule shapes
-
-### Semantic layer
-
-`TN_triage_semantics._parse_aci` validates semantics such as:
-
-- unique rule IDs
-- non-empty normalized signal arrays
-- token and signal length constraints
-- supported token mode values
-- range checks for all numeric fields
-
-These checks prevent malformed policy from reaching runtime pass logic.
-
-## Fallback behavior
-
-If config validation fails in non-strict mode:
-
-- loader returns safe fallback config
-- fallback ACI defaults are loaded from packaged `tn_triage.json` when possible
-- otherwise last-resort ACI fallback disables inference and emits empty rules
-
-This prevents hard failures in tolerant runtime modes while preserving safe behavior.
-
-## Integration with markdown reporting
-
-`markdown_report.py` consumes ACI output to render:
-
-- ACI metrics snapshot
-- top capability signals
-- top assets mapped to top findings and inferred capabilities
-- chain candidates and confidence per finding
-- explicit inference disclaimer for decision hygiene
-
-This appears in both executive and technical markdown report modes.
-
-## Performance characteristics
-
-ACI runs in-memory over findings and assets and uses:
-
-- linear scans over findings
-- set-based signal matching
-- dictionary aggregation for metrics and rollups
-
-Expected complexity is approximately linear in finding count multiplied by configured rule counts. Typical cost is low relative to enrichment and large-volume scoring paths.
-
-## Testing coverage and invariants
-
-Relevant tests include:
-
-- `tests/test_aci_pass.py`
-- `tests/test_config_schema_validation.py`
-- `tests/test_topn_summary_aggregation_alignment.py`
-- `tests/test_runmanifest.py`
-- `tests/test_markdown_report.py`
-
-Notable validated invariants:
-
-- replace mode honors alias-only vocabulary
-- merge mode supports selective core token disablement
-- TopN parity is preserved across sequential and parallel paths
-- ACI uplift behavior is deterministic for tie-break intent
-
-## Extension guidance
-
-When extending ACI policy:
-
-1. add capability rules first
-2. add chain rules only after capability quality is stable
-3. add aliases for environment-specific phrases
-4. tune weights conservatively and compare output deltas
-5. preserve deterministic IDs and labels for audit continuity
-
-## Residual risks
-
-1. Substring matching can over-trigger on ambiguous language.
-2. Over-broad aliases can increase false-positive capability inference.
-3. Excessive uplift settings can distort practical triage order.
-
-Mitigations:
-
-- maintain conservative defaults
-- disable proven noisy tokens
-- validate via representative datasets and runmanifest review
-
-## Related docs
+- `src/vulnparse_pin/core/passes/ACI/aci_pass.py` (`ACIV2Pass` / `ACI@2.0`, `AttackCapabilityInferencePass` / `ACI@1.0`)
+- `src/vulnparse_pin/core/passes/__init__.py` (`run_v2_duckdb_pipeline`)
+- `src/vulnparse_pin/storage/schema.sql` (`aci_signals` table)
+- `src/vulnparse_pin/core/passes/Scoring/scoringPass.py` (`ScoringV3Pass` Track A & Track B consumers)
+- `src/vulnparse_pin/core/passes/Triage/triage_pass.py` (`TriageDecisionPass` SSVC & SAST corroboration consumers)
+- `src/vulnparse_pin/core/passes/TopN/topn_pass.py` (`TopNV2Pass` tie-break consumer)
+- `src/vulnparse_pin/core/passes/TopN/TN_triage_semantics.py` & `src/vulnparse_pin/core/schemas/topN.schema.json`
+- `src/vulnparse_pin/reporting/renderer.py` & `src/vulnparse_pin/ui/app.py`
+
+## Pass Lifecycle & DAG Position
+
+In `run_v2_duckdb_pipeline()`, `ACI@2.0` runs **ahead of** scoring and triage:
+
+1. `NmapAdapter@1.0` *(optional)*
+2. `ACI@2.0` (`ACIV2Pass`, `requires_passes = ()`)
+3. `Scoring@3.0` (`ScoringV3Pass`)
+4. `Triage@2.0` (`TriageDecisionPass`, `requires_passes = ("Scoring@3.0", "ACI@2.0")`)
+5. `TopN@2.0` (`TopNV2Pass`, `requires_passes = ("Triage@2.0",)`)
+6. `Summary@2.0` (`SummaryV2Pass`)
+
+This ordering allows `Scoring@3.0` Track B (`exposure_weakness`) to incorporate `aci_signals` directly into `raw_risk_score` and `operational_score` without a second scoring pass.
+
+## DuckDB Storage & SQL Join Enrichment
+
+### `aci_signals` Table (`schema.sql`)
+
+```sql
+CREATE TABLE IF NOT EXISTS aci_signals (
+    run_id VARCHAR NOT NULL,
+    finding_id VARCHAR NOT NULL,
+    asset_id VARCHAR NOT NULL,
+    capabilities_json VARCHAR,
+    chains_json VARCHAR,
+    matched_tokens_json VARCHAR,
+    confidence DOUBLE,
+    uplift_score DOUBLE,
+    PRIMARY KEY (run_id, finding_id)
+);
+```
+
+### Multi-Table SQL Join Input Query
+
+`_run_duckdb()` streams findings in `25,000`-row cursor chunks (`fetchmany(25_000)`) from a single SQL query joining:
+
+1. `findings f`: `cwes_json`, `title`, `description`, `plugin_output`, `affected_port`, `tags_json`, `exploit_evidence`, `references_json`.
+2. `enrichment_snapshots e_prim`: primary CVE `in_kev` and `verified_exploit`.
+3. `finding_cves fc` + `enrichment_snapshots e` (`fc_agg` subquery): `BOOL_OR(COALESCE(e.in_kev, FALSE))` and `BOOL_OR(COALESCE(e.verified_exploit, FALSE))` across **all** CVEs linked to the finding, ensuring secondary-CVE KEV/exploit signals are never missed.
+4. `finding_evidence` (`fe_sig` subquery): `LIST(DISTINCT scanner_sig ORDER BY scanner_sig)` aggregating every contributing scanner rule/template/plugin signature across deduplicated detections.
+
+Results are written back to `aci_signals` inside an explicit transaction using `conn.appender("aci_signals")` in `25,000`-row batches.
+
+## Signal Extraction & `scanner_sig` Matching Parity
+
+`aci_pass.py` preserves exact parity between its fast-path memoized DuckDB evaluator and the single-record `_infer_single_record()` path:
+
+- **Word-boundary short tokens (`_SHORT_BOUNDED_TOKEN_RES`):** Short ambiguous acronyms/protocols (`rce`, `sqli`, `lfi`, `smb`, `ssh`, `rdp`, `rpc`, `xss`) require `(?<![a-z0-9])<tok>(?![a-z0-9])` boundaries rather than raw substring matches.
+- **Normalized `scanner_sig` matching (`_scan_sig`):**
+  - Fast-skips pure numeric `nessus:<id>`, `qualys:<id>`, `openvas:<id>` signatures unless `scanner_prefix_or_digit_tokens` match.
+  - Otherwise lowercases `scanner_sig`, normalizes separators (`[/._:-]+` → `" "`), and checks both `_STRUCTURED_TAG_SIGNALS` (excluding broad prose-only keys `exposure`, `secret`, `secrets` from signature matching) and `_effective_text_tokens(cfg)`.
+- **Structured tags & CWEs (`_scan_tags`, `_scan_cwes`):** Extracts normalized CWEs (`CWE-<int>`) from `cwes_json` and `CWE-\d+` inside tags, mapping them via `_CWE_SIGNAL_MAP` (e.g., `CWE-78`, `CWE-89`, `CWE-94`, `CWE-287`, `CWE-306`, `CWE-502`, `CWE-798`, `CWE-918`).
+- **Remote port & threat-intel signals:** Adds `remote_service` when `affected_port` is in `_REMOTE_PORT_SIGNALS`, `exploit` when `exploit_evidence` or `verified_exploit` is true, and `kev` when `in_kev` is true.
+- **Memoization caches:** Uses bounded memo dictionaries (`text_field_memo`, `cwes_memo`, `tags_memo`, `sig_memo`, `refs_memo`, `eval_memo`) so 500k+ finding runs avoid redundant regex/substring scans on repeated plugin descriptions.
+
+## Rule Evaluation, Guardrails, & Uplift Math
+
+`_evaluate_aci_signals_to_result()` executes deterministically:
+
+1. **Capability matching & guardrails:**
+   - Iterates enabled `cfg.capability_rules`, retaining the maximum rule weight per matched capability.
+   - **Remote-service guardrail:** `remote_execution` and `initial_access` are suppressed if the *only* matched signal is `remote_service`.
+   - **Lateral-movement guardrail:** `lateral_movement` from protocol-only signals (`smb`, `ssh`, `rdp`, `rpc`) is suppressed unless `has_exploit`, `in_kev`, `_LATERAL_CONTEXT_SIGNALS`, or `_LATERAL_CONTEXT_KEYWORDS` are present.
+   - In `merge` mode, `_EXTRA_CAPABILITY_SIGNALS` additionally scores `deserialization` (`0.80`), `ssrf` (`0.70`), `initial_access` via `ssrf`/`deserialization` (`0.70`), `panel`/`misconfig`/`exposure` (`0.50`), and `xss` (`0.55`).
+2. **Confidence & exploit boost:**
+   - `confidence_base = min(1.0, sum(capability_weight_max.values()))`
+   - If `exploit_boost.enabled` and `has_exploit`: `exploit_bonus = min(max_bonus, weight * confidence_base)`
+   - `confidence = min(1.0, confidence_base + exploit_bonus)`
+   - Buckets: `high >= 0.8`, `medium >= 0.5`, else `low`.
+3. **Chain inference:** Matches enabled `cfg.chain_rules` where `set(rule.requires_all).issubset(matched_capabilities)`.
+4. **Rank uplift:**
+   - If `confidence >= min_confidence`: `uplift = clamp(max_uplift * ((confidence - min_confidence) / (1.0 - min_confidence)), 0.0, max_uplift)`
+   - Else `0.0`.
+
+## Downstream Integration (Track B, Triage, TopN, Ledger, UI/Dossier)
+
+- **`Scoring@3.0` Track B (`exposure_weakness`):** Non-CVE findings gain `+3.5` for high-impact ACI capabilities (or `+2.0` for general capabilities) and `+1.0` for `aci_chains` before `signal_reliability` weighting; `score_trace` records `aci_capabilities` and `aci_chains`.
+- **`Triage@2.0`:** Consumes `aci_signals` for `bod-26-04` SSVC `exploitation=active` (reliable Track B active exposure), `automatable`, `technical_impact=total`, `P2` chain elevation, and `static_sast` P1-cap corroboration.
+- **`TopN@2.0`:** Uses `aci.uplift_score DESC` as a deterministic tie-breaker in SQL `ORDER BY` / `ROW_NUMBER()` windows.
+- **Decision Ledger (`ledger_events`):** `_emit_ledger()` appends `ACI_INFERENCE_SUMMARY` and up to 10 `ACI_FINDING_INFERRED` sample events when `finding_semantics` is populated (`<= 10,000` findings).
+- **`vpp ui` & Reporting:** `repositories.get_finding_detail()` and `reporting/renderer.py` expose `capabilities`, `chains`, `matched_tokens`, `aci_confidence`, and `aci_uplift_score` to the TUI finding inspector and Decision Defense Dossier templates.
+
+## Validation Boundaries
+
+- **JSON Schema:** `topN.schema.json` enforces structure and numeric bounds on `aci.*`.
+- **Semantic validation (`TN_triage_semantics._parse_aci`):** Enforces unique rule IDs, non-empty normalized signals, valid `token_mode` (`merge` or `replace`), valid capability references in `chain_rules`, and `0.0 <= min_confidence <= 1.0`.
+- **Testing:** Covered by `tests/test_aci_pass.py` and `tests/test_aci_v2.py` (parity across DuckDB and `ScanResult`, non-CVE Nuclei/SAST Track B uplift, `scanner_sig` matching, and guardrail enforcement).
+
+## Related Docs
 
 - [ACI Feature Explanation](ACI%20Feature%20Explanation.md)
 - [ACI Rule Authoring Tutorial](ACI%20Rule%20Authoring%20Tutorial.md)
-- [Configs](Configs.md)
 - [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)
+- [ScanResult & DuckDB Schema](ScanResult_Schema.md)
 - [Output Interpretation](Output%20Interpretation.md)

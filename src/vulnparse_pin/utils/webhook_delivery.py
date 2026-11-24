@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
@@ -51,16 +54,155 @@ def _asset_lookup(scan_result: Any) -> dict[str, Any]:
     return lookup
 
 
-def _lane_matches(filter_name: str, lane_name: str) -> bool:
-    if filter_name == "all":
-        return True
+_SLA_ALIASES = {
+    "3-day": "3-day",
+    "3d": "3-day",
+    "3_day": "3-day",
+    "3day": "3-day",
+    "14-day": "14-day",
+    "14d": "14-day",
+    "14_day": "14-day",
+    "14day": "14-day",
+    "60-day": "60-day",
+    "60d": "60-day",
+    "60_day": "60-day",
+    "60day": "60-day",
+    "defer": "defer",
+}
+
+
+def _normalize_sla_bucket(value: Optional[str]) -> str:
+    raw = str(value or "").strip().lower()
+    return _SLA_ALIASES.get(raw, raw)
+
+
+def _normalize_priority_tier(value: Optional[str]) -> str:
+    raw = str(value or "").strip().upper()
+    if raw in {"P1", "P1B", "P2", "P3", "P4"}:
+        return "P1b" if raw == "P1B" else raw
+    return ""
+
+
+def _resolve_priority_tier(
+    *,
+    lane_name: str,
+    risk_band: str = "",
+    cisa_kev: bool = False,
+    exploit_available: bool = False,
+    externally_facing: bool = False,
+    explicit_tier: Optional[str] = None,
+) -> str:
+    normalized_explicit = _normalize_priority_tier(explicit_tier)
+    if normalized_explicit in {"P1", "P2", "P3", "P4"}:
+        return normalized_explicit
+
     lane = str(lane_name or "").strip()
-    if filter_name == "P1":
-        return lane == "OAL-1 Immediate Exploitable"
-    if filter_name == "P1b":
+    band = str(risk_band or "").strip().lower()
+    if lane == "OAL-1 Immediate Exploitable" or (
+        band == "critical" and (cisa_kev or exploit_available) and externally_facing
+    ):
+        return "P1"
+    if lane == "OAL-2 High-Confidence Chain Path" or cisa_kev or (
+        band in {"critical", "high"} and lane == "OAL-3 Remaining High Risk"
+    ):
+        return "P2"
+    if band == "medium" or (lane == "OAL-3 Remaining High Risk" and band not in {"low", "informational", "info"}):
+        return "P3"
+    if band in {"low", "informational", "info"}:
+        return "P4"
+    return "P3"
+
+
+def _resolve_sla_bucket(
+    *,
+    lane_name: str,
+    risk_band: str = "",
+    cisa_kev: bool = False,
+    exploit_available: bool = False,
+    externally_facing: bool = False,
+    explicit_sla: Optional[str] = None,
+) -> str:
+    normalized_explicit = _normalize_sla_bucket(explicit_sla)
+    if normalized_explicit in {"3-day", "14-day", "60-day", "defer"}:
+        return normalized_explicit
+
+    lane = str(lane_name or "").strip()
+    band = str(risk_band or "").strip().lower()
+    if cisa_kev and externally_facing:
+        return "3-day"
+    if cisa_kev or (
+        externally_facing and (exploit_available or lane.startswith("OAL-1") or lane.startswith("OAL-2"))
+    ):
+        return "14-day"
+    if band in {"critical", "high", "medium"} or exploit_available or lane.startswith("OAL-2"):
+        return "60-day"
+    return "defer"
+
+
+def _lane_matches(
+    filter_name: str,
+    lane_name: str,
+    *,
+    risk_band: str = "",
+    cisa_kev: bool = False,
+    exploit_available: bool = False,
+    externally_facing: bool = False,
+    priority_tier: Optional[str] = None,
+    sla_bucket: Optional[str] = None,
+) -> bool:
+    raw_filter = str(filter_name or "").strip()
+    lowered = raw_filter.lower()
+    if not lowered or lowered == "all":
+        return True
+
+    lane = str(lane_name or "").strip()
+
+    # OAL lane matching (short OAL-1/2/3 and full canonical names)
+    if lowered in {"oal-1", "oal-1 immediate exploitable"}:
+        return lane.startswith("OAL-1")
+    if lowered in {"oal-2", "oal-2 high-confidence chain path"}:
+        return lane.startswith("OAL-2")
+    if lowered in {"oal-3", "oal-3 remaining high risk"}:
+        return lane.startswith("OAL-3")
+
+    # Legacy P1b specifically targets OAL-2
+    if lowered == "p1b":
         return lane == "OAL-2 High-Confidence Chain Path"
-    if filter_name == "P2":
-        return lane == "OAL-3 Remaining High Risk"
+
+    # BOD 26-04 SLA buckets
+    sla_target = _normalize_sla_bucket(lowered)
+    if sla_target in {"3-day", "14-day", "60-day"}:
+        resolved_sla = _resolve_sla_bucket(
+            lane_name=lane,
+            risk_band=risk_band,
+            cisa_kev=cisa_kev,
+            exploit_available=exploit_available,
+            externally_facing=externally_facing,
+            explicit_sla=sla_bucket,
+        )
+        return resolved_sla == sla_target
+
+    # Priority tiers P1/P2/P3/P4
+    tier_target = _normalize_priority_tier(raw_filter)
+    if tier_target in {"P1", "P2", "P3", "P4"}:
+        if not priority_tier and not risk_band and not cisa_kev and not exploit_available and not externally_facing:
+            # Backward compatibility for simple 2-arg lane checks
+            if tier_target == "P1":
+                return lane == "OAL-1 Immediate Exploitable"
+            if tier_target == "P2":
+                return lane == "OAL-3 Remaining High Risk"
+            return False
+
+        resolved_tier = _resolve_priority_tier(
+            lane_name=lane,
+            risk_band=risk_band,
+            cisa_kev=cisa_kev,
+            exploit_available=exploit_available,
+            externally_facing=externally_facing,
+            explicit_tier=priority_tier,
+        )
+        return resolved_tier == tier_target
+
     return False
 
 
@@ -110,17 +252,59 @@ def _build_compact_payload(
         aci_rec = aci_findings.get(finding_id, {}) if isinstance(aci_findings.get(finding_id), dict) else {}
         chain_candidates = [str(value) for value in (aci_rec.get("chain_candidates", []) or [])]
         confidence = float(aci_rec.get("confidence", 0.0) or 0.0)
+        risk_band = str(finding_ref.get("risk_band", ""))
+        exploit_available = bool(getattr(finding_obj, "exploit_available", False)) if finding_obj is not None else False
+        cisa_kev = bool(getattr(finding_obj, "cisa_kev", False)) if finding_obj is not None else False
+        externally_facing = bool(asset_exposure_map.get(asset_id, False))
+        explicit_tier = finding_ref.get("priority_tier") or (
+            getattr(finding_obj, "priority_tier", None) if finding_obj is not None else None
+        )
+        explicit_sla = (
+            finding_ref.get("sla_bucket")
+            or finding_ref.get("bod_26_04_sla")
+            or (
+                getattr(finding_obj, "sla_bucket", None)
+                or getattr(finding_obj, "bod_26_04_sla", None)
+                if finding_obj is not None
+                else None
+            )
+        )
         lane_name = _operational_action_lane_for_finding(
-            risk_band=str(finding_ref.get("risk_band", "")),
-            exploit_available=bool(getattr(finding_obj, "exploit_available", False)) if finding_obj is not None else False,
-            cisa_kev=bool(getattr(finding_obj, "cisa_kev", False)) if finding_obj is not None else False,
+            risk_band=risk_band,
+            exploit_available=exploit_available,
+            cisa_kev=cisa_kev,
             chain_candidates=chain_candidates,
             confidence=confidence,
-            externally_facing=bool(asset_exposure_map.get(asset_id, False)),
+            externally_facing=externally_facing,
             policy=triage_policy,
         )
-        if not _lane_matches(str(getattr(endpoint, "oal_filter", "all")), lane_name):
+        if not _lane_matches(
+            str(getattr(endpoint, "oal_filter", "all")),
+            lane_name,
+            risk_band=risk_band,
+            cisa_kev=cisa_kev,
+            exploit_available=exploit_available,
+            externally_facing=externally_facing,
+            priority_tier=explicit_tier,
+            sla_bucket=explicit_sla,
+        ):
             continue
+        priority_tier = _resolve_priority_tier(
+            lane_name=lane_name,
+            risk_band=risk_band,
+            cisa_kev=cisa_kev,
+            exploit_available=exploit_available,
+            externally_facing=externally_facing,
+            explicit_tier=explicit_tier,
+        )
+        sla_bucket = _resolve_sla_bucket(
+            lane_name=lane_name,
+            risk_band=risk_band,
+            cisa_kev=cisa_kev,
+            exploit_available=exploit_available,
+            externally_facing=externally_facing,
+            explicit_sla=explicit_sla,
+        )
         filtered_top_findings.append(
             {
                 "finding_id": finding_id,
@@ -129,10 +313,12 @@ def _build_compact_payload(
                 "score": float(finding_ref.get("score", 0.0) or 0.0),
                 "risk_band": str(finding_ref.get("risk_band", "") or ""),
                 "lane": lane_name,
+                "priority_tier": priority_tier,
+                "sla_bucket": sla_bucket,
                 "port": finding_ref.get("port"),
                 "protocol": finding_ref.get("proto"),
-                "exploit_available": bool(getattr(finding_obj, "exploit_available", False)) if finding_obj is not None else False,
-                "cisa_kev": bool(getattr(finding_obj, "cisa_kev", False)) if finding_obj is not None else False,
+                "exploit_available": exploit_available,
+                "cisa_kev": cisa_kev,
             }
         )
 
@@ -184,11 +370,33 @@ def _build_compact_payload(
     }
 
 
-def _sign_body(secret_env: str, body: str) -> str:
+def _resolve_signing_secret(secret_env: str) -> str:
     raw_secret = os.getenv(secret_env)
     if not raw_secret:
         raise RuntimeError(f"Webhook signing secret environment variable is not set: {secret_env}")
-    digest = hmac.new(raw_secret.encode("utf-8"), body.encode("utf-8"), sha256).hexdigest()
+    return raw_secret
+
+
+def _sign_body(
+    secret: str,
+    body_bytes: bytes | str,
+    timestamp: Optional[str] = None,
+    nonce: Optional[str] = None,
+) -> str:
+    if not secret:
+        raise RuntimeError("Webhook signing secret must not be empty.")
+    payload_bytes = (
+        bytes(body_bytes)
+        if isinstance(body_bytes, (bytes, bytearray))
+        else str(body_bytes).encode("utf-8")
+    )
+    if timestamp is not None or nonce is not None:
+        ts = "" if timestamp is None else str(timestamp)
+        nc = "" if nonce is None else str(nonce)
+        signing_input = f"{ts}.{nc}.".encode("utf-8") + payload_bytes
+    else:
+        signing_input = payload_bytes
+    digest = hmac.new(secret.encode("utf-8"), signing_input, sha256).hexdigest()
     return f"sha256={digest}"
 
 
@@ -268,7 +476,8 @@ def emit_configured_webhooks(
             continue
 
         body = _canonical_json(payload)
-        body_size = len(body.encode("utf-8"))
+        body_bytes = body.encode("utf-8")
+        body_size = len(body_bytes)
         timestamp = _utc_now_z()
         nonce = secrets.token_hex(16)
         if ledger is not None:
@@ -284,7 +493,10 @@ def emit_configured_webhooks(
         try:
             if body_size > int(getattr(webhook_cfg, "max_payload_bytes", 262144)):
                 raise RuntimeError("Webhook payload exceeds configured max_payload_bytes.")
-            signature = _sign_body(str(getattr(webhook_cfg, "signing_key_env", "VP_WEBHOOK_HMAC_KEY")), body)
+            secret = _resolve_signing_secret(
+                str(getattr(webhook_cfg, "signing_key_env", "VP_WEBHOOK_HMAC_KEY"))
+            )
+            signature = _sign_body(secret, body_bytes, timestamp, nonce)
             headers = {
                 "Content-Type": "application/json",
                 "User-Agent": f"VulnParse-Pin/{getattr(__import__('vulnparse_pin'), '__version__', 'unknown')}",
@@ -301,7 +513,7 @@ def emit_configured_webhooks(
                 try:
                     response = requests.post(
                         endpoint.url,
-                        data=body.encode("utf-8"),
+                        data=body_bytes,
                         headers=headers,
                         timeout=(
                             int(getattr(webhook_cfg, "connect_timeout_seconds", 3)),

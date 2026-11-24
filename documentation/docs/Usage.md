@@ -1,531 +1,340 @@
 # Usage
 
-Listed below are the detailed usage instructions for VulnParse-Pin. This guide will help you understand how to use the tool effectively to analyze vulnerabilities.
+This is the authoritative **v2.0.0** CLI reference for VulnParse-Pin (`vpp` / `vulnparse-pin`, or `python -m vulnparse_pin`).
 
-Here are example usage instructions for VulnParse-Pin. For detailed installation instructions, please refer to the [Installation Guide](Installation.md).
+For a 5-minute walkthrough, see [Getting Started In 5 Minutes](Getting%20Started%20In%205%20Minutes.md). For complete runnable pipelines, see [Workflow Examples](Workflow%20Examples.md) and [Deployment Options](Deployment%20Options.md).
 
-For version transitions and operations guidance, also see:
+## Command Overview
 
-- [Upgrade and Migration](Upgrade%20and%20Migration.md)
-- [Troubleshooting](Troubleshooting.md)
-- [Output Interpretation](Output%20Interpretation.md)
-
-## Basic Usage
-
-To run VulnParse-Pin, use the following command in your terminal:
-
-```bash
-vpp -f <input_file> -o <output_file>
+```text
+vpp [--version | -v] [--help | -h] COMMAND ...
 ```
 
-Where:
+| Subcommand | Purpose |
+| --- | --- |
+| `vpp scan` | Stream, normalize, enrich, score, triage, persist to `.vpp.db`, and export reports |
+| `vpp demo` | Run the 100% offline bundled multi-scanner demo pack and optional TUI |
+| `vpp diff` | Compare two runs in `.vpp.db` (or two scan files) and evaluate CI fail gates |
+| `vpp ui` | Launch the interactive Textual TUI workbench over `.vpp.db` (requires `[ui]` extra) |
+| `vpp export` | Export Decision Defense Dossiers, Executive Roadmaps, CSV, or JSON from `.vpp.db` |
+| `vpp verify` | Read-only verification of `RunManifest` schema, digest, ledger chain, and listed outputs |
+| `vpp defer` | Upsert a deferral, acceptance, or mitigation entry in `decisions.yaml` (and optionally refresh `.vpp.db`) |
+| `vpp intel` | Inspect local threat-intel cache integrity/freshness (`status`) or sync feeds (`sync`) |
 
-- `<input_file>` is the path to the input file containing vulnerability data. This file should be in a supported format (e.g., JSON, CSV) and contain the necessary information for analysis.
+## Exit Codes
 
-- `<output_file>` is the path where the output will be saved. The output will contain the parsed and analyzed vulnerability data.
+| Exit Code | Meaning |
+| --- | --- |
+| `0` | Success (including `vpp diff` when the `--fail-on` gate passes) |
+| `1` | Runtime error, input/parser failure, path/symlink policy error (`FilePathError` / `FilePermissionError`), missing `.vpp.db` or `[ui]` extra, or `vpp verify` integrity failure |
+| `2` | CLI argument/usage error, `--no-csv-sanitize` without `--confirm-unsafe-csv`, invalid `--offline` URL override, or `vpp diff --fail-on` policy/drift gate breach (`p1`, `p2`, `kev`, `stale-assumption`) |
 
-## Additional Options
+## Shared Runtime, Security & Portability Flags
 
-VulnParse-Pin also supports additional options to customize the analysis process. Here are some of the available options:
+Every subcommand (`scan`, `demo`, `diff`, `ui`, `export`, `verify`, `defer`, `intel`) accepts these shared options:
 
 ### General Options
 
-#### --demo
+- `--log-file <PATH>`, `-Lf <PATH>`: Log file destination inside the resolved log directory (default: `vulnparse_pin.log`).
+- `--log-level <LEVEL>`, `-Ll <LEVEL>`: Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (default: `INFO`).
+- `--version`, `-v`: Show program version and exit.
 
-- `--demo`: Runs the packaged full-pipeline demo profile using OpenVAS XML + Nmap context with GHSA online budget defaults. Use it like this:
+### Filesystem Security Options (`PermFileHandler`)
 
-```bash
-vpp --demo
-```
+- `--forbid-symlinks-read`, `--forbid-symlinks_read`, `-Sr`: Reject symlinks when resolving read paths (default: `True`).
+- `--allow-symlinks-read`: Explicitly allow following symlinks during read operations.
+- `--forbid-symlinks-write`, `--forbid-symlinks_write`, `-Sw`: Reject symlinks when resolving write paths (default: `True`).
+- `--enforce-root-read`, `-err`: Restrict read operations to `PermFileHandler` acceptable roots (default: `False`).
+- `--enforce-root-write`, `-erw`: Restrict write operations to `PermFileHandler` acceptable roots (default: `True`; explicit CLI output paths are authorized via `authorize_output_path` without escaping symlink checks).
+- `--file-mode <OCTAL>`, `-fm <OCTAL>`: POSIX-only chmod mode for written files (default: `0o600`).
+- `--dir-mode <OCTAL>`, `-dm <OCTAL>`: POSIX-only chmod mode for created directories (default: `0o700`).
+- `--debug-path-policy`: Print the active `PermFileHandler` path policy and exit.
 
-Demo profile defaults:
+### Portability
 
-- Input file: packaged `openvas_updated_test.xml` (15 assets / 2,000 findings)
-- Nmap context: packaged `base_test_nmap.xml`
-- GHSA mode: forced online (`--ghsa online` semantics)
-- GHSA budget: forced to `25`
-- Enrichment: KEV/EPSS/Exploit enabled, NVD enabled
-- Artifacts: JSON, CSV, executive markdown, technical markdown, runmanifest
+- `--portable`, `-P`: Store config, cache, logs, and default outputs in `./data` relative to the current working directory (or frozen executable directory) instead of OS user data directories. Also enabled by setting `VULNPARSE_PIN_PORTABLE=1` (or `true`/`yes`/`y`/`on`).
 
-#### --pretty-print
+---
 
-- `--pretty-print [-pp]`: This option formats the output in a more human-readable way. It can be used as follows:
+## Subcommands
 
-```bash
-vpp -f <input_file> -o <output_file> --pretty-print
-```
+### 1. `vpp scan`
 
-#### --version
-
-- `--version [-v]`: This option displays the current version of VulnParse-Pin. Use it like this:
+Ingest one or more scanner reports into `.vpp.db`, hydrate matched threat intel, run the DuckDB pass DAG (`NmapAdapter@1.0` → `ACI@2.0` → `Scoring@3.0` → `Triage@2.0` → `TopN@2.0` → `Summary@2.0`), optionally diff against a baseline run, and export artifacts.
 
 ```bash
-vpp --version
+vpp scan [OPTIONS] [files ...]
 ```
 
-#### --help
+#### Scan Inputs & Context
 
-- `--help [-h]`: This option provides a help message with information about the available commands and options. You can access it with:
+| Flag | Default | Description |
+| --- | --- | --- |
+| `files` (positional) | `None` | One or more paths to scanner reports (`.nessus`, `.xml`, `.csv`, `.sarif`, `.jsonl`, `.json`). |
+| `--file PATH`, `-f PATH` | `None` | Single input scan file (legacy compatibility; combined with `files` if both given). |
+| `--db PATH` | `.vpp.db` | DuckDB workspace database path (`0o600` POSIX permissions, symlink-checked). |
+| `--assets PATH` | `None` | Asset context inventory YAML (`assets.yaml`) validated against `assets.schema.json`. |
+| `--decisions PATH` | `None` | Triage decisions/deferrals YAML (`decisions.yaml`) validated against `decisions.schema.json`. |
+| `--profile {default,bod-26-04}` | `default` | Triage decision profile (`default` or CISA BOD 26-04 SSVC). |
+| `--run-id ID` | Auto-generated | Explicit run identifier (overwrites if `run_id` already exists in `.vpp.db`). |
+| `--baseline-run-id ID` | `None` | Baseline `run_id` in `.vpp.db` for automatic scan-over-scan `DiffEngine` comparison. |
+| `--strict-schema` | `False` | Enforce strict schema validation across inputs and configs (also enables strict ingestion). |
+| `--allow-large`, `-al` | `False` | Raise input size limit from default `500 MiB` up to `50 GiB`. |
+| `--allow-degraded-input` / `--no-allow-degraded-input` | `True` | Allow or reject degraded/partial parser findings during normalization. |
+| `--strict-ingestion` | `False` | Fail normalization if degraded findings are present (overrides `--allow-degraded-input`). |
+| `--min-ingestion-confidence FLOAT` | `0.0` | Reject findings whose ingestion confidence falls below `[0.0–1.0]`. |
+| `--show-ingestion-summary` | `False` | Print ingestion quality summary metrics after normalization. |
+
+#### Enrichment Flags
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--offline` | `False` | Run 100% offline using local SQLite/feed caches and supplied local paths (rejects HTTP/HTTPS feed URLs and online `--ghsa` with exit `2`). |
+| `--no-kev` | `False` | Disable CISA KEV enrichment. |
+| `--no-epss` | `False` | Disable FIRST EPSS v5 enrichment. |
+| `--no-exploit` | `False` | Disable Exploit-DB enrichment. |
+| `--no-nvd` | `False` | Disable NVD enrichment. |
+| `--kev-source {online,offline}` | `online` | Select CISA KEV source mode. |
+| `--epss-source {online,offline}` | `online` | Select FIRST EPSS source mode. |
+| `--exploit-source {online,offline}`, `-es` | `online` | Select Exploit-DB source mode (`offline` without `--offline` requires `--exploit-db`). |
+| `--kev-feed KEV_FEED`, `--kev` | `None` | Override KEV feed with a local path or HTTPS URL. |
+| `--epss-feed EPSS_FEED`, `--epss` | `None` | Override EPSS feed with a local path or HTTPS URL. |
+| `--nvd NVD_SOURCE`, `--nvd-source` | `None` | Local NVD 2.0 `.json`, `.json.gz`, or directory of NVD feeds. |
+| `--exploit-db PATH`, `-edb PATH` | `None` | Local Exploit-DB CSV file. |
+| `--ghsa [PATH\|online]` | `None` (disabled) | Opt-in GHSA enrichment: bare `--ghsa` or `--ghsa online` queries GitHub API; `--ghsa PATH` loads a local advisory directory/cache. |
+| `--ghsa-budget COUNT` | `None` (`25` in `config.yaml`) | Positive integer cap on online GHSA CVE lookups (only valid with online `--ghsa`). |
+| `--osv PATH` | `None` | Optional offline OSV JSON file, directory, or ZIP archive. |
+| `--nmap PATH`, `--nmap-ctx PATH`, `-nmap PATH` | `None` | Optional Nmap `nmaprun` `.xml` file for open-port attack-surface context (`NmapAdapter@1.0`). |
+| `--refresh-cache` | `False` | Force refresh of feed caches. |
+| `--allow_regen`, `--allow-regen` | `False` | Allow local cache checksum/meta regeneration if missing. |
+
+#### Output Flags
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--template-dir DIR` | `None` | Custom Jinja2 reporting templates directory (symlink-checked). |
+| `--output-dossier PATH` | `None` | Write Decision Defense Dossier `.md` and `.html` (file stem or directory). |
+| `--output-html PATH` | `None` | Write standalone HTML Decision Defense Dossier. |
+| `--output FILE`, `-o FILE`, `--output-json FILE` | `None` | Write normalized + derived JSON output. |
+| `--output-csv PATH`, `-oC PATH` | `None` | Write CSV output. |
+| `--csv-profile {full,analyst,audit}` | `full` | Select CSV schema (`non-default` profiles require `--output-csv`). |
+| `--output-md PATH`, `-oM PATH` | `None` | Write Executive Roadmap Markdown report. |
+| `--output-md-technical PATH`, `-oMT PATH` | `None` | Write technical Decision Defense Dossier Markdown report. |
+| `--output-runmanifest PATH`, `-oRM PATH` | `None` | Write `RunManifest` v2 JSON artifact (hashes written outputs and updates `runs.manifest_digest` in `.vpp.db`). |
+| `--output-all BASENAME`, `--output_all`, `-oA` | `None` | Derive all standard outputs from `BASENAME`: `.json`, `.csv`, `_summary.md`, `_technical.md`, `_dossier.md`/`.html` (unless `--output-html` is set), and `_runmanifest.json`. |
+| `--runmanifest-mode {compact,expanded}` | `compact` | Decision detail level in the `RunManifest` ledger. |
+| `--pretty-print`, `-pp` | `False` | Pretty-print JSON output (`4`-space indentation). |
+| `--presentation` | `False` | Export presentation-friendly JSON view. |
+| `--overlay-mode {flatten,namespace}` | `flatten` | Presentation overlay mode (requires `--presentation`). |
+| `--no-csv-sanitize`, `-noC` | `False` | Disable CSV cell formula-injection sanitization (requires `--output-csv` and `--confirm-unsafe-csv`, otherwise fails with exit `2`). |
+| `--confirm-unsafe-csv` | `False` | Explicit confirmation required to disable CSV sanitization. |
+| `--webhook-endpoint URL` | `None` | Override configured webhook target with an HTTPS URL (credentials in URL are rejected). |
+| `--webhook-oal-filter {all,P1,P1b,P2}` | `None` | Filter webhook `top_findings` payload by Operational Action Lane. |
+
+Example:
 
 ```bash
-vpp --help
+vpp scan nessus.nessus trivy.sarif nuclei.jsonl \
+  --nmap nmap.xml \
+  --assets assets.yaml \
+  --decisions decisions.yaml \
+  --profile bod-26-04 \
+  --output-dossier out/dossier \
+  --output-md out/roadmap.md \
+  --output-runmanifest out/runmanifest.json
 ```
 
-#### --log-file
+---
 
-- `--log-file [-Lf] <log_file>`: This option allows you to specify a log file where the tool will write its logs. Use it as follows:
+### 2. `vpp demo`
+
+Run the 100% offline end-to-end demo using bundled multi-scanner fixtures (Nessus, Trivy SARIF, Nuclei JSONL, Semgrep SARIF, Nmap XML, `assets.yaml`, `decisions.yaml`, and miniature intel snapshot) without modifying user caches or making network requests.
 
 ```bash
-vpp -f <input_file> -o <output_file> --log-file <log_file>
+vpp demo [OPTIONS]
 ```
 
-#### --log-level
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--db PATH` | `.vpp-demo.db` | Demo DuckDB workspace path. |
+| `--profile {default,bod-26-04}` | `default` | Triage decision profile. |
+| `--no-ui` | `False` | Skip launching the interactive Textual TUI after exporting demo artifacts (also skipped automatically if stdout is not a TTY or `[ui]` is absent). |
+| `--output-dir DIR` | `vpp_demo_output` | Output directory for `dossier.md`, `dossier.html`, `executive_roadmap.html`, and `runmanifest.json`. |
+| `--template-dir DIR` | `None` | Custom Jinja2 reporting templates directory. |
 
-- `--log-level [-Ll] <log_level>`: This option sets the logging level (e.g., DEBUG, INFO, WARNING, ERROR). Use it like this:
+---
+
+### 3. `vpp diff`
+
+Compare two runs in `.vpp.db` or two scan files on the fly (`:memory:` DuckDB), report new high-risk findings, threat-intel escalations, verified remediations, shadow-asset deltas, and invalidated deferral assumptions, and evaluate CI fail gates.
 
 ```bash
-vpp -f <input_file> -o <output_file> --log-level DEBUG
+vpp diff [OPTIONS] [base] [target]
 ```
 
-### Enrichment Options
+- **Positional `base` and `target`**: Either two `run_id` strings in `--db` (if omitted, compares the previous run to the latest run in `--db`), or two scan file paths for on-the-fly diffing.
 
-Enrichment defaults to enabled + online for KEV, EPSS, and Exploit-DB.
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--db PATH` | `.vpp.db` | DuckDB workspace path when diffing stored runs. |
+| `--decisions PATH` | `None` | Decisions registry YAML for stale-assumption checks. |
+| `--assets PATH` | `None` | Optional `assets.yaml` when diffing two scan files on the fly. |
+| `--profile {default,bod-26-04}` | `default` | Triage profile when ingesting two scan files on the fly. |
+| `--offline` | `False` | Offline enrichment mode when ingesting two scan files on the fly. |
+| `--fail-on {p1,p2,kev,stale-assumption,none}` | `none` | Exit with code `2` when the specified delta condition triggers. |
+| `--output-md PATH` | `None` | Write Markdown diff report. |
+| `--output-pr-comment PATH` | `None` | Write concise PR comment Markdown. |
+| `--output-json PATH` | `None` | Write structured JSON diff report. |
+| `--template-dir DIR` | `None` | Custom Jinja2 templates directory. |
 
-Use disable flags to turn a source off, and source flags to switch to offline cache/file mode.
-
-#### --nmap-ctx
-
-- `--nmap-ctx [-nmap] <path>`: Supply a Nmap XML file as supplementary attack-surface context. When provided, the Nmap adapter pass maps confirmed open ports to scan assets and makes port evidence available to downstream scoring and ranking passes. This flag is opt-in only; omitting it disables the adapter entirely.
+Example CI gate:
 
 ```bash
-vpp -f scan.nessus -o results.json --nmap-ctx nmap_results.xml
+vpp diff --db .vpp.db --decisions decisions.yaml --fail-on stale-assumption --output-pr-comment out/pr_comment.md
 ```
 
-The file must have a `.xml` extension and be a valid Nmap `nmaprun` XML file. Policy controls for this feature are in `config.yaml` under `nmap_ctx`. See [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md) for full details.
+---
 
-#### --no-kev
+### 4. `vpp ui`
 
-- `--no-kev`: Disable KEV enrichment.
+Launch the interactive Textual TUI workbench (`VppApp`) over `.vpp.db` (requires `pip install "vulnparse-pin[ui]"`).
 
 ```bash
-vpp -f <input_file> -o <output_file> --no-kev
+vpp ui [OPTIONS]
 ```
 
-#### --no-epss
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--db PATH` | `.vpp.db` | DuckDB workspace path. |
+| `--run-id ID` | Latest run | Target `run_id` to display. |
+| `--decisions PATH` | `None` | Optional `decisions.yaml` enabling interactive deferrals (`f` modal). |
+| `--output-dir DIR` | `.` | Directory for dossier exports triggered via `e` / `E`. |
+| `--template-dir DIR` | `None` | Custom Jinja2 templates directory. |
 
-- `--no-epss`: Disable EPSS enrichment.
+Keyboard shortcuts inside `vpp ui`:
+- `1` / `2` / `3` / `4`: Filter by priority tier `P1` / `P2` / `P3` / `P4`
+- `0`: Clear all filters
+- `t`: Cycle scoring track (`cve_threat` / `exposure_weakness` / all)
+- `k`: Toggle CISA KEV filter
+- `u`: Toggle unmatched shadow assets filter
+- `/`: Focus search input (`Esc` returns to table)
+- `[` / `]`: Previous / next page
+- `d`: Switch to **Diff & Stale Assumptions** tab
+- `e` / `E`: Export selected finding dossier / full run dossier
+- `f`: Open deferral / acceptance / mitigation modal
+- `q`: Quit
+
+---
+
+### 5. `vpp export`
+
+Export reports or data views directly from an existing `.vpp.db` run without re-parsing scanner inputs.
 
 ```bash
-vpp -f <input_file> -o <output_file> --no-epss
+vpp export --format FORMAT [OPTIONS]
 ```
 
-#### --no-exploit
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--format {dossier-md,dossier-html,roadmap-md,roadmap-html,csv,json}` | **Required** | Artifact format to export. |
+| `--db PATH` | `.vpp.db` | DuckDB workspace path. |
+| `--run-id ID` | Latest run | Target `run_id`. |
+| `--finding-id ID` | `None` | Optional single `finding_id` for `dossier-md` / `dossier-html`. |
+| `--output PATH`, `-o PATH` | stdout (`dossier-*`/`roadmap-*`) or `vpp_<run_id>.<ext>` | Output file path. |
+| `--template-dir DIR` | `None` | Custom Jinja2 templates directory. |
+| `--csv-profile {full,analyst,audit}` | `full` | CSV export column profile (`--format csv`). |
+| `--overlay-mode {flatten,namespace}` | `namespace` | JSON presentation mode (`--format json`). |
+| `--pretty-print`, `-pp` | `False` | Pretty-print JSON output. |
+| `--no-csv-sanitize`, `-noC` | `False` | Disable CSV cell sanitization (requires `--confirm-unsafe-csv`, else exit `2`). |
+| `--confirm-unsafe-csv` | `False` | Explicitly confirm disabling CSV sanitization. |
 
-- `--no-exploit`: Disable Exploit-DB enrichment.
+---
+
+### 6. `vpp verify`
+
+Verify a `RunManifest` JSON file's schema, `verification.manifest_digest`, SHA-256 hash-chained decision ledger, and all non-null listed output artifacts (`outputs` + `output_hashes` / `outputs_sha256`).
 
 ```bash
-vpp -f <input_file> -o <output_file> --no-exploit
+vpp verify [OPTIONS] runmanifest
 ```
 
-#### --kev-source
+- **Positional `runmanifest`**: Path to the `runmanifest.json` file.
+- **Strictly Read-Only Default Behavior**: By default, `vpp verify` does **not** create `$HOME` / `XDG_DATA_HOME` / `./data` directories or write log files. Directories and a log file are only created if you explicitly pass a custom `--log-file` (other than the default `vulnparse_pin.log`).
+- Honors `--forbid-symlinks-read` (default `True`), `--allow-symlinks-read`, `--enforce-root-read`, and `--portable`.
+- Returns `0` on success, `1` if the manifest, ledger chain, or any listed output artifact fails verification or is missing/symlinked.
 
-- `--kev-source <online|offline>`: Select KEV source mode. Default is `online`.
+---
+
+### 7. `vpp defer`
+
+Create or update a deferral, acceptance, or mitigation rule in `decisions.yaml` (preserving YAML comments via `ruamel.yaml`) and optionally re-evaluate triage decisions in `.vpp.db`.
 
 ```bash
-vpp -f <input_file> -o <output_file> --kev-source offline
+vpp defer --asset PATTERN --id CVE_OR_RULE --status STATUS --rationale TEXT --owner NAME [OPTIONS]
 ```
 
-#### --epss-source
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--asset PATTERN` | **Required** | Asset ID, hostname, IP, CIDR, or glob pattern. |
+| `--id CVE_OR_RULE` | **Required** | CVE ID or scanner rule/template ID. |
+| `--status {deferred,accepted,mitigated}` | **Required** | Decision status. |
+| `--rationale TEXT` | **Required** | Audit-defensible rationale. |
+| `--owner NAME` | **Required** | Responsible owner. |
+| `--expires YYYY-MM-DD` | `None` | Expiration date (`YYYY-MM-DD` or ISO-8601). |
+| `--in-kev true\|false` | `None` | Assumption predicate: whether CVE is in CISA KEV. |
+| `--max-epss FLOAT` | `None` | Assumption predicate: max EPSS score `[0.0–1.0]`. |
+| `--max-epss-percentile FLOAT` | `None` | Assumption predicate: max EPSS percentile `[0.0–1.0]`. |
+| `--internet-facing true\|false` | `None` | Assumption predicate: asset internet exposure state. |
+| `--max-cvss FLOAT` | `None` | Assumption predicate: max CVSS base score `[0.0–10.0]`. |
+| `--decision-id ID` | Auto-generated | Explicit decision identifier. |
+| `--decisions PATH` | `decisions.yaml` | Target decisions YAML path. |
+| `--db PATH` | `None` | Optional `.vpp.db` to immediately refresh `triage_decisions` for the latest run. |
 
-- `--epss-source <online|offline>`: Select EPSS source mode. Default is `online`.
+---
+
+### 8. `vpp intel`
+
+Inspect local threat-intelligence cache freshness, row counts, and HMAC/SHA-256 integrity (`status`), or sync feeds (`sync`) for connected staging or offline prep.
 
 ```bash
-vpp -f <input_file> -o <output_file> --epss-source offline
+vpp intel [status|sync] [OPTIONS]
 ```
 
-#### --kev-feed
-
-- `--kev-feed <PATH|URL>`: Optional KEV feed override.
-
-```bash
-vpp -f <input_file> -o <output_file> --kev-feed https://example.org/kev.json
-```
-
-#### --epss-feed
-
-- `--epss-feed <PATH|URL>`: Optional EPSS feed override.
-
-```bash
-vpp -f <input_file> -o <output_file> --epss-feed https://example.org/epss.csv.gz
-```
-
-#### --exploit-source
-
-- `--exploit-source [-es] <source>`: This option allows you to specify the feed source for exploit enrichment. The available sources are `online` and `offline`. (Default: online) Use it as follows:
-
-```bash
-vpp -f <input_file> -o <output_file> --exploit-source online
-```
-
-#### --exploit-db
-
-- `--exploit-db [-edb] <path>`: This option allows you to specify the path to the local Exploit Database for offline enrichment. Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --exploit-db /path/to/exploit-db
-```
-
-#### --ghsa
-
-- `--ghsa [PATH|online]`: Enable GitHub Security Advisory (GHSA) enrichment. Use bare `--ghsa` for online mode (queries the GitHub Advisories API) or `--ghsa <path>` for offline mode pointing to a local advisory database directory. GHSA enrichment is disabled by default — this flag is the only activation path at runtime.
-
-```bash
-# Online mode
-vpp -f scan.nessus -o results.json --ghsa
-
-# Offline mode
-vpp -f scan.nessus -o results.json --ghsa /path/to/advisory-database
-```
-
-#### --ghsa-budget
-
-- `--ghsa-budget <COUNT>`: Override the online GHSA prefetch CVE budget. Applies only when `--ghsa` is in online mode. Must be a positive integer. Config default is `25` (set via `enrichment.ghsa_online_prefetch_budget` in `config.yaml`).
-
-```bash
-vpp -f scan.nessus -o results.json --ghsa --ghsa-budget 50
-```
-
-#### --refresh-cache
-
-- `--refresh-cache`: This option forces the tool to refresh its cache during enrichment. This will ensure that the latest data is used for enrichment. Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --refresh-cache
-```
-
-#### --allow-regen
-
-- `--allow-regen`: This option allows the tool to regenerate checksum data during offline enrichment if necessary using best-effort. Use it as follows:
-
-```bash
-vpp -f <input_file> -o <output_file> --allow-regen
-```
-
-#### --no-nvd
-
-- `--no-nvd`: This option disables the use of the National Vulnerability Database (NVD) for enrichment. Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --no-nvd
-```
-
-### Ingestion Quality Options
-
-Use these flags to control how strictly VulnParse-Pin accepts degraded parser input (for example constrained CSV exports):
-
-#### --allow-degraded-input / --no-allow-degraded-input
-
-- `--allow-degraded-input` (default) allows degraded findings to pass normalization.
-- `--no-allow-degraded-input` rejects runs that contain degraded findings.
-
-```bash
-vpp -f <input_file> -o <output_file> --no-allow-degraded-input
-```
-
-#### --strict-ingestion
-
-- `--strict-ingestion`: strict gate that rejects any degraded findings. This flag overrides `--allow-degraded-input`.
-
-```bash
-vpp -f <input_file> -o <output_file> --strict-ingestion
-```
-
-#### --min-ingestion-confidence
-
-- `--min-ingestion-confidence <0.0-1.0>`: reject the run if any finding's ingestion confidence is below the threshold.
-
-```bash
-vpp -f <input_file> -o <output_file> --min-ingestion-confidence 0.60
-```
-
-#### --show-ingestion-summary
-
-- `--show-ingestion-summary`: print ingestion quality summary metrics (average confidence, degraded counts, fidelity distribution).
-
-```bash
-vpp -f <input_file> -o <output_file> --show-ingestion-summary
-```
-
-### Output Options
-
-#### --output
-
-- `--output [-o] <output_file>`: This option specifies the path where the output will be saved. The output will contain the parsed and analyzed vulnerability data. Use it as follows:
-
-```bash
-vpp -f <input_file> --output <output_file>
-```
-
-#### --output-csv
-
-- `--output-csv [-oC] <csv_file>`: This option allows you to specify a CSV file where the output will be saved in CSV format. Use it like this:
-
-```bash
-vpp -f <input_file> --output-csv <csv_file>
-```
-
-#### --csv-profile
-
-- `--csv-profile <full|analyst|audit>`: Selects the CSV presentation profile.
-  - `full` (default): backward-compatible full schema for existing pipelines.
-  - `analyst`: triage-focused view with high-value operational fields.
-  - `audit`: traceability-focused view with contributor and aggregation context.
-
-```bash
-# Full legacy-compatible output
-vpp -f <input_file> --output-csv out.csv --csv-profile full
-
-# Analyst triage sheet
-vpp -f <input_file> --output-csv out_analyst.csv --csv-profile analyst
-
-# Audit traceability sheet
-vpp -f <input_file> --output-csv out_audit.csv --csv-profile audit
-```
-
-Note: non-default profiles require `--output-csv`.
-
-#### --webhook-endpoint
-
-- `--webhook-endpoint <HTTPS_URL>`: Send a signed webhook event for the run to a specific HTTPS endpoint. This is a one-off runtime override and does not require editing config files.
-
-```bash
-set VP_WEBHOOK_HMAC_KEY=replace_with_strong_random_secret
-vpp -f scan.nessus -o results.json --webhook-endpoint https://hooks.example.org/vpp
-```
-
-#### --webhook-oal-filter
-
-- `--webhook-oal-filter <all|P1|P1b|P2>`: Restrict webhook `top_findings` payload content to one Operational Action Lane. Use with `--webhook-endpoint`.
-
-```bash
-vpp -f scan.nessus -o results.json --webhook-endpoint https://hooks.example.org/vpp --webhook-oal-filter P1
-```
-
-#### Persistent webhook config (config.yaml)
-
-Use the `webhook` block in `src/vulnparse_pin/resources/config.yaml` for persistent endpoint delivery.
-
-```yaml
-webhook:
-  enabled: true
-  signing_key_env: VP_WEBHOOK_HMAC_KEY
-  key_id: primary
-  timeout_seconds: 5
-  connect_timeout_seconds: 3
-  read_timeout_seconds: 5
-  max_retries: 2
-  max_payload_bytes: 262144
-  replay_window_seconds: 300
-  allow_spool: true
-  spool_subdir: webhook_spool
-  endpoints:
-    - url: https://hooks.example.org/vpp
-      enabled: true
-      oal_filter: all
-      format: generic
-```
-
-#### --output-md
-
-- `--output-md [-oM] <md_file>`: This option allows you to specify a Markdown file where the output will be saved in Markdown format. This type of output is useful for generating human-readable reports for executives or stakeholders. Use it as follows:
-
-```bash
-vpp -f <input_file> --output-md <md_file>
-```
-
-#### --output-md-technical
-
-- `--output-md-technical [-oMT] <md_tech_file>`: This option allows you to specify a Markdown file where the output will be saved in a technical format. This type of output is useful for generating detailed reports for technical teams. Use it like this:
-
-```bash
-vpp -f <input_file> --output-md-technical <md_tech_file>
-```
-
-#### --output-runmanifest
-
-- `--output-runmanifest [-oRM] <runmanifest_file>`: Emit a RunManifest JSON artifact that captures run metadata, pass metrics, and the embedded decision ledger.
-
-```bash
-vpp -f <input_file> --output-runmanifest runmanifest.json
-```
-
-#### --runmanifest-mode
-
-- `--runmanifest-mode <compact|expanded>`: Controls decision detail volume in the RunManifest. `compact` is default and optimized for routine operations; `expanded` includes richer decision detail for investigations.
-
-```bash
-vpp -f <input_file> --output-runmanifest runmanifest.json --runmanifest-mode expanded
-```
-
-#### --verify-runmanifest
-
-- `--verify-runmanifest <runmanifest_file>`: Validate an existing RunManifest file (schema + integrity chain + manifest digest) and exit without running the parsing/enrichment pipeline.
-
-```bash
-vpp --verify-runmanifest runmanifest.json
-```
-
-#### RunManifest auditability best practice
-
-For auditable workflows, treat RunManifest as untrusted until verified.
-
-- Verify immediately after the pipeline writes it.
-- Verify again before trust actions (sharing, ticket evidence, compliance review, or archival as final evidence).
-
-Example post-run verification pattern:
-
-```bash
-vpp -f <input_file> -o <output_file> --output-runmanifest runmanifest.json
-vpp --verify-runmanifest runmanifest.json
-```
-
-#### --presentation
-
-- `--presentation <mode>`: This option allows you to specify a presentation mode where the output is formatted for presentation purposes. This is useful for generating reports that are easy to read and understand and SIEM ingestion pipelines. Use it as follows:
-
-```bash
-vpp -f <input_file> -o <output_file> --presentation <mode>
-```
-
-#### --overlay-mode
-
-- `--overlay-mode <mode>`: This option allows you to specify an overlay mode where the output is formatted for overlay purposes. This is useful for generating reports that can be easily overlaid on top of other data sources. The following options are available: `namespace`, `flatten`. (Default: flatten) Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --presentation --overlay-mode <mode>
-```
-
-### Operational and Security Options
-
-#### --allow-large
-
-- `--allow-large [-al]`: This option allows the tool to process large input files that may exceed typical size limits. Use it as follows:
-
-```bash
-vpp -f <input_file> -o <output_file> --allow-large
-```
-
-#### --no-csv-sanitize
-
-- `--no-csv-sanitize [-ncC]`: This option disables the sanitization of CSV output, which may be necessary for certain use cases where special characters are present. This may present a security risk. Use it like this:
-
-```bash
-vpp -f <input_file> --output-csv <csv_file> --no-csv-sanitize
-```
-
-#### --forbid-symlinks-read
-
-- `--forbid-symlinks-read [-Sr]`: This option prevents the tool from following symbolic links when reading input files, which can help mitigate certain security risks. Use it as follows:
-
-```bash
-vpp -f <input_file> -o <output_file> --forbid-symlinks-read
-```
-
-#### --forbid-symlinks-write
-
-- `--forbid-symlinks-write [-Sw]`: This option prevents the tool from following symbolic links when writing output files, which can help mitigate certain security risks. Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --forbid-symlinks-write
-```
-
-#### --enforce-root-read
-
-- `--enforce-root-read [-err]`: This option enforces read operations only on files within the list of acceptable root directories. This can help mitigate certain security risks by preventing unauthorized access to files outside of the specified directories. Use it as follows:
-
-```bash
-vpp -f <input_file> -o <output_file> --enforce-root-read
-```
-
-#### --enforce-root-write
-
-- `--enforce-root-write [-erw]`: This option enforces write operations only on files within the list of acceptable root directories. This can help mitigate certain security risks by preventing unauthorized writing to files outside of the specified directories. (Default: True) Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --enforce-root-write
-```
-
-#### --file-mode
-
-- `--file-mode [-fm] <mode>`: This option sets the file mode for output files, which can help mitigate certain security risks by controlling the permissions of the generated files. (POSIX-only) Use it as follows:
-
-```bash
-vpp -f <input_file> -o <output_file> --file-mode 0644
-```
-
-#### --dir-mode
-
-- `--dir-mode [-dm] <mode>`: This option sets the directory mode for output directories, which can help mitigate certain security risks by controlling the permissions of the generated directories. (POSIX-only) Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --dir-mode 0755
-```
-
-#### --debug-path-policy
-
-- `--debug-path-policy`: This option displays debug output for path policy enforcement, which can help you understand how the tool is enforcing path-related security policies. Use it as follows:
-
-```bash
-vpp --debug-path-policy
-```
-
-#### --portable
-
-- `--portable [-P]`: This option enables portable mode, which ensures that the tool operates in a manner compatible with different environments and file systems. This will store application data next to the executable. Use it like this:
-
-```bash
-vpp -f <input_file> -o <output_file> --portable
-```
-
-## Examples
-
-Here are some example commands to illustrate how to use VulnParse-Pin with various options:
-
-```bash
-
-# Basic usage with pretty print
-vpp -f vulnerabilities.xml -o output.json --pretty-print
-
-# Enrichment is enabled by default (KEV + EPSS + Exploit)
-vpp -f vulnerabilities.xml -o enriched_output.json
-
-# Disable specific enrichments
-vpp -f vulnerabilities.xml -o enriched_output.json --no-kev --no-epss
-
-# Output in CSV format with custom log file
-vpp -f vulnerabilities.xml --output-csv output.csv --log-file vpp.log
-
-# Enrichment with exploit database and refresh cache
-vpp -f vulnerabilities.xml -o enriched_output.json --refresh-cache
-
-# Enrichment with exploit database using offline source
-vpp -f vulnerabilities.xml -o enriched_output.json --exploit-source offline --exploit-db /path/to/exploit-db
-
-# KEV and EPSS using offline cache/files
-vpp -f vulnerabilities.xml -o enriched_output.json --kev-source offline --epss-source offline
-
-# Output in Markdown format for technical report
-vpp -f vulnerabilities.xml --output-md-technical technical_report.md
-
-# Emit RunManifest in default compact mode
-vpp -f vulnerabilities.xml -o output.json --output-runmanifest runmanifest.json
-
-# Emit RunManifest in expanded mode for deeper investigation
-vpp -f vulnerabilities.xml -o output.json --output-runmanifest runmanifest.json --runmanifest-mode expanded
-
-# Verify existing RunManifest without re-running scan
-vpp --verify-runmanifest runmanifest.json
-
-# Enrichment with KEV and EPSS, output in presentation mode with overlay
-vpp -f vulnerabilities.xml -o presentation_output.json --presentation --overlay-mode namespace
-```
+| Flag | Default | Description |
+| --- | --- | --- |
+| `action` (positional) | `status` | `status` (read-only cache inspection) or `sync` (fetch/hydrate feeds). |
+| `--feed {all,nvd,epss,kev,exploit_db,ghsa,osv}` | `all` | Specific feed to inspect or sync. |
+| `--refresh` | `False` | Force feed refresh during `sync`. |
+| `--allow-regen`, `--allow_regen` | `False` | Allow local checksum regeneration if missing during `sync`. |
+| `--kev-feed PATH_OR_URL` | `None` | Custom KEV source for `sync`. |
+| `--epss-feed PATH_OR_URL` | `None` | Custom EPSS source for `sync`. |
+| `--exploit-db PATH`, `-edb PATH` | `None` | Local Exploit-DB CSV source for `sync`. |
+| `--nvd PATH` | `None` | Local NVD JSON / `.json.gz` / directory for `sync`. |
+| `--ghsa PATH` | `None` | Local GHSA advisory JSON/directory for `sync`. |
+| `--osv PATH` | `None` | Local OSV JSON/directory/zip for `sync`. |
+| `--json` | `False` | Print `vpp intel status` output as structured JSON. |
+
+---
+
+## Legacy Compatibility Shim (`v1.x` Flags)
+
+> [!WARNING]
+> Top-level legacy flags are deprecated in `v2.0.x` and emit a `[DEPRECATED]` notice to `stderr`. Migrate scripts to v2.0 subcommands before removal in a future release (see [Deprecation and Versioning Policy](Deprecation%20and%20Versioning%20Policy.md)).
+
+| Legacy `v1.x` Invocation | Rewritten v2.0 Command |
+| --- | --- |
+| `vpp -f scan.nessus -o out.json` / `vpp --file scan.nessus ...` | `vpp scan -f scan.nessus -o out.json` |
+| `vpp --demo` | `vpp demo --no-ui` (runs packaged legacy OpenVAS + Nmap demo compatibility flow) |
+| `vpp --verify-runmanifest runmanifest.json` | `vpp verify runmanifest.json` |
+| `vpp --debug-path-policy` | `vpp scan --debug-path-policy` |
+
+Note: Inside `vpp scan`, `--file` / `-f` and `--nmap-ctx` / `-nmap` continue to work alongside positional `files...` and `--nmap`.
+
+## Related Docs
+
+- [Getting Started In 5 Minutes](Getting%20Started%20In%205%20Minutes.md)
+- [Workflow Examples](Workflow%20Examples.md)
+- [Deployment Options](Deployment%20Options.md)
+- [Upgrade and Migration](Upgrade%20and%20Migration.md)
+- [Output Interpretation](Output%20Interpretation.md)
+- [Troubleshooting](Troubleshooting.md)

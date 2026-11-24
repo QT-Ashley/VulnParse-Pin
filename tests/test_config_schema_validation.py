@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 import pytest
 import json
 from importlib import resources
@@ -187,7 +190,7 @@ def test_config_validation_missing_global_version_warns_and_continues():
 def test_config_validation_unsupported_global_version_fails():
     payloads = _load_default_payloads()
     payloads = RawConfigPayloads(
-        global_config={**payloads.global_config, "version": "v2"},
+        global_config={**payloads.global_config, "version": "v99"},
         scoring_config=payloads.scoring_config,
         topn_config=payloads.topn_config,
     )
@@ -481,3 +484,123 @@ def test_safe_fallback_aci_rules_track_packaged_topn_defaults() -> None:
 
     assert default_capability_ids == fallback_capability_ids
     assert default_chain_ids == fallback_chain_ids
+
+
+
+def test_v2_packaged_defaults_validate_and_project_bundle() -> None:
+    from vulnparse_pin.core.config_projector import (
+        ACIPolicyV2,
+        ConfigProjector,
+        RuntimeConfigBundle,
+        ScoringPolicyV2,
+        SignalReliabilityPolicy,
+        TriagePolicyV2,
+        VppConfigV2,
+    )
+
+    payloads = _load_default_payloads()
+    ctx = _DummyCtx()
+    result = ConfigValidator.validate(ctx, payloads)
+
+    assert result.ok is True
+    assert not result.warnings
+
+    bundle = ConfigProjector.project(result)
+    assert isinstance(bundle, RuntimeConfigBundle)
+    assert isinstance(bundle.global_config, dict)
+    assert isinstance(bundle.scoring_config, dict)
+    assert isinstance(bundle.topn_config, dict)
+    assert bundle.global_config["version"] == "v2"
+    assert bundle.scoring_config["version"] == "v2"
+    assert bundle.topn_config["aci"]["enabled"] is True
+
+    assert isinstance(bundle.v2, VppConfigV2)
+    assert isinstance(bundle.scoring_policy, ScoringPolicyV2)
+    assert isinstance(bundle.triage_policy, TriagePolicyV2)
+    assert isinstance(bundle.aci_policy, ACIPolicyV2)
+    assert isinstance(bundle.signal_reliability, SignalReliabilityPolicy)
+
+    assert bundle.v2.version == "v2"
+    assert bundle.v2.source_version == "v2"
+    assert bundle.v2.nvd_end_year is None
+    assert bundle.v2.osv_enabled is True
+    assert bundle.triage_policy.default_profile == "default"
+    assert bundle.triage_policy.static_sast_p1_cap is True
+    assert bundle.aci_policy.enabled is True
+    assert bundle.scoring_policy.kev_points == pytest.approx(4.5)
+    assert bundle.scoring_policy.verified_exploit_points == pytest.approx(2.0)
+    assert bundle.scoring_policy.verified_exploit_with_kev_points == pytest.approx(0.5)
+    assert bundle.scoring_policy.max_raw_risk == pytest.approx(16.0)
+    assert bundle.scoring_policy.max_operational_risk == pytest.approx(10.0)
+    assert bundle.signal_reliability.weight_for("active_dast") == pytest.approx(1.0)
+    assert bundle.signal_reliability.weight_for("credentialed_host") == pytest.approx(1.0)
+    assert bundle.signal_reliability.weight_for("sca_container") == pytest.approx(0.90)
+    assert bundle.signal_reliability.weight_for("uncredentialed_banner") == pytest.approx(0.85)
+    assert bundle.signal_reliability.weight_for("static_sast") == pytest.approx(0.55)
+    assert bundle.signal_reliability.weight_for("network_probe") == pytest.approx(0.80)
+
+
+def test_v1_config_emits_structured_warning_and_projects_to_v2() -> None:
+    from vulnparse_pin.core.config_projector import ConfigProjector
+
+    payloads = _load_default_payloads()
+    legacy_global = {
+        k: v
+        for k, v in payloads.global_config.items()
+        if k not in ("triage", "signal_reliability", "profile")
+    }
+    legacy_global["version"] = "v1"
+    legacy_global["enrichment"] = {
+        "ghsa_source": None,
+        "confidence": {
+            "model_version": "v1",
+            "max_score": 100,
+            "base_scanner": 30,
+            "weights": {"nvd": 25, "kev": 15, "epss": 10, "exploitdb": 10, "ghsa": 20},
+        },
+    }
+    legacy_scoring = {
+        "version": "v1",
+        "epss": {"scale": 5.0, "min": 0.0, "max": 1.0},
+        "evidence_points": {"kev": 3.0, "exploit": 1.0},
+        "bands": {"critical": 14.0, "high": 10.0, "medium": 6.0, "low": 2.0},
+        "aggregation": {"asset_score": "max"},
+        "weights": {"epss_high": 1.0, "epss_medium": 1.0, "kev": 1.0, "exploit": 1.0},
+        "risk_ceiling": {"max_raw_risk": 18.0, "max_operational_risk": 10.0},
+    }
+    ctx = _DummyCtx()
+    result = ConfigValidator.validate(
+        ctx,
+        RawConfigPayloads(
+            global_config=legacy_global,
+            scoring_config=legacy_scoring,
+            topn_config=payloads.topn_config,
+        ),
+    )
+
+    assert result.ok is True
+    assert any("v1" in w.lower() for w in result.warnings)
+    assert len(ctx.logger.warnings) >= 1
+
+    bundle = ConfigProjector.project(result)
+    assert bundle.v2.version == "v2"
+    assert bundle.v2.source_version == "v1"
+    assert bundle.global_config["version"] == "v2"
+    assert bundle.scoring_policy.kev_points == pytest.approx(3.0)
+    assert bundle.scoring_policy.verified_exploit_points == pytest.approx(1.0)
+    assert bundle.scoring_policy.max_raw_risk == pytest.approx(18.0)
+
+
+@pytest.mark.parametrize("bad_scoring_ver", ["v0", "v3", "v99"])
+def test_config_validation_unsupported_scoring_version_fails_closed(bad_scoring_ver: str) -> None:
+    payloads = _load_default_payloads()
+    ctx = _DummyCtx()
+    with pytest.raises(RuntimeError):
+        ConfigValidator.validate(
+            ctx,
+            RawConfigPayloads(
+                global_config=payloads.global_config,
+                scoring_config={**payloads.scoring_config, "version": bad_scoring_ver},
+                topn_config=payloads.topn_config,
+            ),
+        )

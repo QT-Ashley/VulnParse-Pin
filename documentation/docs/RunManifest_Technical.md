@@ -1,133 +1,96 @@
 # RunManifest Technical Deep Dive
 
-This document explains the internal mechanics of RunManifest, including schema contract, integrity validation, and audit implications.
+This document explains the internal mechanics of `RunManifest` v2 (`manifest_version: "2.0"`): DuckDB construction (`build_runmanifest_from_db`), multi-CVE KEV parity, `--output-all` artifact hashing, `ledger_events` SHA-256 hash chaining, canonical digesting, and strictly read-only `vpp verify` enforcement.
 
-## Architecture
+## Primary Implementation Files
 
-RunManifest is generated from runtime context and derived pass outputs.
+- `src/vulnparse_pin/utils/runmanifest.py` (`build_runmanifest_from_db`, `verify_runmanifest`, `verify_runmanifest_file`, `verify_runmanifest_integrity`, `VOLATILE_PATHS`)
+- `src/vulnparse_pin/core/classes/execution_manifest.py` (`LedgerService`, `DecisionLedgerEntry`, `EMPTY_LEDGER_ROOT`)
+- `src/vulnparse_pin/storage/schema.sql` (`runs`, `ledger_events` tables)
+- `src/vulnparse_pin/app/output.py` (`export_v2_outputs`)
+- `src/vulnparse_pin/cli/commands.py` (`_build_verify_pfh`, `_verify_listed_manifest_outputs`, `run_verify_command`)
+- `src/vulnparse_pin/core/schemas/runManifest.schema.json`
 
-Primary components:
+## Architecture & DuckDB Data Flow
 
-- `LedgerService` appends decision events during execution.
-- Pass orchestration emits lifecycle events.
-- Scoring and TopN emit high-impact decision events.
-- Output phase builds and writes `runmanifest.json`.
-- Validation enforces schema and integrity before write.
+During `vpp scan` and `vpp demo`:
 
-## Data Flow
+1. `LedgerService` appends hash-chained events in memory during ingestion, enrichment, passes, and webhook delivery.
+2. `_flush_ledger_to_db(db, run_id, ctx)` persists those entries into DuckDB `ledger_events`.
+3. `export_v2_outputs()` writes all requested output files (`json`, `csv`, `executive_markdown`, `technical_markdown`, `dossier_markdown`, `dossier_html`) **before** building the RunManifest so every written artifact exists on disk when hashed.
+4. `build_runmanifest_from_db(db, run_id, config_hashes=..., outputs=..., mode=...)` constructs the manifest directly from DuckDB tables (`runs`, `assets`, `findings`, `finding_cves`, `enrichment_snapshots`, `aci_signals`, `scores`, `triage_decisions`, `ledger_events`).
+5. `write_runmanifest()` validates the payload against `runManifest.schema.json` and runs `verify_runmanifest_integrity()` before writing to disk.
+6. The resulting `verification.manifest_digest` is written back to `runs.manifest_digest` in `.vpp.db` (so subsequent `vpp export` calls embed the sealed digest in dossiers/roadmaps).
 
-1. Runtime initializes `services.ledger`.
-2. Enrichment and pass phases append ledger events.
-3. Derived pass outputs are collected from `scan_result.derived`.
-4. RunManifest builder composes artifact sections.
-5. Verification digest is computed over canonicalized, non-volatile content.
-6. Schema validation and integrity verification execute before write.
+## Output Artifact Hashing (`--output-all`)
 
-## Pass Metrics Population
+In `export_v2_outputs()`, `outputs_meta` populates all six exported artifact keys when `--output-all <BASENAME>` is used:
 
-`pass_summaries[*].metrics` are derived from pass output payloads:
+- `json` (`<stem>.json`)
+- `csv` (`<stem>.csv`)
+- `executive_markdown` (`<stem>_summary.md`)
+- `technical_markdown` (`<stem>_technical.md`)
+- `dossier_markdown` (`<stem>_dossier.md`)
+- `dossier_html` (`<stem>_dossier.html`)
 
-- Scoring metrics include coverage, scored findings, asset scoring counts, and scoring averages.
-- TopN metrics include ranked assets, ranked findings, decay settings, and global top findings counts.
-- Summary metrics include aggregate totals and top-risk list count.
+`_collect_output_hashes()` streams each non-null regular file in `1 MiB` chunks (`_HASH_CHUNK_BYTES`), skipping symlinks, and records `"sha256:<hex>"` under `manifest["output_hashes"]`. Input scan files are similarly hashed into `inputs.input_files_sha256` and combined into `inputs.target_sha256`.
 
-This keeps metrics connected to real pass output rather than static placeholders.
+## Multi-CVE `kev_findings` Parity in `pass_summaries`
 
-## Decision Ledger Entry Model
+In `_build_db_pass_summaries()`, `Summary@2.0` computes `kev_findings` with full multi-CVE parity across:
 
-Each entry stores:
+1. `enrichment_snapshots` matched on the effective primary CVE (`COALESCE(score_trace.$.primary_cve, f.primary_cve)`),
+2. `finding_cves` joined to `enrichment_snapshots` (`BOOL_OR(COALESCE(es.in_kev, FALSE))`), so findings whose *secondary* CVE is in CISA KEV are still counted, and
+3. `TRY_CAST(json_extract(s.score_trace_json, '$.in_kev') AS BOOLEAN)`.
 
-- `seq`
-- `ts`
-- `component`
-- `event_type`
-- `subject_ref`
-- `why`
-- `evidence_digest`
-- `prev_hash`
-- `entry_hash`
+This guarantees `pass_summaries[*].metrics.kev_findings` matches `repositories.get_run_summary_counts()`, `SummaryV2Pass`, and Decision Defense Dossiers.
 
-The `why` block standardizes explainability fields:
+## `ledger_events` SHA-256 Hash Chain
 
-- `reason_code`
-- `reason_text`
-- `factor_refs`
-- Optional `confidence`
-- Optional `weight_context`
+Each `LedgerService` entry is persisted to `ledger_events (run_id, seq, ts, component, event_type, subject_ref, why, evidence_digest, prev_hash, entry_hash)`:
 
-## Hash Chain Mechanics
+- `EMPTY_LEDGER_ROOT = "sha256:" + sha256("vpp-ledger-empty-root-v1").hexdigest()`
+- `evidence_digest = "sha256:" + sha256(_canonical_json(evidence)).hexdigest()`
+- `prev_hash` = `EMPTY_LEDGER_ROOT` for `seq == 1`, else previous `entry_hash`
+- `entry_hash = "sha256:" + sha256(_canonical_json({seq, ts, component, event_type, subject_ref, why, evidence_digest, prev_hash})).hexdigest()`
 
-For each entry, hash input includes all immutable decision fields and `prev_hash`.
+`verify_runmanifest_integrity()` verifies:
 
-Chain properties:
+- `decision_ledger.entry_count == len(entries)` (rejecting booleans or mismatched counts)
+- `seq` is contiguous `1..N`
+- `prev_hash` matches `expected_prev`
+- Recomputed `entry_hash` matches `entry["entry_hash"]`
+- `chain_root` equals the final `entry_hash` (or `EMPTY_LEDGER_ROOT` when `N == 0`)
 
-- `seq` must be contiguous starting at 1.
-- `prev_hash` must match the prior `entry_hash`.
-- `entry_hash` must match canonical recomputation.
-- `chain_root` must equal the final `entry_hash`.
+## Canonical `verification.manifest_digest`
 
-The empty-ledger case uses a fixed sentinel root.
+`_compute_manifest_digest()` removes `VOLATILE_PATHS`:
 
-## Manifest Digest Mechanics
+- `generated_at_utc`
+- `pass_summaries.started_at_utc`
+- `pass_summaries.ended_at_utc`
+- `decision_ledger.entries.ts`
 
-RunManifest computes `verification.manifest_digest` from canonical JSON with volatile fields removed.
+Sets `verification.manifest_digest = None`, serializes with `_canonical_json()` (`sort_keys=True, separators=(",", ":"), ensure_ascii=True`), and computes `sha256:<hex>`. Note that `ts` remains covered by each ledger entry's `entry_hash`, while `manifest_digest` stays invariant across timestamp-only differences.
 
-Volatile exclusions include:
+## Strictly Read-Only `vpp verify` Enforcement
 
-- Top-level generation timestamp.
-- Pass start/end timestamps.
-- Per-entry event timestamps.
+`run_verify_command()` (`vpp verify <runmanifest.json>`) is strictly read-only by default:
 
-This supports stable digest behavior across equivalent runs where only timestamps differ.
+- **`_build_verify_pfh(args)`:** Constructs `PermFileHandler` with a `logging.NullHandler()` logger and does **not** call `paths.ensure_dirs()` or create log files unless the operator explicitly passes a non-default `--log-file <name>` (`!= "vulnparse_pin.log"`). This allows `vpp verify` to run cleanly inside `0o500` / read-only XDG environments and air-gapped CI containers.
+- **Symlink & Root Guardrails:**
+  - By default (`--forbid-symlinks-read`, `True`), `_check_no_symlinks_or_loops()` rejects symlinks on both the manifest path and every non-null output artifact in `outputs`. Pass `--allow-symlinks-read` only when intentionally verifying symlinked artifacts.
+  - Pass `--enforce-root-read` (`-err`) to confine manifest and listed output reads to acceptable `PermFileHandler` roots.
+- **Listed Output Verification (`_verify_listed_manifest_outputs`):** For every non-null entry in `outputs` and every recorded digest in `output_hashes`, verifies file existence and checks `hmac.compare_digest(expected_hash, _file_sha256(out_path))`. Any missing file, symlink violation, or digest mismatch exits with code `1`.
 
-## Schema Contract
+## Practical Limits
 
-RunManifest validation uses JSON Schema Draft 2020-12.
+- `expanded` mode increases manifest and `.vpp.db` size proportionally to logged events.
+- SHA-256 hash chains and `manifest_digest` provide **tamper evidence**, not asymmetric cryptographic signatures (combine with CI artifact signing / SLSA attestations for non-repudiation).
 
-Validation guarantees:
+## Related Docs
 
-- Required top-level blocks exist.
-- Typed structures are present for ledger and verification blocks.
-- `runmanifest_mode` is constrained to supported enum values.
-
-## CLI and Operational Controls
-
-- `--output-runmanifest PATH`: emits runmanifest artifact.
-- `--runmanifest-mode compact|expanded`: controls decision detail volume.
-- `--verify-runmanifest PATH`: validates an existing artifact and exits.
-
-Recommended control profile:
-
-- Continuous operation: `compact` + emit + archive.
-- Investigations: `expanded` + emit + verify + retain evidence.
-
-## Auditable Implications
-
-RunManifest improves audit posture by providing:
-
-- A deterministic, schema-bound execution artifact.
-- Event-level tamper evidence via hash chaining.
-- Structured, machine-readable decision rationale.
-- Verifiable linkage from inputs and configs to outputs.
-
-It supports several assurance use cases:
-
-- Internal control evidence for vulnerability prioritization workflows.
-- Change review evidence for policy tuning in scoring and TopN.
-- Forensic reconstruction of decision path after remediation disputes.
-
-## Practical Limits and Tradeoffs
-
-- `expanded` mode increases artifact size due to richer event capture.
-- Hash chain integrity indicates tamper evidence, not cryptographic signing or non-repudiation.
-- If source feeds change between runs, digest equality is not expected even with the same scan input.
-
-## Suggested Release/Operations Checklist
-
-- Generate runmanifest for all scheduled runs.
-- Verify each generated runmanifest immediately after pipeline completion.
-- Verify manifests again in CI before publish/share.
-- Treat unverified manifests as non-authoritative for audit decisions.
-- Store runmanifest with JSON/CSV/Markdown artifacts.
-- Track retained manifests by run date and scanner input hash.
-- Periodically test verification against known tamper samples.
+- [RunManifest Overview](RunManifest.md)
+- [Output Interpretation](Output%20Interpretation.md)
+- [ScanResult & DuckDB Schema](ScanResult_Schema.md)
+- [Security Features](Security%20Features.md)

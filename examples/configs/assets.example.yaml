@@ -1,0 +1,100 @@
+# Example Asset Inventory & Pattern Context Rules for VulnParse-Pin v2.0.0
+# Validated against src/vulnparse_pin/core/schemas/assets.schema.json
+# Usage: vpp scan scan.nessus trivy.sarif --assets examples/configs/assets.example.yaml
+version: v2
+
+defaults:
+  criticality: medium
+  internet_facing: false
+  owner: secops@example.org
+  env:
+    - prod
+  tags:
+    managed_by: vulnparse-pin
+
+rules:
+  # Tier 1: Explicit canonical asset_id / aliases unifying multi-scanner identifiers
+  - id: edge-api-gateway
+    asset_id: aid_v2_edge_api_prod
+    aliases:
+      - "203.0.113.10"
+      - "api.example.org"
+      - "https://api.example.org"
+      - "ghcr.io/example/edge-api"
+    internet_facing: true
+    criticality: critical
+    owner: platform-sec@example.org
+    env:
+      - prod
+      - dmz
+    tags:
+      tier: tier0
+      service: public-api
+
+  # Tier 2: Exact hostname, URI, and container image matches
+  - id: customer-portal-web
+    hostnames:
+      - "portal.example.org"
+    uris:
+      - "https://portal.example.org"
+      - "https://portal.example.org/login"
+    images:
+      - "ghcr.io/example/customer-portal:2.4.1"
+    internet_facing: true
+    criticality: high
+    owner: appsec@example.org
+    env:
+      - prod
+    tags:
+      data_class: pii
+
+  # Tier 2: Exact source repository match (e.g. Semgrep / CodeQL / Trivy fs SARIF)
+  - id: core-billing-repo
+    repos:
+      - "github.com/example/core-billing"
+      - "core-billing"
+    internet_facing: false
+    criticality: high
+    owner: billing-eng@example.org
+    env:
+      - prod
+      - pci
+    tags:
+      compliance: pci-dss
+
+  # Tier 3: Longest-prefix CIDR matching (10.20.40.0/24 overrides 10.20.0.0/16)
+  - id: internal-pci-cde-subnet
+    cidrs:
+      - "10.20.40.0/24"
+    internet_facing: false
+    criticality: critical
+    owner: payments-infra@example.org
+    env:
+      - prod
+      - cde
+    tags:
+      zone: restricted
+
+  - id: internal-corp-services-net
+    cidrs:
+      - "10.20.0.0/16"
+    internet_facing: false
+    criticality: medium
+    owner: core-infra@example.org
+    env:
+      - prod
+      - internal
+
+  # Tier 4: Glob pattern matching for ephemeral cloud/container workloads
+  - id: staging-eks-workloads
+    hostnames:
+      - "*.staging.example.org"
+    images:
+      - "ghcr.io/example/staging-*"
+    internet_facing: false
+    criticality: low
+    owner: devops@example.org
+    env:
+      - staging
+    tags:
+      ephemeral: "true"

@@ -1,11 +1,5 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
@@ -182,6 +176,11 @@ class Services:
     nmap_ctx_config: Optional[dict] = None
     webhook_config: Optional["WebhookRuntimeConfig"] = None
     global_config: Optional[dict] = None
+    enrichment_stats: Optional[Any] = None
+    db: Optional[Any] = None
+    run_id: Optional[str] = None
+    asset_matcher: Optional[Any] = None
+    decisions_registry: Optional[Any] = None
 
 
 @dataclass(frozen=True)
@@ -216,6 +215,19 @@ class RunContext:
     pfh: PermFileHandler
     logger: Any
     services: Optional[Services] = None
+    enrichment_stats: Optional[Any] = None
+    db: Optional[Any] = None
+    run_id: Optional[str] = None
+    asset_matcher: Optional[Any] = None
+    decisions_registry: Optional[Any] = None
+
+    def __post_init__(self) -> None:
+        if self.services is not None:
+            for attr in ("enrichment_stats", "db", "run_id", "asset_matcher", "decisions_registry"):
+                if getattr(self, attr) is None:
+                    svc_val = getattr(self.services, attr, None)
+                    if svc_val is not None:
+                        object.__setattr__(self, attr, svc_val)
 
 @dataclass(frozen = True)
 class FeedSpec:

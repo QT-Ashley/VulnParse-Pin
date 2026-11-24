@@ -1,19 +1,34 @@
 {
     "version": "v2",
     "epss": {
-        "scale": 10.0,
+        "scale": 5.0,
         "min": 0.0,
-        "max": 1.0
+        "max": 1.0,
+        "use_percentile": true,
+        "high_cutoff": 0.10,
+        "medium_cutoff": 0.04,
+        "percentile_high_cutoff": 0.95,
+        "percentile_medium_cutoff": 0.90,
+        "breakpoints": [
+            [0.0, 0.0],
+            [0.04, 1.8],
+            [0.10, 3.0],
+            [0.50, 4.2],
+            [1.0, 5.0]
+        ]
     },
     "evidence_points": {
-        "kev": 2.5,
-        "exploit": 5.0
+        "kev": 4.5,
+        "exploit": 2.0,
+        "verified_exploit": 2.0,
+        "verified_exploit_with_kev": 0.5,
+        "heuristic_exploit": 0.0
     },
     "bands": {
-        "critical": 13.35,
-        "high": 10.5,
-        "medium": 7.0,
-        "low": 4.0
+        "critical": 12.8,
+        "high": 9.6,
+        "medium": 6.4,
+        "low": 3.2
     },
     "aggregation": {
         "asset_score": "max",
@@ -22,13 +37,49 @@
         "finding_cve_max_contributors": 8
     },
     "weights": {
-        "epss_high": 0.6,
-        "epss_medium": 0.4,
+        "epss_high": 1.0,
+        "epss_medium": 1.0,
         "kev": 1.0,
         "exploit": 1.0
     },
     "risk_ceiling": {
-        "max_raw_risk": 15.0,
+        "max_raw_risk": 16.0,
         "max_operational_risk": 10.0
+    },
+    "signal_reliability": {
+        "enabled": true,
+        "weights": {
+            "active_dast": 1.0,
+            "credentialed_host": 1.0,
+            "sca_container": 0.9,
+            "uncredentialed_banner": 0.85,
+            "static_sast": 0.55,
+            "network_probe": 0.8
+        }
+    },
+    "exposure_track": {
+        "severity_base": {
+            "critical": 8.5,
+            "high": 7.0,
+            "medium": 4.5,
+            "low": 2.0,
+            "informational": 0.5,
+            "info": 0.5
+        },
+        "aci_high_impact_caps": [
+            "remote_execution",
+            "command_execution",
+            "auth_bypass",
+            "sql_injection",
+            "privilege_escalation",
+            "initial_access",
+            "deserialization",
+            "ssrf"
+        ],
+        "aci_high_impact_bonus": 3.5,
+        "aci_exposure_bonus": 2.0,
+        "aci_chain_bonus": 1.0,
+        "cwe_high_impact_bonus": 1.5,
+        "exposure_bonus": 1.5
     }
 }

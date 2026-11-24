@@ -1,0 +1,50 @@
+# Example Triage Decisions & Assumption-Drift Waivers for VulnParse-Pin v2.0.0
+# Validated against src/vulnparse_pin/core/schemas/decisions.schema.json
+# Usage: vpp scan ... --decisions examples/configs/decisions.example.yaml
+#        vpp diff --db .vpp.db --decisions examples/configs/decisions.example.yaml --fail-on stale-assumption
+version: v2
+
+decisions:
+  # Deferred finding with strict threat-intel and exposure assumptions.
+  # Automatically invalidated by DiffEngine if CVE enters CISA KEV, EPSS > 0.04,
+  # asset becomes internet_facing=true, or expires_at passes.
+  - id: dec-internal-curl-defer
+    asset_pattern: "*10.20.1.*"
+    cve_or_rule_id: CVE-2023-38545
+    status: deferred
+    rationale: "Internal-only legacy batch worker behind mTLS; SOCKS5 proxy support disabled until scheduled Q2 OS rebuild."
+    owner: core-infra@example.org
+    created_at: "2026-10-01"
+    expires_at: "2027-06-01"
+    assumptions:
+      in_kev: false
+      max_epss: 0.04
+      max_epss_percentile: 0.85
+      internet_facing: false
+      max_cvss: 9.8
+
+  # Mitigated finding tied to an explicit canonical asset_id from assets.yaml
+  - id: dec-portal-tls-waf-mitigation
+    asset_id: customer-portal-web
+    cve_or_rule_id: CVE-2023-4863
+    status: mitigated
+    rationale: "Client-side image codec path blocked at WAF/CSP boundary and bundled dependency queued for next release train."
+    owner: appsec@example.org
+    created_at: "2026-10-15"
+    expires_at: "2027-03-31"
+    assumptions:
+      in_kev: false
+      max_epss: 0.05
+      internet_facing: true
+
+  # Accepted Track B (non-CVE) scanner rule for an internal staging pattern
+  - id: dec-staging-semgrep-accept
+    asset_pattern: "*.staging.example.org"
+    cve_or_rule_id: "javascript.express.security.audit.xss*"
+    status: accepted
+    rationale: "Synthetic test fixture endpoint in isolated staging environment; not deployed to production."
+    owner: devops@example.org
+    created_at: "2026-11-01"
+    expires_at: "2027-05-01"
+    assumptions:
+      internet_facing: false

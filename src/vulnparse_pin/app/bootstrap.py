@@ -1,19 +1,12 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-import sys
-from typing import Any
+from typing import Any, Optional
 
 from vulnparse_pin import __version__
 from vulnparse_pin.core.apppaths import AppPaths, ensure_user_configs, load_config
@@ -21,6 +14,9 @@ from vulnparse_pin.core.classes.dataclass import FeedSpec, RunContext, Services,
 from vulnparse_pin.core.classes.execution_manifest import LedgerService
 from vulnparse_pin.core.classes.pass_classes import PassRunner
 from vulnparse_pin.core.classes.scoring_pol import ScoringPolicyV1
+from vulnparse_pin.core.config_projector import ConfigProjector, RuntimeConfigBundle
+from vulnparse_pin.core.config_source import ConfigSource
+from vulnparse_pin.core.config_validator import ConfigValidator
 from vulnparse_pin.core.passes.ACI.aci_pass import AttackCapabilityInferencePass
 from vulnparse_pin.core.passes.Nmap.nmap_adapter_pass import NmapAdapterPass
 from vulnparse_pin.core.passes.Scoring.scoringPass import ScoringPass
@@ -58,6 +54,32 @@ class RuntimeBootstrapState:
     detector: SchemaDetector
     passesList: list[Any]
     passOrchestrator: PassRunner
+    config_bundle: Optional[RuntimeConfigBundle] = None
+    debug_path_policy_only: bool = False
+
+
+def build_pfh(paths: AppPaths, logger: Any, args: Any) -> PermFileHandler:
+    """Construct PermFileHandler from AppPaths and CLI security flags."""
+    raw_file_mode = getattr(args, "file_mode", None)
+    raw_dir_mode = getattr(args, "dir_mode", None)
+    return PermFileHandler(
+        logger=logger,
+        root_dir=paths.base_dir,
+        allowed_roots=[
+            paths.config_dir,
+            paths.cache_dir,
+            paths.log_dir,
+            paths.output_dir,
+        ],
+        max_log_path_chars=25,
+        hide_home=True,
+        forbid_symlinks_read=bool(getattr(args, "forbid_symlinks_read", True)),
+        forbid_symlinks_write=bool(getattr(args, "forbid_symlinks_write", True)),
+        enforce_roots_on_read=bool(getattr(args, "enforce_root_read", False)),
+        enforce_roots_on_write=bool(getattr(args, "enforce_root_write", True)),
+        file_mode=0o600 if raw_file_mode is None else raw_file_mode,
+        dir_mode=0o700 if raw_dir_mode is None else raw_dir_mode,
+    )
 
 
 def _build_webhook_runtime_config(cfg_yaml: dict, args: Any) -> WebhookRuntimeConfig:
@@ -108,39 +130,27 @@ def _build_webhook_runtime_config(cfg_yaml: dict, args: Any) -> WebhookRuntimeCo
     )
 
 
-def initialize_runtime(args) -> RuntimeBootstrapState:
-    paths = AppPaths.resolve(portable=getattr(args, "portable", None))
+def initialize_runtime(
+    args: Any,
+    *,
+    quiet_banner: Optional[bool] = None,
+    paths_override: Optional[AppPaths] = None,
+) -> RuntimeBootstrapState:
+    paths = paths_override or AppPaths.resolve(portable=getattr(args, "portable", None))
     paths.ensure_dirs()
 
-    print_banner()
+    suppress_banner = bool(quiet_banner) if quiet_banner is not None else bool(getattr(args, "_quiet_banner", False))
+    if not suppress_banner:
+        print_banner()
 
+    log_level = str(getattr(args, "log_level", "INFO") or "INFO")
     bootstrap_log = paths.log_dir / "bootstrap.log"
-    logwrap = LoggerWrapper(str(bootstrap_log), log_level=args.log_level)
+    logwrap = LoggerWrapper(str(bootstrap_log), log_level=log_level)
     logger = logwrap
-    logger.print_info("Starting up VulnParse-Pin...", f"VulnParse-Pin {__version__}")
+    if not suppress_banner:
+        logger.print_info("Starting up VulnParse-Pin...", f"VulnParse-Pin {__version__}")
 
-    pfh = PermFileHandler(
-        logger=logger,
-        root_dir=paths.base_dir,
-        allowed_roots=[
-            paths.config_dir,
-            paths.cache_dir,
-            paths.log_dir,
-            paths.output_dir,
-        ],
-        max_log_path_chars=25,
-        hide_home=True,
-        forbid_symlinks_read=args.forbid_symlinks_read,
-        forbid_symlinks_write=args.forbid_symlinks_write,
-        enforce_roots_on_read=args.enforce_root_read,
-        enforce_roots_on_write=args.enforce_root_write,
-        file_mode=args.file_mode,
-        dir_mode=args.dir_mode,
-    )
-
-    if args.debug_path_policy:
-        logger.print_info(f"\n{pfh.describe_policy()}", label="Path Policy")
-        sys.exit(0)
+    pfh = build_pfh(paths, logger, args)
 
     ctx = RunContext(
         paths=paths,
@@ -150,7 +160,13 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
     )
 
     cfg_yaml_path, cfg_score_path, cfg_topn_path = ensure_user_configs(paths)
-    cfg_yaml, scoring_cfg, topn_cfg = load_config(ctx)
+    files = ConfigSource.ensure_files(paths)
+    payloads = ConfigSource.read_payloads(ctx, files)
+    validation = ConfigValidator.validate(ctx, payloads)
+    config_bundle = ConfigProjector.project(validation)
+    cfg_yaml = config_bundle.global_config
+    scoring_cfg = config_bundle.scoring_config
+    topn_cfg = config_bundle.topn_config
 
     topn_pol: TriageConfigLoadResult = load_tn_config(ctx, topn_cfg)
 
@@ -189,15 +205,17 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
     nvd_policy = nvd_policy_from_config(cfg_yaml)
     nvdpol_start_y = nvd_policy["start_year"]
     nvdpol_end_y = nvd_policy["end_year"]
-    if not args.no_nvd:
+    if not bool(getattr(args, "no_nvd", False)):
         nvd_cache = NVDFeedCache(ctx)
         nvd_status = "Enabled"
     else:
         nvd_cache = None
         nvd_status = "Disabled (--no-nvd)"
         logger.print_warning("NVD Cache is disabled. NVD data reconciliation will not be available during enrichment.")
-        nvdpol_start_y = cfg_yaml.get("feed_cache", {}).get("nvd", {}).get("start_year", (datetime.now().year - 1))
-        nvdpol_end_y = cfg_yaml.get("feed_cache", {}).get("nvd", {}).get("end_year", datetime.now().year)
+        now_y = datetime.now(timezone.utc).year
+        nvd_raw = cfg_yaml.get("feed_cache", {}).get("feeds", {}).get("nvd", {}) or cfg_yaml.get("feed_cache", {}).get("nvd", {})
+        nvdpol_start_y = int(nvd_raw.get("start_year") or (now_y - 1))
+        nvdpol_end_y = int(nvd_raw.get("end_year") or now_y)
 
     services = Services(
         feed_cache=feed_cache,
@@ -212,7 +230,8 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
     )
     ctx = RunContext(paths=paths, pfh=pfh, logger=logger, services=services)
 
-    run_log_name = build_run_log(args.log_file)
+    log_file_arg = str(getattr(args, "log_file", "vulnparse_pin.log") or "vulnparse_pin.log")
+    run_log_name = build_run_log(log_file_arg)
     run_log_path = pfh.ensure_writable_file(
         paths.log_dir / Path(run_log_name).name,
         label="Run Log File",
@@ -220,7 +239,7 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
         overwrite=True,
     )
 
-    logwrap = LoggerWrapper(str(run_log_path), log_level=args.log_level)
+    logwrap = LoggerWrapper(str(run_log_path), log_level=log_level)
     logger = logwrap
 
     pfh.logger = logger
@@ -228,28 +247,33 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
 
     detector = SchemaDetector(PARSER_SPECS)
 
-    logger.phase("Initialization")
-    logger.print_info(f"Using config: {cfg_yaml_path.name}", label="Global Config")
-    logger.print_info(f"Using scoring config: {cfg_score_path.name}", label="Scoring Weight Config")
-    logger.print_info(f"Using TopN Pass Config: {cfg_topn_path.name}", label="TopN Pass Config")
-    enrichment_cfg = cfg_yaml.get("enrichment", {}) if isinstance(cfg_yaml, dict) else {}
-    ghsa_source = getattr(args, "ghsa", None)
-    confidence_cfg = enrichment_cfg.get("confidence") if isinstance(enrichment_cfg, dict) else None
-    if isinstance(confidence_cfg, dict):
-        model_version = confidence_cfg.get("model_version", "v1")
-        base_scanner = confidence_cfg.get("base_scanner", 35)
-        max_score = confidence_cfg.get("max_score", 100)
-        weights = confidence_cfg.get("weights", {})
+    debug_only = bool(getattr(args, "debug_path_policy", False))
+    if debug_only:
+        logger.print_info(f"\n{pfh.describe_policy()}", label="Path Policy")
+
+    if not suppress_banner and not debug_only:
+        logger.phase("Initialization")
+        logger.print_info(f"Using config: {cfg_yaml_path.name}", label="Global Config")
+        logger.print_info(f"Using scoring config: {cfg_score_path.name}", label="Scoring Weight Config")
+        logger.print_info(f"Using TopN Pass Config: {cfg_topn_path.name}", label="TopN Pass Config")
+        enrichment_cfg = cfg_yaml.get("enrichment", {}) if isinstance(cfg_yaml, dict) else {}
+        ghsa_source = getattr(args, "ghsa", None)
+        confidence_cfg = enrichment_cfg.get("confidence") if isinstance(enrichment_cfg, dict) else None
+        if isinstance(confidence_cfg, dict):
+            model_version = confidence_cfg.get("model_version", "v1")
+            base_scanner = confidence_cfg.get("base_scanner", 35)
+            max_score = confidence_cfg.get("max_score", 100)
+            weights = confidence_cfg.get("weights", {})
+            logger.print_info(
+                f"Confidence model={model_version}; base_scanner={base_scanner}; max_score={max_score}; "
+                f"weights={weights}",
+                label="Enrichment Confidence",
+            )
         logger.print_info(
-            f"Confidence model={model_version}; base_scanner={base_scanner}; max_score={max_score}; "
-            f"weights={weights}",
-            label="Enrichment Confidence",
+            f"GHSA source: {ghsa_source if ghsa_source else 'disabled'}",
+            label="GHSA Config",
         )
-    logger.print_info(
-        f"GHSA source: {ghsa_source if ghsa_source else 'disabled'}",
-        label="GHSA Config",
-    )
-    logger.debug("\n%s", pfh.describe_policy(), extra={"vp_label": "PFH Policy"})
+        logger.debug("\n%s", pfh.describe_policy(), extra={"vp_label": "PFH Policy"})
 
     summary_cfg = cfg_yaml.get("summary", {}) if isinstance(cfg_yaml, dict) else {}
     summary_top_n = int(summary_cfg.get("top_n_findings", 20))
@@ -284,4 +308,6 @@ def initialize_runtime(args) -> RuntimeBootstrapState:
         detector=detector,
         passesList=passesList,
         passOrchestrator=passOrchestrator,
+        config_bundle=config_bundle,
+        debug_path_policy_only=debug_only,
     )

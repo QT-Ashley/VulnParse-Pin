@@ -9,6 +9,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.venv/
+.vpp*.db*
 vulnparse_pin.log
 data/
 nvd_cache/
@@ -22,5 +24,8 @@ logs/
 !.github/workflows/*.yml
 !.github/workflows/*.yaml
 !sbom*
-!src/vulnparse_pin/resources/*
+!src/vulnparse_pin/resources/
+!src/vulnparse_pin/resources/**
 !src/vulnparse_pin/core/schemas/*
+**/__pycache__/
+*.py[cod]

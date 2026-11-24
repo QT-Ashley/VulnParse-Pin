@@ -1,11 +1,5 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 """
 Summary Pass - Aggregates scan metrics for executive reporting.
@@ -17,7 +11,7 @@ Performance optimizations for large datasets:
 - Minimal memory footprint for aggregations
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import heapq
@@ -601,3 +595,495 @@ class SummaryPass(Pass):
             "aci_inferred_findings": int(aci_metrics.get("inferred_findings", 0) or 0),
             "aci_chain_candidates_detected": dict(chain_candidates),
         }
+
+
+def _resolve_summary_duckdb_conn(db_obj: Any) -> Any:
+    if db_obj is None:
+        return None
+    inner = getattr(db_obj, "conn", None)
+    if inner is not None and hasattr(inner, "execute"):
+        return inner
+    if hasattr(db_obj, "execute"):
+        return db_obj
+    return None
+
+
+class SummaryV2Pass(Pass):
+    """Unified DuckDB-first Summary@2.0 aggregation pass requiring Triage@2.0."""
+
+    name: str = "Summary"
+    version: str = "2.0"
+    requires_passes: tuple[str, ...] = ("Triage@2.0",)
+
+    def __init__(self, config: Optional[Any] = None) -> None:
+        if isinstance(config, SummaryConfig):
+            self.config = config
+        elif config is not None and hasattr(config, "v2"):
+            self.config = SummaryConfig(include_top_risks=int(config.v2.summary_top_n))
+        elif config is not None and hasattr(config, "summary_top_n"):
+            self.config = SummaryConfig(include_top_risks=int(config.summary_top_n))
+        else:
+            self.config = SummaryConfig()
+
+    def run(self, ctx: "RunContext", scan: Optional["ScanResult"] = None) -> DerivedPassResult:
+        services = getattr(ctx, "services", None)
+        db = getattr(ctx, "db", None) or getattr(services, "db", None)
+        run_id = getattr(ctx, "run_id", None) or getattr(services, "run_id", None)
+        conn = _resolve_summary_duckdb_conn(db) if (db is not None and run_id is not None) else None
+
+        if conn is not None and run_id is not None:
+            return self._run_duckdb(ctx, conn, str(run_id))
+
+        if scan is None:
+            raise ValueError("SummaryV2Pass requires either DuckDB (ctx.db + ctx.run_id) or ScanResult.")
+        return self._run_scan_result(ctx, scan)
+
+    def _run_duckdb(self, ctx: "RunContext", conn: Any, run_id: str) -> DerivedPassResult:
+        import json
+
+        def _group_counts(sql: str, *args: Any) -> Dict[str, int]:
+            out: Dict[str, int] = {}
+            for k, cnt in conn.execute(sql, list(args)).fetchall():
+                if k is not None:
+                    out[str(k)] = int(cnt)
+            return out
+
+        run_row = conn.execute("SELECT profile, vpp_version FROM runs WHERE run_id = ?", [run_id]).fetchone()
+        run_profile = run_row[0] if run_row and run_row[0] else "default"
+
+        asset_row = conn.execute(
+            """
+            SELECT
+                COUNT(*),
+                SUM(CASE WHEN inventory_status = 'matched' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN inventory_status = 'unmatched_shadow' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN COALESCE(internet_facing, FALSE) THEN 1 ELSE 0 END)
+            FROM assets WHERE run_id = ?
+            """,
+            [run_id],
+        ).fetchone()
+
+        finding_row = conn.execute(
+            """
+            SELECT
+                COUNT(*),
+                SUM(CASE WHEN f.scoring_track = 'cve_threat' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN f.scoring_track = 'exposure_weakness' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN s.finding_id IS NOT NULL THEN 1 ELSE 0 END),
+                SUM(CASE WHEN td.finding_id IS NOT NULL THEN 1 ELSE 0 END),
+                MAX(s.operational_score),
+                AVG(s.operational_score),
+                AVG(s.raw_risk_score)
+            FROM findings f
+            LEFT JOIN scores s ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+            LEFT JOIN triage_decisions td ON td.run_id = f.run_id AND td.finding_id = f.finding_id
+            WHERE f.run_id = ?
+            """,
+            [run_id],
+        ).fetchone()
+
+        intel_row = conn.execute(
+            """
+            SELECT
+                SUM(
+                    CASE
+                        WHEN (
+                            COALESCE(e.in_kev, FALSE)
+                            OR COALESCE(fc_agg.fc_in_kev, FALSE)
+                            OR COALESCE(TRY_CAST(json_extract(s.score_trace_json, '$.in_kev') AS BOOLEAN), FALSE)
+                        ) THEN 1
+                        ELSE 0
+                    END
+                ),
+                SUM(
+                    CASE
+                        WHEN (
+                            COALESCE(e.verified_exploit, FALSE)
+                            OR COALESCE(fc_agg.fc_verified_exploit, FALSE)
+                            OR COALESCE(TRY_CAST(json_extract(s.score_trace_json, '$.verified_exploit') AS BOOLEAN), FALSE)
+                        ) THEN 1
+                        ELSE 0
+                    END
+                ),
+                SUM(
+                    CASE
+                        WHEN (
+                            COALESCE(e.heuristic_exploit_mention, FALSE)
+                            OR COALESCE(fc_agg.fc_heuristic_exploit, FALSE)
+                            OR COALESCE(TRY_CAST(json_extract(s.score_trace_json, '$.heuristic_exploit_mention') AS BOOLEAN), FALSE)
+                        )
+                        AND NOT (
+                            COALESCE(e.verified_exploit, FALSE)
+                            OR COALESCE(fc_agg.fc_verified_exploit, FALSE)
+                            OR COALESCE(TRY_CAST(json_extract(s.score_trace_json, '$.verified_exploit') AS BOOLEAN), FALSE)
+                        ) THEN 1
+                        ELSE 0
+                    END
+                ),
+                SUM(CASE WHEN e.epss_score IS NOT NULL THEN 1 ELSE 0 END)
+            FROM findings f
+            LEFT JOIN scores s ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+            LEFT JOIN enrichment_snapshots e ON e.run_id = f.run_id
+                AND UPPER(e.cve_id) = COALESCE(UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')), UPPER(f.primary_cve))
+            LEFT JOIN (
+                SELECT
+                    fc.finding_id,
+                    BOOL_OR(COALESCE(es.in_kev, FALSE)) AS fc_in_kev,
+                    BOOL_OR(COALESCE(es.verified_exploit, FALSE)) AS fc_verified_exploit,
+                    BOOL_OR(COALESCE(es.heuristic_exploit_mention, FALSE)) AS fc_heuristic_exploit
+                FROM finding_cves fc
+                JOIN enrichment_snapshots es ON es.run_id = fc.run_id AND UPPER(es.cve_id) = UPPER(fc.cve_id)
+                WHERE fc.run_id = ?
+                GROUP BY fc.finding_id
+            ) fc_agg ON fc_agg.finding_id = f.finding_id
+            WHERE f.run_id = ?
+            """,
+            [run_id, run_id],
+        ).fetchone()
+
+        by_priority = _group_counts(
+            "SELECT priority_tier, COUNT(*) FROM triage_decisions WHERE run_id = ? GROUP BY priority_tier",
+            run_id,
+        )
+        by_sla = _group_counts(
+            "SELECT sla_bucket, COUNT(*) FROM triage_decisions WHERE run_id = ? GROUP BY sla_bucket",
+            run_id,
+        )
+        by_status = _group_counts(
+            "SELECT decision_status, COUNT(*) FROM triage_decisions WHERE run_id = ? GROUP BY decision_status",
+            run_id,
+        )
+        by_band = _group_counts(
+            "SELECT risk_band, COUNT(*) FROM scores WHERE run_id = ? GROUP BY risk_band",
+            run_id,
+        )
+        by_track = _group_counts(
+            "SELECT scoring_track, COUNT(*) FROM findings WHERE run_id = ? GROUP BY scoring_track",
+            run_id,
+        )
+        by_sev = _group_counts(
+            "SELECT scanner_severity, COUNT(*) FROM findings WHERE run_id = ? GROUP BY scanner_severity",
+            run_id,
+        )
+        by_mode = _group_counts(
+            "SELECT detection_mode, COUNT(*) FROM findings WHERE run_id = ? GROUP BY detection_mode",
+            run_id,
+        )
+        by_crit = _group_counts(
+            "SELECT derived_criticality, COUNT(*) FROM assets WHERE run_id = ? GROUP BY derived_criticality",
+            run_id,
+        )
+        by_prov = _group_counts(
+            "SELECT json_extract_string(score_trace_json, '$.cvss_provenance'), COUNT(*) "
+            "FROM scores WHERE run_id = ? GROUP BY 1",
+            run_id,
+        )
+        by_ssvc_action = _group_counts(
+            "SELECT ssvc_action, COUNT(*) FROM triage_decisions WHERE run_id = ? GROUP BY ssvc_action",
+            run_id,
+        )
+
+        hist_row = conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN operational_score >= 9.0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN operational_score >= 7.0 AND operational_score < 9.0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN operational_score >= 4.0 AND operational_score < 7.0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN operational_score < 4.0 THEN 1 ELSE 0 END)
+            FROM scores WHERE run_id = ?
+            """,
+            [run_id],
+        ).fetchone()
+
+        top_n = max(1, int(self.config.include_top_risks))
+        top_risks_rows = conn.execute(
+            """
+            SELECT
+                f.finding_id,
+                f.asset_id,
+                f.title,
+                COALESCE(UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')), f.primary_cve) AS primary_cve,
+                s.scoring_track,
+                s.raw_risk_score,
+                s.operational_score,
+                s.risk_band,
+                td.priority_tier,
+                td.oal_compat,
+                td.ssvc_action,
+                td.sla_bucket,
+                td.decision_status,
+                COALESCE(a.internet_facing, FALSE)
+            FROM findings f
+            JOIN scores s ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+            JOIN triage_decisions td ON td.run_id = f.run_id AND td.finding_id = f.finding_id
+            LEFT JOIN assets a ON a.run_id = f.run_id AND a.asset_id = f.asset_id
+            LEFT JOIN enrichment_snapshots e ON e.run_id = f.run_id
+                AND UPPER(e.cve_id) = COALESCE(UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')), UPPER(f.primary_cve))
+            WHERE f.run_id = ?
+            ORDER BY
+                CASE UPPER(COALESCE(td.priority_tier, 'P4'))
+                    WHEN 'P1' THEN 1
+                    WHEN 'P1B' THEN 2
+                    WHEN 'P2' THEN 3
+                    WHEN 'P3' THEN 4
+                    WHEN 'P4' THEN 5
+                    ELSE 99
+                END ASC,
+                s.operational_score DESC NULLS LAST,
+                e.epss_score DESC NULLS LAST,
+                f.finding_id ASC
+            LIMIT ?
+            """,
+            [run_id, top_n],
+        ).fetchall()
+
+        top_risks = tuple(
+            {
+                "finding_id": r[0],
+                "asset_id": r[1],
+                "title": r[2],
+                "primary_cve": r[3],
+                "scoring_track": r[4],
+                "raw_risk_score": round(float(r[5] or 0.0), 4),
+                "operational_score": round(float(r[6] or 0.0), 4),
+                "risk_band": r[7],
+                "priority_tier": r[8],
+                "oal_compat": r[9],
+                "ssvc_action": r[10],
+                "sla_bucket": r[11],
+                "decision_status": r[12],
+                "internet_facing": bool(r[13]),
+            }
+            for r in top_risks_rows
+        )
+
+        top_asset_rows = conn.execute(
+            """
+            SELECT
+                a.asset_id,
+                a.canonical_key,
+                a.inventory_status,
+                a.derived_criticality,
+                MAX(s.operational_score) AS max_op,
+                COUNT(f.finding_id) AS finding_cnt
+            FROM assets a
+            LEFT JOIN findings f ON f.run_id = a.run_id AND f.asset_id = a.asset_id
+            LEFT JOIN scores s ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+            WHERE a.run_id = ?
+            GROUP BY a.asset_id, a.canonical_key, a.inventory_status, a.derived_criticality
+            ORDER BY max_op DESC NULLS LAST, finding_cnt DESC, a.asset_id ASC
+            LIMIT 10
+            """,
+            [run_id],
+        ).fetchall()
+
+        imm_cves = [
+            r[0]
+            for r in conn.execute(
+                """
+                SELECT DISTINCT
+                    COALESCE(UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')), f.primary_cve) AS eff_cve
+                FROM findings f
+                LEFT JOIN scores s ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+                JOIN triage_decisions td ON td.run_id = f.run_id AND td.finding_id = f.finding_id
+                WHERE f.run_id = ?
+                  AND COALESCE(UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')), f.primary_cve) IS NOT NULL
+                  AND UPPER(COALESCE(td.priority_tier, '')) IN ('P1', 'P1B', 'P2')
+                ORDER BY eff_cve ASC
+                LIMIT 20
+                """,
+                [run_id],
+            ).fetchall()
+            if r[0]
+        ]
+
+        aci_cnt_row = conn.execute(
+            "SELECT COUNT(*), SUM(CASE WHEN uplift_score > 0 THEN 1 ELSE 0 END) "
+            "FROM aci_signals WHERE run_id = ? AND capabilities_json != '[]'",
+            [run_id],
+        ).fetchone()
+
+        sast_cap_row = conn.execute(
+            "SELECT COUNT(*) FROM triage_decisions "
+            "WHERE run_id = ? AND json_extract_string(assumed_state_json, '$.sast_p1_capped') = 'true'",
+            [run_id],
+        ).fetchone()
+
+        overview = {
+            "run_id": run_id,
+            "profile": run_profile,
+            "total_assets": int(asset_row[0] or 0),
+            "matched_assets": int(asset_row[1] or 0),
+            "shadow_assets": int(asset_row[2] or 0),
+            "total_findings": int(finding_row[0] or 0),
+            "cve_findings": int(finding_row[1] or 0),
+            "exposure_findings": int(finding_row[2] or 0),
+            "scored_findings": int(finding_row[3] or 0),
+            "triaged_findings": int(finding_row[4] or 0),
+            "highest_operational_score": round(float(finding_row[5]), 4) if finding_row[5] is not None else 0.0,
+            "avg_operational_score": round(float(finding_row[6]), 4) if finding_row[6] is not None else 0.0,
+            "avg_raw_score": round(float(finding_row[7]), 4) if finding_row[7] is not None else 0.0,
+        }
+        asset_summary = {
+            "total_assets": int(asset_row[0] or 0),
+            "matched_assets": int(asset_row[1] or 0),
+            "shadow_assets": int(asset_row[2] or 0),
+            "internet_facing_assets": int(asset_row[3] or 0),
+            "criticality_distribution": by_crit,
+            "top_assets": [
+                {
+                    "asset_id": r[0],
+                    "canonical_key": r[1],
+                    "inventory_status": r[2],
+                    "derived_criticality": r[3],
+                    "max_operational_score": round(float(r[4] or 0.0), 4),
+                    "finding_count": int(r[5] or 0),
+                }
+                for r in top_asset_rows
+            ],
+        }
+        finding_summary = {
+            "total_findings": int(finding_row[0] or 0),
+            "by_priority_tier": by_priority,
+            "by_sla_bucket": by_sla,
+            "by_decision_status": by_status,
+            "by_scoring_track": by_track,
+            "by_severity": by_sev,
+            "by_detection_mode": by_mode,
+        }
+        risk_distribution = {
+            "by_risk_band": by_band,
+            "operational_score_histogram": {
+                "critical_ge_9": int(hist_row[0] or 0),
+                "high_7_to_9": int(hist_row[1] or 0),
+                "medium_4_to_7": int(hist_row[2] or 0),
+                "low_lt_4": int(hist_row[3] or 0),
+            },
+        }
+        enrichment_metrics = {
+            "kev_findings": int(intel_row[0] or 0),
+            "verified_exploit_findings": int(intel_row[1] or 0),
+            "heuristic_only_findings": int(intel_row[2] or 0),
+            "epss_covered_findings": int(intel_row[3] or 0),
+            "by_cvss_provenance": by_prov,
+        }
+        remediation_priorities = {
+            "by_priority_tier": by_priority,
+            "by_sla_bucket": by_sla,
+            "immediate_action": int(by_priority.get("P1", 0)) + int(by_priority.get("P1B", 0)),
+            "high_priority": int(by_priority.get("P2", 0)),
+            "medium_priority": int(by_priority.get("P3", 0)),
+            "invalidated_decisions": int(
+                by_status.get("deferred_invalidated", 0)
+                + by_status.get("accepted_invalidated", 0)
+                + by_status.get("mitigated_invalidated", 0)
+            ),
+            "immediate_cves": imm_cves,
+        }
+        decision_trace_summary = {
+            "aci_inferred_findings": int(aci_cnt_row[0] or 0),
+            "aci_uplifted_findings": int(aci_cnt_row[1] or 0),
+            "ssvc_action_counts": by_ssvc_action,
+            "sast_p1_capped_findings": int(sast_cap_row[0] or 0),
+        }
+
+        output = SummaryPassOutput(
+            overview=overview,
+            asset_summary=asset_summary,
+            finding_summary=finding_summary,
+            risk_distribution=risk_distribution,
+            top_risks=top_risks,
+            enrichment_metrics=enrichment_metrics,
+            remediation_priorities=remediation_priorities,
+            decision_trace_summary=decision_trace_summary,
+        )
+        ctx.logger.info(
+            "[pass:summary@2.0] duckdb | assets=%d | findings=%d | p1=%d",
+            overview["total_assets"],
+            overview["total_findings"],
+            remediation_priorities["immediate_action"],
+            extra={"vp_label": "SummaryV2Pass"},
+        )
+        meta = PassMeta(
+            name=self.name,
+            version=self.version,
+            created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            notes="Unified DuckDB Summary@2.0 report aggregation.",
+        )
+        return DerivedPassResult(meta=meta, data=asdict(output))
+
+    def _run_scan_result(self, ctx: "RunContext", scan: "ScanResult") -> DerivedPassResult:
+        triage_res = scan.derived.get("Triage@2.0")
+        scoring_res = scan.derived.get("Scoring@3.0") or scan.derived.get("Scoring@2.0")
+        triage_map = (triage_res.data or {}).get("decisions", {}) if triage_res else {}
+        scored_map = (scoring_res.data or {}).get("scored_findings", {}) if scoring_res else {}
+
+        by_priority = dict((triage_res.data or {}).get("by_priority_tier", {}) if triage_res else {})
+        by_sla = dict((triage_res.data or {}).get("by_sla_bucket", {}) if triage_res else {})
+        by_status = dict((triage_res.data or {}).get("by_decision_status", {}) if triage_res else {})
+
+        by_band: Dict[str, int] = {}
+        op_scores: List[float] = []
+        top_items: List[Dict[str, Any]] = []
+        for fid, sf in scored_map.items():
+            band = str(sf.get("risk_band") or "Informational")
+            by_band[band] = by_band.get(band, 0) + 1
+            op = float(sf.get("operational_score", 0.0) or 0.0)
+            op_scores.append(op)
+            td = triage_map.get(fid) or {}
+            top_items.append(
+                {
+                    "finding_id": fid,
+                    "asset_id": sf.get("asset_id"),
+                    "operational_score": round(op, 4),
+                    "raw_risk_score": round(float(sf.get("raw_score", 0.0) or 0.0), 4),
+                    "risk_band": band,
+                    "priority_tier": td.get("priority_tier"),
+                    "sla_bucket": td.get("sla_bucket"),
+                    "decision_status": td.get("decision_status", "active"),
+                }
+            )
+        top_items.sort(key=lambda r: (-float(r["operational_score"]), str(r["finding_id"])))
+        top_risks = tuple(top_items[: max(1, int(self.config.include_top_risks))])
+
+        total_findings = sum(len(a.findings) for a in scan.assets)
+        output = SummaryPassOutput(
+            overview={
+                "total_assets": len(scan.assets),
+                "total_findings": total_findings,
+                "scored_findings": len(scored_map),
+                "triaged_findings": len(triage_map),
+                "avg_operational_score": round(sum(op_scores) / len(op_scores), 4) if op_scores else 0.0,
+            },
+            asset_summary={"total_assets": len(scan.assets)},
+            finding_summary={
+                "total_findings": total_findings,
+                "by_priority_tier": by_priority,
+                "by_sla_bucket": by_sla,
+                "by_decision_status": by_status,
+            },
+            risk_distribution={"by_risk_band": by_band},
+            top_risks=top_risks,
+            enrichment_metrics={},
+            remediation_priorities={
+                "by_priority_tier": by_priority,
+                "by_sla_bucket": by_sla,
+                "immediate_action": int(by_priority.get("P1", 0)) + int(by_priority.get("P1B", 0)),
+                "high_priority": int(by_priority.get("P2", 0)),
+                "invalidated_decisions": int(
+                    by_status.get("deferred_invalidated", 0)
+                    + by_status.get("accepted_invalidated", 0)
+                    + by_status.get("mitigated_invalidated", 0)
+                ),
+            },
+            decision_trace_summary={
+                "sast_p1_capped_findings": int((triage_res.data or {}).get("sast_p1_capped", 0) if triage_res else 0),
+            },
+        )
+        meta = PassMeta(
+            name=self.name,
+            version=self.version,
+            created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            notes="Summary@2.0 report aggregation (ScanResult fallback).",
+        )
+        return DerivedPassResult(meta=meta, data=asdict(output))

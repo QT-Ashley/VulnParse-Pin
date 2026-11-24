@@ -77,12 +77,23 @@ Implement a seam architecture decomposing enrichment orchestration into explicit
   2. Source module can be safely disabled without affecting pipeline (low risk)
   3. All feed loading contracts and caching remain unchanged
 
+## v2.0.0 Status
+
+In `v2.0.0` (`Apache-2.0`), Stages 2 and 3 were completed and integrated with DuckDB workspace persistence:
+
+- `EnrichmentSourceLoader` (`app/enrichment_source_loader.py`) loads all 6 source families (`KEV`, `EPSS v5`, `Exploit-DB`, `NVD`, `GHSA`, and `OSV`) with strict HMAC anti-downgrade and HTTPS per-hop redirect protections.
+- Stage 2 (`EnrichmentApplicator` in `app/enrichment.py`) and Stage 3 (`EnrichmentHandoffBuilder` in `app/enrichment_handoff.py` + `PostEnrichmentIndex` in `app/index_builder.py`) are shipped.
+- `populate_enrichment_snapshots()` (`app/enrichment.py`) hydrates matched CVEs and `package_purl`s into DuckDB's `enrichment_snapshots` table (recording unified CVSS provenance `NVD > CNA > GHSA > OSV > Scanner-Supplied > Missing`, EPSS v5 `#model_version` + percentile, KEV metadata, and negation-aware exploit flags) and updates `runs.intel_metadata_json`.
+
 ## References
 
 - Related docs:
   - [Enrichment Seam Contract](../Enrichment%20Seam%20Contract.md)
+  - [Enrichment Deep Dive](../Enrichment%20Deep%20Dive.md)
   - [Architecture](../Architecture.md)
   - [Architecture Review Checklist](../Architecture%20Review%20Checklist.md)
 - Related code:
-  - `src/vulnparse_pin/app/enrichment_source_loader.py` (EnrichmentSourceLoader module)
-  - `src/vulnparse_pin/app/enrichment.py` (existing orchestrator, unchanged in Stage 1)
+  - `src/vulnparse_pin/app/enrichment_source_loader.py` (`EnrichmentSourceLoader`)
+  - `src/vulnparse_pin/app/enrichment.py` (`EnrichmentApplicator`, `populate_enrichment_snapshots`)
+  - `src/vulnparse_pin/app/enrichment_handoff.py` (`EnrichmentHandoffBuilder`)
+  - `src/vulnparse_pin/app/index_builder.py` (`PostEnrichmentIndex`)

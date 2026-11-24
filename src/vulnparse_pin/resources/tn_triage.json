@@ -139,7 +139,7 @@
         "preserve_oal1_precedence": true
     },
     "aci": {
-        "enabled": false,
+        "enabled": true,
         "min_confidence": 0.6,
         "max_uplift": 2.0,
         "asset_uplift_weight": 0.5,

@@ -1,211 +1,201 @@
 # Scoring and Prioritization Deep Dive
 
-This page details how VulnParse-Pin computes risk, executes the scoring pass, and performs TopN asset/finding prioritization with inference.
+This page details how VulnParse-Pin v2.0 (`Apache-2.0`) computes dual-track risk scores, evaluates CISA BOD 26-04 / SSVC triage decisions, ranks assets and findings in DuckDB, and detects cross-run priority drift.
 
-## Scope
+## Scope and Primary Implementation Files
 
-Primary implementation files:
+- `src/vulnparse_pin/core/passes/__init__.py` (`run_v2_duckdb_pipeline`)
+- `src/vulnparse_pin/core/passes/Scoring/scoringPass.py` (`ScoringV3Pass` / `Scoring@3.0`, plus legacy `ScoringPass` / `Scoring@2.0`)
+- `src/vulnparse_pin/utils/cvss_utils.py` (clean-room Apache-2.0 CVSS v2.0 / v3.0 / v3.1 / v4.0 calculator & `resolve_effective_cvss_fields`)
+- `src/vulnparse_pin/core/passes/Triage/triage_pass.py` (`TriageDecisionPass` / `Triage@2.0`)
+- `src/vulnparse_pin/core/passes/TopN/topn_pass.py` (`TopNV2Pass` / `TopN@2.0`, plus legacy `TopNPass` / `TopN@1.0`)
+- `src/vulnparse_pin/core/passes/Summary/summary_pass.py` (`SummaryV2Pass` / `Summary@2.0`, plus legacy `SummaryPass` / `Summary@1.0`)
+- `src/vulnparse_pin/core/diff_engine.py` (`DiffEngine`, `evaluate_fail_gate`)
+- `src/vulnparse_pin/core/config_projector.py` & `src/vulnparse_pin/core/config_validator.py`
+- `src/vulnparse_pin/resources/config.yaml`, `src/vulnparse_pin/resources/scoring.json`, `src/vulnparse_pin/resources/tn_triage.json`
 
-- `src/vulnparse_pin/core/passes/Scoring/scoringPass.py`
-- `src/vulnparse_pin/core/classes/scoring_pol.py`
-- `src/vulnparse_pin/core/passes/TopN/topn_pass.py`
-- `src/vulnparse_pin/core/passes/TopN/TN_triage_semantics.py`
-- `src/vulnparse_pin/core/passes/TopN/TN_triage_config.py`
-- `src/vulnparse_pin/core/classes/pass_classes.py`
-- `src/vulnparse_pin/resources/scoring.json`
-- `src/vulnparse_pin/resources/tn_triage.json`
+## Triage Methodology Baseline
 
-## Triage methodology baseline
+VulnParse-Pin applies a real-world exploitation and exposure-first triage model:
 
-VulnParse-Pin applies a real-world impact probability first triage model by default:
+- Prioritize findings and assets with verified active exploitation (CISA KEV, verified exploit), high EPSS v5 probability/percentile, and internet-facing exposure.
+- Separate CVE-backed vulnerabilities (**Track A: `cve_threat`**) from non-CVE misconfigurations, SAST rules, and exposed-service findings (**Track B: `exposure_weakness`**).
+- Weight Track B risk and triage eligibility by scanner `detection_mode` (`signal_reliability`) and enforce fail-closed guardrails on uncorroborated static SAST findings.
+- Support both the `default` operational triage profile and the federal `bod-26-04` SSVC decision profile.
 
-- prioritize findings and assets with the highest near-term likelihood of meaningful operational impact
-- treat exploitability and exposure evidence as first-order decision signals
-- use chain/pathway context as decision support, with bounded influence
+## v2.0 DuckDB Pass Pipeline
 
-This baseline should be tuned for your environment. Adjust scoring and TopN policy to match business goals, risk tolerance, and regulatory obligations.
+`run_v2_duckdb_pipeline()` executes the canonical DuckDB-first pass DAG via `PassRunner`:
 
-## Pass dependency chain
+1. `NmapAdapter@1.0` *(optional, when `--nmap` / `--nmap-ctx` is provided)*
+2. `ACI@2.0` (`ACIV2Pass`) → persists `aci_signals`
+3. `Scoring@3.0` (`ScoringV3Pass`) → persists `scores`, updates `findings.signal_reliability` and `assets.derived_criticality`
+4. `Triage@2.0` (`TriageDecisionPass`) → persists `triage_decisions`
+5. `TopN@2.0` (`TopNV2Pass`) → unified SQL CTE asset & finding ranking
+6. `Summary@2.0` (`SummaryV2Pass`) → unified SQL summary aggregation
 
-Default pass order:
+> [!NOTE]
+> Legacy in-memory `ScanResult` passes (`Scoring@2.0`, `ACI@1.0`, `TopN@1.0`, `Summary@1.0`) remain available only for backward-compatible Python API callers; all v2.0 CLI subcommands (`vpp scan`, `vpp demo`, `vpp diff`, `vpp export`, `vpp ui`) execute the DuckDB v2 pipeline.
 
-1. `Scoring@2.0`
-2. `TopN@1.0`
-3. `Summary@1.0`
+## Clean-Room Apache-2.0 CVSS Engine & Provenance
 
-`TopNPass` depends on `ScoringPass` output from derived context. If scoring output is missing, TopN cannot rank.
+In v2.0.0, VulnParse-Pin removes the LGPL `cvss` runtime dependency and implements a clean-room, Python standard-library-only CVSS calculator in `src/vulnparse_pin/utils/cvss_utils.py`:
 
-## Scoring policy model
+- **Supported Specifications:** Official FIRST formulas and MacroVector lookup tables for **CVSS v2.0**, **CVSS v3.0**, **CVSS v3.1**, and **CVSS v4.0** (all 270 valid EQ1–EQ6 MacroVectors).
+- **Authoritative Precedence (`_CVSS_PROVENANCE_RANK`):**
+  `NVD (5) > CNA (4) > GHSA (3) > OSV (2) > Scanner-Supplied (1) > Missing (0)`
+- **Safe Effective Resolution (`resolve_effective_cvss_fields`):**
+  Used across DuckDB repositories, dossier/roadmap renderers, JSON/CSV exporters, `DiffEngine`, and the Textual TUI so that a `"Missing"` enrichment snapshot never shadows a valid `"Scanner-Supplied"` score/vector, and missing CVSS never leaks as a synthetic `0.0`.
 
-`ScoringPolicyV1` is loaded from `scoring.json` using `load_score_policy(...)` and supplemented by `nmap_ctx.scoring_port_bonus` from `config.yaml`.
+## Scoring@3.0: Dual-Track Vectorized Scoring
 
-Core policy groups:
+`ScoringV3Pass` reads joined `findings`, `assets`, `aci_signals`, and `enrichment_snapshots` rows from `.vpp.db`, memoizes equivalent signal signatures, and writes `scores` via DuckDB `appender`.
 
-- EPSS normalization (`scale`, `min`, `max`)
-- evidence points (`kev`, `exploit`)
-- band thresholds (`critical`, `high`, `medium`, `low`)
-- weights (`epss_high`, `epss_medium`, `kev`, `exploit`)
-- risk ceiling (`max_raw_risk`, `max_operational_risk`)
-- finding-level CVE aggregation (`finding_cve_score`, `finding_cve_decay`, `finding_cve_max_contributors`)
-- Nmap context (`nmap_port_bonus`, default `0.0`)
+### Track A: `cve_threat` (CVE-Backed Findings)
 
-Bootstrap validates monotonic bands and non-negative constraints before pass execution.
+Selected when a finding carries one or more CVE IDs and `scoring_track != "exposure_weakness"`.
 
-## Scoring calculation mechanics
+For each associated CVE on the finding:
 
-Scoring computation in `scoringPass.py`:
+1. **CVSS Base Score (`0.0–10.0`):** Resolved using `NVD > CNA > GHSA > OSV > Scanner-Supplied > Missing` (`0.0` in numeric calculation if missing, while `score_trace.cvss_provenance` stays `"Missing"`).
+2. **EPSS v5 Monotonic Piecewise Cutoffs (`_epss_v5_points`):**
+   Computes strictly monotonic piecewise-linear points (`0.0–5.0`) over `epss_score` using the default `scoring.json` breakpoints:
 
-1. Build a per-CVE preview for every retained `finding.cve_analysis` record using CVSS, EPSS, KEV, and exploit signals.
-2. Sort contributor CVEs by descending raw preview score.
-3. Aggregate contributor raw scores with bounded decay (`1.0`, `decay`, `decay^2`, ...) up to `finding_cve_max_contributors`.
-4. Fall back to scanner/enrichment rollup fields when no per-CVE analysis is present.
-5. Add Nmap port bonus when a confirmed open port matches the finding's service port and `scoring_port_bonus > 0`.
+   | EPSS Probability | EPSS Points |
+   | --- | --- |
+   | `0.00` | `0.0` |
+   | `0.04` (4%) | `1.8` |
+   | `0.10` (10%) | `3.0` |
+   | `0.50` (50%) | `4.2` |
+   | `1.00` (100%) | `5.0` |
 
-`raw_score` is the composite pre-normalization score.
+   FIRST `epss_percentile` (`0.0–1.0`) is stored alongside `epss_score`, formatted in `epss_display` (for example `12.3% / 95th`), and evaluated directly in `Triage@2.0` (`>= 0.90` and `>= 0.95`).
+3. **KEV & Verified Exploit (Non-Double-Counting):**
+   - `in_kev == True`: `+4.5` (`kev_points`)
+   - `verified_exploit == True`: `+2.0` (`verified_exploit_points`) when *not* in KEV, or `+0.5` (`verified_exploit_with_kev_points`) when *already* in KEV
+   - `heuristic_exploit_mention == True`: `+0.0` (`heuristic_exploit_points`; preserved as trace metadata only so unverified advisory mentions do not inflate scores)
+4. **Multi-CVE Stacked Decay:**
+   Per-CVE raw scores (`cve_raw = cvss + epss_points + kev_points + exp_points`) are sorted descending by `(cve_raw, cve_id)` and summed with exponential decay `decay ** idx` (`finding_cve_decay = 0.35`, `finding_cve_max_contributors = 8`).
+5. **Asset Context Modifiers & Normalization:**
+   - `exposure_bonus`: `+1.25` when `internet_facing` is `true`
+   - `criticality_bonuses`: `critical: +1.0`, `high: +0.5`, `medium: 0.0`, `low: -0.25`
+   - Clamped to `max_raw_risk = 16.0` and scaled to `operational_score = (raw_score / 16.0) * 10.0` (`0.0–10.0`).
 
-`operational_score` is normalized by `max_raw_risk` and clamped to `max_operational_risk`.
+### Track B: `exposure_weakness` (Non-CVE Findings)
 
-Risk band is assigned from raw score thresholds.
+Selected when a finding has no CVEs (e.g., Nuclei misconfigurations/default logins, Semgrep SAST findings, exposed admin panels, or network service checks).
 
-`score_trace` captures the full contributor list, per-CVE contribution weights, display CVE, union flags, and final scoring summary. This trace is stored in both `assets[].findings[].score_trace` and `derived["Scoring@2.0"].scored_findings[*].score_trace`.
+1. **Base Score:** `scanner_cvss_score` (or base score computed from `scanner_cvss_vector`, provenance `"Scanner-Supplied"`); otherwise `exposure_track.severity_base`: `critical: 8.5`, `high: 7.0`, `medium: 4.5`, `low: 2.0`, `informational/info: 0.5` (provenance `"Missing"`).
+2. **Additive Capability & Context Bonuses:**
+   - ACI capability bonus: `+3.5` (`aci_high_impact_bonus`) if any capability is in `{remote_execution, command_execution, auth_bypass, sql_injection, privilege_escalation, initial_access, deserialization, ssrf}`, else `+2.0` (`aci_exposure_bonus`) if any other ACI capability is present.
+   - ACI chain bonus: `+1.0` (`aci_chain_bonus`) when `aci_chains` is non-empty.
+   - High-impact CWE bonus: `+1.5` (`cwe_high_impact_bonus`) for high-impact CWEs (`CWE-22`, `CWE-77`, `CWE-78`, `CWE-79`, `CWE-89`, `CWE-94`, `CWE-250`, `CWE-269`, `CWE-287`, `CWE-306`, `CWE-434`, `CWE-502`, `CWE-798`, `CWE-918`).
+   - Exposure bonus: `+1.5` (`exposure_bonus`) when `internet_facing` is `true`.
+3. **Signal Reliability Weighting:**
+   `weighted_raw = unweighted_raw * signal_reliability`, clamped to `16.0` and normalized to `0.0–10.0`.
 
-## Scoring execution strategy and thresholds
+### Signal Reliability (`detection_mode`)
 
-`ScoringPass` selects execution path by workload:
+Configured in `config.yaml` and `scoring.json` under `signal_reliability`:
 
-- sequential mode for small workloads
-- thread-pool mode above `parallel_threshold` (default `100`)
-- process-pool mode above `process_pool_threshold` (default `20_000`)
+| `detection_mode` | Default Weight | Typical Sources |
+| --- | ---: | --- |
+| `credentialed_host` | `1.00` | Credentialed Nessus / OpenVAS / Qualys host checks |
+| `active_dast` | `1.00` | Active Nuclei probes |
+| `sca_container` | `0.90` | Trivy / Grype package & container SARIF |
+| `uncredentialed_banner` | `0.85` | Uncredentialed network/service banner checks |
+| `network_probe` | `0.80` | Nmap service/script probes |
+| `static_sast` | `0.55` | Semgrep / CodeQL static analysis |
 
-Additional controls:
+If `detection_mode` is unmapped, `SignalReliabilityPolicy.weight_for` falls back to explicit finding reliability (clamped `[0.0, 2.0]`), then `ingestion_confidence` (clamped `[0.0, 1.0]`), then `0.70`.
 
-- `min_findings_per_worker` (default `50`)
-- optional worker override via `process_workers`
+### Risk Bands & Asset Criticality
 
-## Scoring optimizations
+Raw-score risk bands (`scoring.json`):
 
-- Plugin attribute cache (`_build_plugin_cache`) avoids repeated attribute lookups.
-- Signature memo cache reuses repeated score computations for equivalent signal tuples.
-- Process worker payloads are serialization-safe plain structures.
+- `Critical`: `raw_score >= 12.8` (operational `>= 8.0`)
+- `High`: `raw_score >= 9.6` (operational `>= 6.0`)
+- `Medium`: `raw_score >= 6.4` (operational `>= 4.0`)
+- `Low`: `raw_score >= 3.2` (operational `>= 2.0`)
+- `Informational`: `raw_score < 3.2`
 
-These are performance optimizations only; output semantics remain deterministic.
+`ScoringV3Pass` also derives `assets.derived_criticality`: `Extreme` (`>= 3` Critical findings), `High` (`>= 1` Critical or `>= 2` High), `Medium` (`>= 1` High or `>= 5` Medium), else `Low`.
 
-## Whole-of-CVEs trace model
+## Triage@2.0: `default` vs `--profile bod-26-04`
 
-For findings that carry `cve_analysis`, `ScoringPass` no longer uses the display or authoritative CVE as the score source. Instead:
+`TriageDecisionPass` evaluates every finding in `scores` under either `default` or `bod-26-04` (`--profile bod-26-04`) and reconciles explicit deferrals/acceptances/mitigations from `DecisionsRegistry` (`decisions.yaml` or inline `assets.yaml`).
 
-- `display_cve` remains presentation-oriented and is retained in the trace for operator continuity.
-- `primary_cve` is the highest-impact contributor after sorting.
-- `contributors[*].raw_contribution` shows the exact bounded impact of each CVE on the final finding score.
-- `contributors[*].aggregation_weight` shows the decay weight applied to that CVE.
+### SSVC Inputs (`bod-26-04`)
 
-This preserves auditability without requiring downstream consumers to recompute the aggregation logic.
+`_compute_ssvc_inputs()` derives four SSVC decision points:
 
-## TopN configuration model
+- `publicly_exposed`: `bool(internet_facing)`
+- `exploitation`:
+  - `"active"` if `in_kev` OR (`scoring_track == "exposure_weakness"` and `signal_reliability >= 0.90` and active exposure ACI capability/token such as `remote_execution`, `command_execution`, `auth_bypass`, `default-login`, `rce`)
+  - `"poc"` if `verified_exploit` OR `epss >= 0.10` OR `epss_percentile >= 0.95`
+  - `"none"` otherwise
+- `automatable`: `true` if CVSS vector has `AV:N` and `AC:L` with no/low privilege & no user interaction, OR ACI indicates `remote_execution`/`command_execution`/`auth_bypass`/default-login/RCE tokens
+- `technical_impact`: `"total"` if CVSS reflects total CIA impact (`C:H/I:H/A:H`, v2 `C:C/I:C/A:C`, v3 `S:C`, or v4 `VC:H/VI:H` or `SC:H/SI:H`) OR ACI detects `remote_execution`, `command_execution`, `auth_bypass`, `privilege_escalation`, or `sql_injection`; else `"partial"`
 
-TopN policy is loaded from `tn_triage.json` and normalized into `TNTriageConfig`.
+### Profile Decision & SLA Matrix
 
-`TopNConfig` controls:
+| Profile | Priority Tier | OAL Compat | SSVC Action | SLA Bucket (`sla_days`) | Trigger Conditions |
+| --- | --- | --- | --- | --- | --- |
+| `bod-26-04` | `P1` | `OAL-1` | `Act` | `3-day + Forensic Triage` (`3`) | `publicly_exposed` AND `exploitation == "active"` |
+| `bod-26-04` | `P1` | `OAL-1` | `Act` | `14-day` (`14`) | Internal `exploitation == "active"`, OR `publicly_exposed` + (`automatable & total` OR `epss_pct >= 0.95` OR reliable Track B `total`) |
+| `bod-26-04` | `P2` | `OAL-2` | `Attend` | `60-day` (`60`) | `epss_pct >= 0.90` OR `epss >= 0.04` OR (`automatable & total`) OR `aci_chains` OR (`static_sast` + `total`) OR SAST P1-cap applied |
+| `bod-26-04` | `P3` / `P4` | `OAL-3` | `Track` | `Fix on Upgrade` (`None`) | Remainder (`P3` if `operational_score >= 3.5`, else `P4`) |
+| `default` | `P1` | `OAL-1` | `Act` | `3-day + Forensic Triage` (`3`) or `14-day` (`14`) | `3-day + Forensic Triage` when `in_kev` & `internet_facing`; `14-day` for internal KEV (`critical`/`high` asset), `epss >= 0.10`/`pct >= 0.95` & exposed, reliable Track B high-impact/`>= 8.5` on exposed/critical asset, or `op_score >= 9.0` & `sig_rel >= 0.85` |
+| `default` | `P2` | `OAL-2` | `Attend` | `14-day` (`14`) | `in_kev`, `epss >= 0.04`, `epss_pct >= 0.90`, `aci_chains`, `operational_score >= 6.5`, or SAST P1-cap applied |
+| `default` | `P3` | `OAL-3` | `Track*` | `60-day` (`60`) | `operational_score >= 3.5` |
+| `default` | `P4` | `OAL-3` | `Track` | `Fix on Upgrade` (`None`) | Remainder |
 
-- `rank_basis` (`raw` or `operational`)
-- `decay` vector
-- `k` (derived from decay length)
-- `max_assets`
-- `max_findings_per_asset`
-- `include_global_top_findings`
-- `global_top_findings_max`
+### Static SAST P1-Cap Guardrail
 
-`InferenceConfig` controls:
+When `triage.static_sast_p1_cap: true` (default), a `detection_mode == "static_sast"` finding is blocked from entering `P1` unless `_is_high_conf_sast_corroborated()` passes:
 
-- confidence thresholds (`low < medium < high`)
-- `public_service_ports`
-- `allow_predicates`
-- rule set
+- `internet_facing == True`, AND
+- `scanner_severity` is `"high"` or `"critical"`, AND
+- at least one of: high-impact SAST CWE (`CWE-78`, `CWE-89`, `CWE-94`, `CWE-287`, `CWE-306`, `CWE-434`, `CWE-502`, `CWE-798`, `CWE-918`), high-impact ACI capability/chain, or high-confidence rule keyword (`rce`, `sqli`, `command-injection`, `auth-bypass`, `deserialization`, `hardcoded-secret`, `ssrf`, etc.).
 
-Semantic validation enforces invariants and rejects invalid structures.
+Uncorroborated SAST `P1` candidates are capped at `P2` (`60-day` under `bod-26-04`; `14-day` under `default`) with `sast_p1_capped = true` recorded in `assumed_state_json`.
 
-## Nmap context tiebreak
+### Decision Registry Reconciliation & Invalidated Deferrals
 
-When `nmap_ctx.port_tiebreak_enabled` is `true` (default), TopN ranking injects an `nmap_hit` flag into all three sort key positions:
+When `decisions.yaml` (or inline `assets.yaml` `decisions:`) matches a finding, `DecisionsRegistry.evaluate()` checks all assumption predicates (`expires_at`, `in_kev`, `max_epss`, `max_epss_percentile`, `internet_facing`, `max_cvss`):
 
-- Finding sort within asset: `(-score, -nmap_hit, finding_id)`
-- Asset sort: `(-score, -crit_high, -crit_rank, -scorable_count, -nmap_confirmed, asset_id)`
-- Global finding sort: `(-score, -nmap_hit, asset_id, finding_id)`
+- Valid match → `deferred_valid`, `accepted_valid`, or `mitigated` (suppressed from active remediation queues).
+- Any violated predicate → `deferred_invalidated` or `accepted_invalidated` (immediately re-elevated into Decision Defense Dossiers and `DiffEngine` stale-assumption alerts).
 
-This promotes findings and assets with confirmed open ports within equal-score groups without altering numeric scores. The tiebreak is disabled when the pass returns an empty port index (no `--nmap-ctx` provided, or `port_tiebreak_enabled: false`).
+## TopN@2.0 & Summary@2.0
 
-See [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md) for full configuration details and operational guidance.
+- **`TopNV2Pass` (`TopN@2.0`):** Uses parameterized DuckDB SQL window functions (`ROW_NUMBER() OVER (PARTITION BY f.asset_id ...)`) ordering by `(priority_tier ASC, operational_score DESC, epss_score DESC, aci.uplift_score DESC, finding_id ASC)` so sequential, single-node, and UI queries never diverge from `ProcessPoolExecutor` ordering. Top-K assets are scored by weighted decay (`[1.0, 0.5, 0.25]` default in `TopNV2Pass`; bounded to `k = summary.top_n_findings`, default `20`).
+- **`SummaryV2Pass` (`Summary@2.0`):** Computes all summary KPIs (`overview`, `asset_summary`, `finding_summary`, `risk_distribution`, `top_risks`, `enrichment_metrics`, `remediation_priorities`, `decision_trace_summary`) directly via DuckDB SQL aggregations.
 
-## TopN ranking flow
+## `DiffEngine` & Fail-Closed `stale-assumption` Gate
 
-TopN processing stages:
+`DiffEngine` (`src/vulnparse_pin/core/diff_engine.py`, `vpp diff`) performs a `FULL OUTER JOIN` across `base_run_id` and `target_run_id` in `.vpp.db` to track:
 
-1. Load scoring output.
-2. Build per-asset finding index (backed by `PostEnrichmentIndex` for O(1) lookups when available).
-3. Collect per-asset observations including IP, open ports, hostname, and criticality.
-4. Compute exposure inference per asset.
-5. Rank findings per asset using rank basis.
-6. Rank assets with top-k/decay weighting and criticality tie-breaking.
-7. Build optional global top findings.
-8. Trim to configured max assets and finding limits.
+1. `newly_introduced_high_risk` (`P1`/`P2` or `Critical`/`High` new findings) + `newly_introduced_all`
+2. `threat_intel_escalated` (KEV additions, EPSS crossing `0.04`/`0.10` or `90th`/`95th` percentile, CVSS delta `>= 1.0`, provenance upgrade from `Missing`, or `internet_facing` flipping to `true`)
+3. `verified_remediated` (distinguishing `patched` when the asset remains present vs `asset_missing`)
+4. `invalidated_assumptions`:
+   - **Explicit invalidation:** `decisions.yaml` assumptions violated or expired.
+   - **Implicit baseline drift (`_detect_implicit_baseline_drift`):** A persisting finding that was previously in a baseline/deferred posture (`P3`, `P4`, `Fix on Upgrade`, or `60-day`) and escalated to `P1`/`P2` (`14-day` or `3-day + Forensic Triage`) driven by KEV flip, EPSS increase, CVSS increase, exposure flip, or verified exploit addition.
+5. `shadow_assets_delta`: newly observed, resolved, or became-shadow unmatched assets.
 
-## Inference semantics
+`evaluate_fail_gate(report, fail_on)` returns exit code `2` on policy breach:
 
-Inference rules are predicate-driven and weighted. Predicates can include port- and token-based evidence.
+- `--fail-on stale-assumption`: fails closed (`exit 2`) whenever `invalidated_assumptions > 0` (covering both explicit `decisions.yaml` invalidations and `60-day -> 14-day/3-day` implicit baseline drift).
+- `--fail-on p1`: fails on active new `P1`, escalation to `P1`, or invalidated assumption escalating to `P1`.
+- `--fail-on p2`: fails on active new `P1`/`P2`, escalation into `P1`/`P2`, or invalidated assumption escalating into `P1`/`P2`.
+- `--fail-on kev`: fails on active new KEV findings or persisting findings newly entering KEV.
 
-Confidence tiering is based on cumulative weighted evidence and configured thresholds.
+## Related Pages
 
-Public service port configuration is central to externally exposed asset inference.
-
-Supported predicate forms:
-
-- `ip_is_public` — matches assets with a routable IP address
-- `ip_is_private` — matches RFC 1918 / private IP addresses
-- `any_port_in_public_list` — matches if any open port appears in the `public_service_ports` list
-- `port_in:[p1,p2,...]` — matches if any open port is in the supplied list
-- `hostname_contains_any:[t1,t2,...]` — matches if the hostname contains any of the supplied tokens
-- `criticality_is:[extreme|high|medium|low]` — matches based on the asset’s enriched criticality classification
-
-Criticality is sourced from `asset.criticality` and is populated at index-build time via `PostEnrichmentIndex`.
-Assets with `extreme` or `high` criticality receive additional exposure weighting from the built-in `critical_asset_hint` rule.
-
-## TopN execution strategy
-
-`TopNPass` uses process-pool parallelism when total findings exceed `process_pool_threshold` (default `20_000`).
-
-Parallel workers process serializable chunks and return ranked/inference payloads for merge.
-
-## Output contract
-
-Scoring output includes:
-
-- per-finding scored records
-- per-asset score map
-- coverage metrics and aggregate summaries
-
-TopN output includes:
-
-- ranked assets
-- ranked findings by asset
-- optional global top findings
-- rank basis, decay, and k metadata
-
-Derived outputs are append-only under versioned pass keys.
-
-## Tuning guidance
-
-- Adjust scoring bands and weights only with representative dataset validation.
-- Keep `decay[0] == 1.0` and a monotonic non-increasing decay profile.
-- Prefer `rank_basis = operational` for policy-normalized triage workflows.
-- Increase process-pool thresholds only when profiling confirms overhead dominates.
-
-## Related pages
-
+- [CVSS vs VulnParse-Pin: Technical Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)
+- [ACI Feature Explanation](ACI%20Feature%20Explanation.md)
+- [ACI Technical Deep Dive](ACI%20Technical%20Deep%20Dive.md)
 - [Configs](Configs.md)
 - [Pass Phases](Pass%20Phases.md)
-- [Pipeline System](Pipeline%20System.md)
-- [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md)
-- [ACI Feature Explanation](ACI%20Feature%20Explanation.md)
-- [ACI Rule Authoring Tutorial](ACI%20Rule%20Authoring%20Tutorial.md)
-- [ACI Technical Deep Dive](ACI%20Technical%20Deep%20Dive.md)
-- [CVSS vs VulnParse-Pin: Technical Scoring Comparison](CVSS_vs_VulnParse_Scoring_Comparison.md)
+- [Output Interpretation](Output%20Interpretation.md)

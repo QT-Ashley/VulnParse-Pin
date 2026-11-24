@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NessusClientData_v2>
+  <Policy>
+    <policyName>ACME Weekly Production Scan</policyName>
+  </Policy>
+  <Report name="ACME Current Scan">
+    <ReportHost name="203.0.113.10">
+      <HostProperties>
+        <tag name="host-ip">203.0.113.10</tag>
+        <tag name="host-fqdn">edge-api.acme.test</tag>
+        <tag name="operating-system">Linux Kernel 6.1</tag>
+        <tag name="Credentialed_checks">yes</tag>
+      </HostProperties>
+      <ReportItem port="8443" svc_name="https-alt" protocol="tcp" severity="4" pluginID="156001" pluginName="Apache Log4j2 Remote Code Execution (Log4Shell)" pluginFamily="Web Servers">
+        <description>Apache Log4j2 JNDI lookup feature allows unauthenticated remote code execution via crafted HTTP headers.</description>
+        <solution>Upgrade Apache Log4j2 to 2.17.1 or later.</solution>
+        <plugin_output>Detected log4j-core-2.14.1.jar loaded by edge-api service on port 8443.</plugin_output>
+        <cve>CVE-2021-44228</cve>
+        <cwe>CWE-917</cwe>
+        <cvss3_base_score>10.0</cvss3_base_score>
+        <cvss3_vector>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H</cvss3_vector>
+      </ReportItem>
+      <ReportItem port="22" svc_name="ssh" protocol="tcp" severity="4" pluginID="900102" pluginName="XZ Utils Malicious Code Backdoor (CVE-2024-3094)" pluginFamily="General">
+        <description>Vulnerable xz / liblzma package detected on edge-api host.</description>
+        <solution>Rebuild base image with clean xz package and rotate SSH keys.</solution>
+        <plugin_output>Installed liblzma version 5.6.0 matched vulnerable range.</plugin_output>
+        <cve>CVE-2024-3094</cve>
+        <cwe>CWE-506</cwe>
+        <cvss3_base_score>10.0</cvss3_base_score>
+        <cvss3_vector>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H</cvss3_vector>
+      </ReportItem>
+    </ReportHost>
+    <ReportHost name="10.20.1.50">
+      <HostProperties>
+        <tag name="host-ip">10.20.1.50</tag>
+        <tag name="host-fqdn">internal-legacy.acme.test</tag>
+        <tag name="operating-system">Ubuntu 22.04 LTS</tag>
+        <tag name="Credentialed_checks">yes</tag>
+      </HostProperties>
+      <ReportItem port="8080" svc_name="http-alt" protocol="tcp" severity="4" pluginID="900201" pluginName="curl SOCKS5 Heap Buffer Overflow (CVE-2023-38545)" pluginFamily="Ubuntu Local Security Checks">
+        <description>curl libcurl SOCKS5 hostname heap-based buffer overflow. Not exploitable in this configuration without outbound SOCKS5 proxy usage.</description>
+        <solution>Upgrade curl to patched release during scheduled maintenance window.</solution>
+        <plugin_output>Installed package libcurl4 8.2.1; outbound SOCKS5 disabled.</plugin_output>
+        <cve>CVE-2023-38545</cve>
+        <cwe>CWE-122</cwe>
+        <cvss3_base_score>9.8</cvss3_base_score>
+        <cvss3_vector>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H</cvss3_vector>
+      </ReportItem>
+    </ReportHost>
+    <ReportHost name="198.51.100.77">
+      <HostProperties>
+        <tag name="host-ip">198.51.100.77</tag>
+        <tag name="operating-system">Windows Server 2022</tag>
+        <tag name="Credentialed_checks">no</tag>
+      </HostProperties>
+      <ReportItem port="443" svc_name="https" protocol="tcp" severity="4" pluginID="900301" pluginName="ConnectWise ScreenConnect Authentication Bypass (CVE-2024-1709)" pluginFamily="Web Servers">
+        <description>Unauthenticated path-traversal setup wizard allows remote administrator account creation and RCE.</description>
+        <solution>Apply ScreenConnect 23.9.8 security patch immediately.</solution>
+        <plugin_output>Exposed SetupWizard endpoint responded HTTP 200 on port 443.</plugin_output>
+        <cve>CVE-2024-1709</cve>
+        <cwe>CWE-288</cwe>
+      </ReportItem>
+      <ReportItem port="3389" svc_name="ms-wbt-server" protocol="tcp" severity="2" pluginID="900302" pluginName="Legacy Banner Advisory Pending CVSS Analysis" pluginFamily="Service detection">
+        <description>Service banner advisory; vendor confirmed not exploitable in default listener mode.</description>
+        <solution>Restrict RDP exposure to VPN/bastion only.</solution>
+        <plugin_output>RDP service exposed on unmanaged public host 198.51.100.77.</plugin_output>
+        <cve>CVE-2025-99001</cve>
+      </ReportItem>
+    </ReportHost>
+  </Report>
+</NessusClientData_v2>

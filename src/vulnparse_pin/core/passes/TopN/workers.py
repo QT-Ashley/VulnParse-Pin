@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 from __future__ import annotations
 
 import heapq
@@ -510,7 +513,7 @@ def _topn_asset_chunk_worker(
                 aci_asset_uplift = float(aci_asset_rec.get("rank_uplift", 0.0))
             except (TypeError, ValueError):
                 aci_asset_uplift = 0.0
-            aci_asset_uplift = max(0.0, min(float(aci_max_uplift), aci_asset_uplift * float(aci_asset_uplift_weight)))
+            aci_asset_uplift = max(0.0, min(float(aci_max_uplift), aci_asset_uplift))
 
         out_assets.append(
             (

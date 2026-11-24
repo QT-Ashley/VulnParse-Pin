@@ -1,11 +1,5 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from __future__ import annotations
 
@@ -777,8 +771,7 @@ class TopNPass(Pass):
             uplift = float(aci_rec.get("rank_uplift", 0.0))
         except (TypeError, ValueError):
             return 0.0
-        weighted = uplift * float(self.cfg.aci.asset_uplift_weight)
-        return max(0.0, min(float(self.cfg.aci.max_uplift), weighted))
+        return max(0.0, min(float(self.cfg.aci.max_uplift), uplift))
 
     def _build_aci_reason_text(self, aci_rec: Optional[Dict[str, Any]], uplift: float) -> Optional[str]:
         if uplift <= 0.0 or not isinstance(aci_rec, dict):
@@ -1472,3 +1465,413 @@ def _bucket_confidence(score: int, thresholds: "ConfidenceThreshold") -> str:
     if score >= thresholds.medium:
         return "medium"
     return "low"
+
+
+def _resolve_topn_duckdb_conn(db_obj: Any) -> Any:
+    if db_obj is None:
+        return None
+    inner = getattr(db_obj, "conn", None)
+    if inner is not None and hasattr(inner, "execute"):
+        return inner
+    if hasattr(db_obj, "execute"):
+        return db_obj
+    return None
+
+
+class TopNV2Pass(Pass):
+    """Unified DuckDB-first TopN@2.0 ranking pass (zero ProcessPoolExecutor drift)."""
+
+    name: str = "TopN"
+    version: str = "2.0"
+    requires_passes: tuple[str, ...] = ("Triage@2.0",)
+
+    def __init__(
+        self,
+        cfg_or_k: Optional[Any] = None,
+        *,
+        k: Optional[int] = None,
+        decay: Tuple[float, ...] = (1.0, 0.5, 0.25),
+    ) -> None:
+        resolved_k = 10
+        if k is not None:
+            resolved_k = max(1, int(k))
+        elif isinstance(cfg_or_k, int):
+            resolved_k = max(1, int(cfg_or_k))
+        elif isinstance(cfg_or_k, TNTriageConfig):
+            resolved_k = max(1, int(cfg_or_k.topn.k))
+            decay = tuple(float(x) for x in cfg_or_k.topn.decay) or decay
+        elif cfg_or_k is not None:
+            v2_obj = getattr(cfg_or_k, "v2", cfg_or_k)
+            if hasattr(v2_obj, "summary_top_n"):
+                resolved_k = max(1, int(getattr(v2_obj, "summary_top_n")))
+            elif isinstance(cfg_or_k, dict):
+                resolved_k = max(1, int(cfg_or_k.get("summary_top_n") or cfg_or_k.get("k") or 10))
+        self.k = resolved_k
+        self.decay = tuple(float(x) for x in decay[:3]) if decay else (1.0, 0.5, 0.25)
+
+    def run(self, ctx: "RunContext", scan: Optional["ScanResult"] = None) -> DerivedPassResult:
+        services = getattr(ctx, "services", None)
+        db = getattr(ctx, "db", None) or getattr(services, "db", None)
+        run_id = getattr(ctx, "run_id", None) or getattr(services, "run_id", None)
+        conn = _resolve_topn_duckdb_conn(db) if (db is not None and run_id is not None) else None
+
+        if conn is not None and run_id is not None:
+            return self._run_duckdb(ctx, conn, str(run_id))
+
+        if scan is None:
+            raise ValueError("TopNV2Pass requires either DuckDB (ctx.db + ctx.run_id) or ScanResult.")
+        return self._run_scan_result(ctx, scan)
+
+    def _run_duckdb(self, ctx: "RunContext", conn: Any, run_id: str) -> DerivedPassResult:
+        k = self.k
+        w1 = self.decay[0] if len(self.decay) > 0 else 1.0
+        w2 = self.decay[1] if len(self.decay) > 1 else 0.5
+        w3 = self.decay[2] if len(self.decay) > 2 else 0.25
+
+        # Top-K assets via single parameterized SQL CTE over unified tables
+        top_asset_rows = conn.execute(
+            """
+            WITH ranked_asset_findings AS (
+                SELECT
+                    f.asset_id,
+                    COALESCE(s.operational_score, 0.0) AS op_score,
+                    COALESCE(e.epss_score, 0.0) AS epss_score,
+                    COALESCE(aci.uplift_score, 0.0) AS aci_uplift,
+                    CASE UPPER(COALESCE(td.priority_tier, 'P4'))
+                        WHEN 'P1' THEN 1
+                        WHEN 'P2' THEN 2
+                        WHEN 'P3' THEN 3
+                        WHEN 'P4' THEN 4
+                        ELSE 99
+                    END AS tier_rank,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY f.asset_id
+                        ORDER BY
+                            CASE UPPER(COALESCE(td.priority_tier, 'P4'))
+                                WHEN 'P1' THEN 1
+                                WHEN 'P2' THEN 2
+                                WHEN 'P3' THEN 3
+                                WHEN 'P4' THEN 4
+                                ELSE 99
+                            END ASC,
+                            s.operational_score DESC NULLS LAST,
+                            e.epss_score DESC NULLS LAST,
+                            COALESCE(aci.uplift_score, 0.0) DESC,
+                            f.finding_id ASC
+                    ) AS rn
+                FROM findings f
+                JOIN scores s
+                  ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+                JOIN triage_decisions td
+                  ON td.run_id = f.run_id AND td.finding_id = f.finding_id
+                LEFT JOIN aci_signals aci
+                  ON aci.run_id = f.run_id AND aci.finding_id = f.finding_id
+                LEFT JOIN enrichment_snapshots e
+                  ON e.run_id = f.run_id AND e.cve_id = f.primary_cve
+                WHERE f.run_id = ?
+            ),
+            asset_agg AS (
+                SELECT
+                    r.asset_id,
+                    SUM(
+                        CASE r.rn
+                            WHEN 1 THEN r.op_score * ?
+                            WHEN 2 THEN r.op_score * ?
+                            WHEN 3 THEN r.op_score * ?
+                            ELSE 0.0
+                        END
+                    ) AS weighted_score,
+                    MAX(CASE WHEN r.rn = 1 THEN r.op_score ELSE 0.0 END) AS top1,
+                    MAX(CASE WHEN r.rn = 2 THEN r.op_score ELSE NULL END) AS top2,
+                    MAX(CASE WHEN r.rn = 3 THEN r.op_score ELSE NULL END) AS top3,
+                    COUNT(*) AS scored_findings
+                FROM ranked_asset_findings r
+                GROUP BY r.asset_id
+            )
+            SELECT
+                aa.asset_id,
+                aa.weighted_score,
+                aa.top1,
+                aa.top2,
+                aa.top3,
+                aa.scored_findings,
+                a.internet_facing
+            FROM asset_agg aa
+            LEFT JOIN assets a
+              ON a.run_id = ? AND a.asset_id = aa.asset_id
+            ORDER BY aa.weighted_score DESC, aa.top1 DESC, aa.scored_findings DESC, aa.asset_id ASC
+            LIMIT ?
+            """,
+            [run_id, w1, w2, w3, run_id, k],
+        ).fetchall()
+
+        top_assets: List[RankedAssetRef] = []
+        selected_asset_ids: List[str] = []
+        for idx, (aid, w_score, t1, t2, t3, cnt, facing) in enumerate(top_asset_rows, start=1):
+            selected_asset_ids.append(str(aid))
+            top_vals = tuple(round(float(x), 4) for x in (t1, t2, t3) if x is not None)
+            inf = ExposureInference(
+                exposure_score=100 if facing else 0,
+                confidence="high" if facing else "low",
+                externally_facing_inferred=bool(facing),
+                public_service_ports_inferred=False,
+                evidence=("assets.internet_facing=true",) if facing else (),
+            )
+            top_assets.append(
+                RankedAssetRef(
+                    asset_id=str(aid),
+                    rank=idx,
+                    score_basis="operational",
+                    score=round(float(w_score or 0.0), 4),
+                    top_scores=top_vals,
+                    scored_findings=int(cnt or 0),
+                    inference=inf,
+                )
+            )
+
+        findings_by_asset: Dict[str, Tuple[RankedFindingRef, ...]] = {}
+        if selected_asset_ids:
+            placeholders = ", ".join("?" for _ in selected_asset_ids)
+            per_asset_rows = conn.execute(
+                f"""
+                WITH ranked AS (
+                    SELECT
+                        f.finding_id,
+                        f.asset_id,
+                        COALESCE(s.operational_score, 0.0) AS op_score,
+                        COALESCE(s.risk_band, 'Informational') AS risk_band,
+                        td.priority_tier,
+                        td.sla_bucket,
+                        td.decision_status,
+                        s.scoring_track,
+                        f.affected_port,
+                        f.protocol,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY f.asset_id
+                            ORDER BY
+                                CASE UPPER(COALESCE(td.priority_tier, 'P4'))
+                                    WHEN 'P1' THEN 1
+                                    WHEN 'P2' THEN 2
+                                    WHEN 'P3' THEN 3
+                                    WHEN 'P4' THEN 4
+                                    ELSE 99
+                                END ASC,
+                                s.operational_score DESC NULLS LAST,
+                                e.epss_score DESC NULLS LAST,
+                                COALESCE(aci.uplift_score, 0.0) DESC,
+                                f.finding_id ASC
+                        ) AS rn
+                    FROM findings f
+                    JOIN scores s
+                      ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+                    JOIN triage_decisions td
+                      ON td.run_id = f.run_id AND td.finding_id = f.finding_id
+                    LEFT JOIN aci_signals aci
+                      ON aci.run_id = f.run_id AND aci.finding_id = f.finding_id
+                    LEFT JOIN enrichment_snapshots e
+                      ON e.run_id = f.run_id AND e.cve_id = f.primary_cve
+                    WHERE f.run_id = ? AND f.asset_id IN ({placeholders})
+                )
+                SELECT
+                    finding_id, asset_id, rn, op_score, risk_band,
+                    priority_tier, sla_bucket, decision_status, scoring_track,
+                    affected_port, protocol
+                FROM ranked
+                WHERE rn <= ?
+                ORDER BY asset_id ASC, rn ASC
+                """,
+                [run_id, *selected_asset_ids, k],
+            ).fetchall()
+
+            grouped: Dict[str, List[RankedFindingRef]] = {}
+            for fid, aid, rn, op_s, band, tier, sla, dec_st, track, port, proto in per_asset_rows:
+                reasons = (
+                    f"tier={tier}",
+                    f"sla={sla}",
+                    f"track={track}",
+                    f"status={dec_st}",
+                )
+                grouped.setdefault(str(aid), []).append(
+                    RankedFindingRef(
+                        finding_id=str(fid),
+                        asset_id=str(aid),
+                        rank=int(rn),
+                        score_basis="operational",
+                        score=round(float(op_s or 0.0), 4),
+                        risk_band=str(band),
+                        reasons=reasons,
+                        port=port,
+                        proto=proto,
+                    )
+                )
+            findings_by_asset = {aid: tuple(items) for aid, items in grouped.items()}
+
+        global_rows = conn.execute(
+            """
+            SELECT
+                f.finding_id,
+                f.asset_id,
+                COALESCE(s.operational_score, 0.0) AS op_score,
+                COALESCE(s.risk_band, 'Informational') AS risk_band,
+                td.priority_tier,
+                td.sla_bucket,
+                td.decision_status,
+                s.scoring_track,
+                f.affected_port,
+                f.protocol
+            FROM findings f
+            JOIN assets a
+              ON a.run_id = f.run_id AND a.asset_id = f.asset_id
+            JOIN scores s
+              ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+            JOIN triage_decisions td
+              ON td.run_id = f.run_id AND td.finding_id = f.finding_id
+            LEFT JOIN aci_signals aci
+              ON aci.run_id = f.run_id AND aci.finding_id = f.finding_id
+            LEFT JOIN enrichment_snapshots e
+              ON e.run_id = f.run_id AND e.cve_id = f.primary_cve
+            WHERE f.run_id = ?
+            ORDER BY
+                CASE UPPER(COALESCE(td.priority_tier, 'P4'))
+                    WHEN 'P1' THEN 1
+                    WHEN 'P2' THEN 2
+                    WHEN 'P3' THEN 3
+                    WHEN 'P4' THEN 4
+                    ELSE 99
+                END ASC,
+                s.operational_score DESC NULLS LAST,
+                e.epss_score DESC NULLS LAST,
+                COALESCE(aci.uplift_score, 0.0) DESC,
+                f.finding_id ASC
+            LIMIT ?
+            """,
+            [run_id, k],
+        ).fetchall()
+
+        global_top: List[RankedFindingRef] = []
+        for idx, (fid, aid, op_s, band, tier, sla, dec_st, track, port, proto) in enumerate(global_rows, start=1):
+            reasons = (
+                f"tier={tier}",
+                f"sla={sla}",
+                f"track={track}",
+                f"status={dec_st}",
+            )
+            global_top.append(
+                RankedFindingRef(
+                    finding_id=str(fid),
+                    asset_id=str(aid),
+                    rank=idx,
+                    score_basis="operational",
+                    score=round(float(op_s or 0.0), 4),
+                    risk_band=str(band),
+                    reasons=reasons,
+                    port=port,
+                    proto=proto,
+                )
+            )
+
+        output = TopNPassOutput(
+            rank_basis="operational",
+            k=k,
+            decay=self.decay,
+            assets=tuple(top_assets),
+            findings_by_asset=findings_by_asset,
+            global_top_findings=tuple(global_top),
+        )
+        ctx.logger.info(
+            "[pass:topn@2.0] duckdb | k=%d | top_assets=%d | global_top=%d",
+            k,
+            len(top_assets),
+            len(global_top),
+            extra={"vp_label": "TopNV2Pass"},
+        )
+        meta = PassMeta(
+            name=self.name,
+            version=self.version,
+            created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            notes="Unified DuckDB TopN@2.0 ranking.",
+        )
+        return DerivedPassResult(meta=meta, data=asdict(output))
+
+    def _run_scan_result(self, ctx: "RunContext", scan: "ScanResult") -> DerivedPassResult:
+        """ScanResult fallback consuming Scoring@3.0/2.0 and Triage@2.0."""
+        triage_res = scan.derived.get("Triage@2.0")
+        scoring_res = scan.derived.get("Scoring@3.0") or scan.derived.get("Scoring@2.0")
+        triage_map = (triage_res.data or {}).get("decisions", {}) if triage_res else {}
+        scored_map = (scoring_res.data or {}).get("scored_findings", {}) if scoring_res else {}
+
+        tier_rank_map = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
+        per_asset: Dict[str, List[Tuple[int, float, str, RankedFindingRef]]] = {}
+        all_refs: List[Tuple[int, float, str, RankedFindingRef]] = []
+
+        for fid, sf in scored_map.items():
+            aid = str(sf.get("asset_id") or "")
+            td = triage_map.get(fid) or {}
+            tier = str(td.get("priority_tier") or "P4")
+            sla = str(td.get("sla_bucket") or "Fix on Upgrade")
+            dec_st = str(td.get("decision_status") or "active")
+            op_s = float(sf.get("operational_score", 0.0) or 0.0)
+            band = str(sf.get("risk_band") or "Informational")
+            tr = tier_rank_map.get(tier, 99)
+            ref = RankedFindingRef(
+                finding_id=str(fid),
+                asset_id=aid,
+                rank=0,
+                score_basis="operational",
+                score=round(op_s, 4),
+                risk_band=band,
+                reasons=(f"tier={tier}", f"sla={sla}", f"status={dec_st}"),
+            )
+            item = (tr, -op_s, str(fid), ref)
+            per_asset.setdefault(aid, []).append(item)
+            all_refs.append(item)
+
+        all_refs.sort(key=lambda x: (x[0], x[1], x[2]))
+        global_top = tuple(
+            _replace_rank(item[3], idx) for idx, item in enumerate(all_refs[: self.k], start=1)
+        )
+
+        weights = self.decay
+        asset_tuples: List[Tuple[float, str, int, Tuple[float, ...], Tuple[RankedFindingRef, ...]]] = []
+        for aid, items in per_asset.items():
+            items.sort(key=lambda x: (x[0], x[1], x[2]))
+            top_items = items[: self.k]
+            ranked_list = tuple(_replace_rank(it[3], idx) for idx, it in enumerate(top_items, start=1))
+            w_score = sum(
+                ranked_list[idx].score * weights[idx]
+                for idx in range(min(len(ranked_list), len(weights)))
+            )
+            top_scores = tuple(r.score for r in ranked_list[:3])
+            asset_tuples.append((w_score, aid, len(items), top_scores, ranked_list))
+
+        asset_tuples.sort(key=lambda x: (-x[0], x[1]))
+        top_assets: List[RankedAssetRef] = []
+        findings_by_asset: Dict[str, Tuple[RankedFindingRef, ...]] = {}
+        for idx, (w_score, aid, cnt, top_scores, ranked_list) in enumerate(asset_tuples[: self.k], start=1):
+            top_assets.append(
+                RankedAssetRef(
+                    asset_id=aid,
+                    rank=idx,
+                    score_basis="operational",
+                    score=round(w_score, 4),
+                    top_scores=top_scores,
+                    scored_findings=cnt,
+                )
+            )
+            findings_by_asset[aid] = ranked_list
+
+        output = TopNPassOutput(
+            rank_basis="operational",
+            k=self.k,
+            decay=self.decay,
+            assets=tuple(top_assets),
+            findings_by_asset=findings_by_asset,
+            global_top_findings=global_top,
+        )
+        meta = PassMeta(
+            name=self.name,
+            version=self.version,
+            created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            notes="TopN@2.0 ranking (ScanResult fallback).",
+        )
+        return DerivedPassResult(meta=meta, data=asdict(output))

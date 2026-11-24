@@ -1,16 +1,10 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, Set
 
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext, ScanResult
@@ -34,6 +28,9 @@ class EnrichmentSourcePlan:
     ghsa_source: Optional[str] = None
     ghsa_budget: Optional[int] = None
     ghsa_token_env: Optional[str] = None
+    offline: bool = False
+    osv_enabled: bool = False
+    osv_source: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +45,8 @@ class EnrichmentSourceResult:
     ghsa_package_data: Optional[dict]
     nvd_status: str
     sources: dict  # Summary of source availability
+    osv_data: Optional[dict] = None
+    osv_package_data: Optional[dict] = None
 
 
 class EnrichmentSourceLoader:
@@ -66,12 +65,13 @@ class EnrichmentSourceLoader:
         plan: EnrichmentSourcePlan,
         nvdpol_start_y: int,
         nvdpol_end_y: int,
+        args: Any = None,
     ) -> EnrichmentSourceResult:
         """
         Load all enrichment sources according to plan.
         Returns EnrichmentSourceResult with loaded data and status summary.
         """
-        from vulnparse_pin.utils.enricher import load_epss, load_kev
+        from vulnparse_pin.utils.enricher import _is_valid_cve_id, load_epss, load_kev
         from vulnparse_pin.utils.exploit_enrichment_service import load_exploit_data
         from vulnparse_pin.utils.nvdcacher import nvd_policy_from_config
         from vulnparse_pin.app.runtime_helpers import extract_cve_years, select_years
@@ -85,14 +85,26 @@ class EnrichmentSourceLoader:
         exploit_data = None
         ghsa_data = None
         ghsa_package_data = None
+        osv_data = None
+        osv_package_data = None
         ghsa_auth_token_rejections = 0
         nvd_status = "Enabled" if plan.nvd_enabled else "Disabled (--no-nvd)"
+        offline_mode = (
+            bool(getattr(args, "offline", False))
+            if args is not None and hasattr(args, "offline")
+            else bool(getattr(plan, "offline", False))
+        )
 
-        cves_in_scan = set()
+        cves_in_scan: Set[str] = set()
+        purls_in_scan: Set[str] = set()
         for asset in scan.assets:
             for finding in asset.findings:
-                if finding.cves:
-                    cves_in_scan.update(finding.cves)
+                for raw_cve in getattr(finding, "cves", []) or []:
+                    if isinstance(raw_cve, str) and _is_valid_cve_id(raw_cve):
+                        cves_in_scan.add(raw_cve.strip().upper())
+                purl = getattr(finding, "package_purl", None)
+                if isinstance(purl, str) and purl.strip():
+                    purls_in_scan.add(purl.strip())
 
         # Load Exploit-DB
         if plan.exploit_enabled and plan.exploit_source:
@@ -126,7 +138,7 @@ class EnrichmentSourceLoader:
                 logger.print_info(f"Policy: {nvd_policy}", label="NVD Cache Policy")
 
                 years_seen = extract_cve_years(ctx, scan)
-                normalized_years = select_years(ctx, years_seen)
+                normalized_years = select_years(ctx, years_seen) if years_seen else set()
                 years_to_load = sorted(
                     y for y in normalized_years if nvdpol_start_y <= y <= nvdpol_end_y
                 )
@@ -149,7 +161,7 @@ class EnrichmentSourceLoader:
                         config=cfg_yaml,
                         feed_cache=feed_cache,
                         refresh_cache=plan.refresh_cache,
-                        offline=(plan.kev_source == "offline" and plan.epss_source == "offline"),
+                        offline=offline_mode,
                         years=years_to_load,
                         include_modified=include_modified,
                         target_cves=cves_in_scan,
@@ -168,6 +180,7 @@ class EnrichmentSourceLoader:
                 path_url=plan.kev_source,
                 force_refresh=plan.refresh_cache,
                 allow_regen=plan.allow_regen,
+                target_cves=cves_in_scan or None,
             )
 
         # Load EPSS
@@ -178,9 +191,10 @@ class EnrichmentSourceLoader:
                 path_url=plan.epss_source,
                 force_refresh=plan.refresh_cache,
                 allow_regen=plan.allow_regen,
+                target_cves=cves_in_scan or None,
             )
 
-        # Load GHSA (offline local advisory database)
+        # Load GHSA (offline local advisory database or online prefetch)
         if plan.ghsa_enabled and plan.ghsa_source:
             from vulnparse_pin.utils.ghsa_enrichment import GHSAEnrichmentSource
 
@@ -206,6 +220,7 @@ class EnrichmentSourceLoader:
                 loaded_ok = ghsa.load_offline(
                     db_path=plan.ghsa_source,
                     target_cves=cves_in_scan,
+                    target_purls=purls_in_scan or None,
                     force_reindex=plan.refresh_cache,
                 )
 
@@ -221,14 +236,43 @@ class EnrichmentSourceLoader:
                 ghsa_auth_token_rejections = ghsa.token_rejection_count
                 logger.print_warning("GHSA load failed or returned no advisories.", label="GHSA Loader")
 
-        # Build source summary
+        # Load optional offline OSV cache
+        if plan.osv_enabled and plan.osv_source:
+            from vulnparse_pin.utils.osv_enrichment import OSVEnrichmentSource
+
+            osv = OSVEnrichmentSource(ctx)
+            osv_ok = osv.load_offline(
+                db_path=plan.osv_source,
+                target_cves=cves_in_scan or None,
+                target_purls=purls_in_scan or None,
+                force_reindex=plan.refresh_cache,
+            )
+            if osv_ok:
+                osv_data = dict(osv.osv_by_cve)
+                osv_package_data = dict(osv.osv_by_package)
+                logger.print_success(
+                    f"Loaded OSV advisory mappings ({len(osv_data)} CVEs, {len(osv_package_data)} packages)",
+                    label="OSV Loader",
+                )
+            else:
+                logger.print_warning("OSV load failed or returned no advisories.", label="OSV Loader")
+
+        # Build source summary + intel feed metadata
         sources_summary = {
             "exploitdb": plan.exploit_enabled and (exploit_data is not None),
             "kev": kev_data is not None,
+            "kev_catalog_version": getattr(kev_data, "catalog_version", None),
+            "kev_date_released": getattr(kev_data, "date_released", None),
+            "kev_sha256": getattr(kev_data, "source_sha256", None),
             "epss": epss_data is not None,
+            "epss_model_version": getattr(epss_data, "model_version", None),
+            "epss_score_date": getattr(epss_data, "score_date", None),
+            "epss_sha256": getattr(epss_data, "source_sha256", None),
             "ghsa": ghsa_data is not None,
             "ghsa_auth_token_rejections": int(ghsa_auth_token_rejections),
+            "osv": osv_data is not None,
             "nvd": nvd_status,
+            "offline": offline_mode,
         }
 
         return EnrichmentSourceResult(
@@ -239,4 +283,6 @@ class EnrichmentSourceLoader:
             ghsa_package_data=ghsa_package_data,
             nvd_status=nvd_status,
             sources=sources_summary,
+            osv_data=osv_data,
+            osv_package_data=osv_package_data,
         )

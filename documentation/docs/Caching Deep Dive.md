@@ -1,212 +1,83 @@
 # Caching Deep Dive
 
-This page describes how VulnParse-Pin caches enrichment feeds, validates cache integrity, applies TTL policy, and uses the NVD SQLite index for warm-run acceleration.
+This page describes how VulnParse-Pin v2.0.0 caches all 6 threat-intelligence feeds, enforces fail-closed HMAC integrity and anti-downgrade rules, bounds remote HTTPS downloads and offline `.zip` archives, and supports read-only health inspection via `vpp intel status`.
 
 ## Scope
 
 Primary implementation files:
 
-- `src/vulnparse_pin/utils/feed_cache.py`
-- `src/vulnparse_pin/utils/nvdcacher.py`
-- `src/vulnparse_pin/app/runtime_helpers.py`
-- `src/vulnparse_pin/app/bootstrap.py`
-- `src/vulnparse_pin/resources/config.yaml`
+- `src/vulnparse_pin/utils/feed_cache.py` (`FeedCacheManager`, `_open_https_stream`, `stream_https_get_bytes`)
+- `src/vulnparse_pin/utils/nvdcacher.py` (`NVDFeedCache`)
+- `src/vulnparse_pin/utils/enricher.py` (`_SignedSQLiteFeedCache`, `EPSSFeedCache`, `KEVFeedCache`)
+- `src/vulnparse_pin/utils/ghsa_enrichment.py` (`GHSAEnrichmentSource`)
+- `src/vulnparse_pin/utils/osv_enrichment.py` (`OSVEnrichmentSource`)
+- `src/vulnparse_pin/utils/exploit_enrichment_service.py` (Exploit-DB `files_exploit.csv`)
+- `src/vulnparse_pin/cli/commands.py` (`run_intel_command`, `_verify_sqlite_sig_ro`)
 
-## Cache architecture
+## Cache Architecture
 
-VulnParse-Pin uses two cache systems:
+VulnParse-Pin maintains two complementary cache tiers inside `paths.cache_dir`:
 
-1. Feed cache files managed by `FeedCacheManager`.
-2. Optional NVD SQLite index managed by `NVDFeedCache`.
+1. **Raw feed cache files (`FeedCacheManager`):**
+   - `kev/kev_cache.json`
+   - `epss/epss_cache.csv`
+   - `exploit_db/files_exploit.csv`
+   - `nvd/feeds/nvdcve-2.0-<year|modified>.json.gz` (and `.meta`)
+   Each managed feed file has `.sha256`, `.meta.json`, and `.integrity.json` sidecars.
+2. **Signed SQLite warm indexes (`0o600` POSIX mode, `.sig.json` sidecars):**
+   - `nvd_cache.sqlite3` (`NVDFeedCache`)
+   - `epss_cache.sqlite3` (`EPSSFeedCache`)
+   - `kev_cache.sqlite3` (`KEVFeedCache`)
+   - `ghsa_cache.sqlite3` (`GHSAEnrichmentSource`)
+   - `osv_cache.sqlite3` (`OSVEnrichmentSource`)
 
-The feed cache is authoritative for downloaded KEV, EPSS, Exploit-DB, and NVD feed archives. The SQLite index is a performance layer built from NVD feed data.
+## HMAC Environment Variables & Anti-Downgrade Rules
 
-## Feed cache internals (`FeedCacheManager`)
+| Env Var | Scope | Behavior When Set |
+| --- | --- | --- |
+| `VP_FEED_CACHE_HMAC_KEY` | `FeedCacheManager` `.integrity.json` sidecars | Requires `mode == "hmac-sha256"` (`HMAC-SHA256(secret, digest)`). |
+| `VP_SQLITE_HMAC_KEY` | All 5 SQLite `.sig.json` sidecars (`nvd`, `epss`, `kev`, `ghsa`, `osv`) | Requires `mode == "hmac-sha256"` (`HMAC-SHA256(secret, digest)`). |
 
-`FeedCacheManager` is instantiated in bootstrap via `FeedCacheManager.from_ctx(...)` and receives:
+### Fail-closed anti-downgrade & zero auto-resign guarantees
 
-- `cache_dir`
-- PFH instance (`ctx.pfh`) for path-safe I/O
-- logger
-- feed specs
-- feed TTL policy (`FeedCachePolicy`)
+- **No silent SHA-256 downgrade:** When `VP_FEED_CACHE_HMAC_KEY` or `VP_SQLITE_HMAC_KEY` is set, any pre-existing or attacker-replaced sidecar claiming `mode: "sha256"` is rejected immediately (`_verify_feed_integrity` returns `False`, `_verify_signature` returns `False`).
+- **Zero auto-resign on unsigned/tampered SQLite DBs:** All 5 SQLite caches verify `.sig.json` before trusting an existing database. Missing `.sig.json`, world-writable permissions (`stat.S_IWOTH`), digest mismatches, or HMAC mismatches never auto-resign the existing DB; instead, the cache quarantines both DB and sidecar to timestamped `.tampered.<UTCSTAMP>` backups and rebuilds an empty index.
+- **Feed quarantine on mismatch:** When `allow_regen=False` (the default), `FeedCacheManager.ensure_feed_checksum()` quarantines mismatched data/sidecars and raises `FeedChecksumError`. Sidecar regeneration happens only when `--allow-regen` (`allow_regen=True`) is explicitly requested.
 
-### Feed identity and path model
+## Read-Only `vpp intel status` vs `vpp intel sync`
 
-For non-NVD feeds, each feed key resolves to:
+- **`vpp intel status [--feed ...] [--json]`:** Strictly read-only inspection (`_inspect_sqlite_health`, `_verify_sqlite_sig_ro`, `_check_feed_health`). Opens SQLite caches with `?mode=ro` URI mode, verifies `.sig.json` and `.integrity.json` with `allow_regen=False`, detects symlinks (`health="symlink"`), world-writable files (`health="world-writable"`), missing signatures (`health="no-signature"`), or tampering (`health="tampered"`), and reports row counts and freshness without modifying any cache file.
+- **`vpp intel sync [--feed all|nvd|epss|kev|exploit_db|ghsa|osv] [--refresh]`:** Fetches/imports feeds and updates local caches and SQLite indexes.
 
-- data file (for example `epss_cache.csv`)
-- checksum sidecar (`.sha256`)
-- metadata sidecar (`.meta.json`)
-- integrity sidecar (`.integrity.json`)
+## Remote HTTPS Streaming & Size Caps
 
-For NVD feeds, keys use the namespace:
+All remote feed downloads (`FeedCacheManager`, NVD, KEV, EPSS, Exploit-DB) use `_open_https_stream()` / `stream_https_get_bytes()` (`src/vulnparse_pin/utils/feed_cache.py`):
 
-- `nvd.modified`
-- `nvd.year.YYYY`
+- **Per-hop redirect validation:** Calls `requests.get(..., allow_redirects=False, stream=True)` and validates every `301`/`302`/`303`/`307`/`308` `Location` target against `https://` with a non-empty host (up to `max_redirects = 5`), failing closed on any HTTP downgrade.
+- **Bounded byte limits:**
+  - `MAX_NVD_META_BYTES = 1 MiB` (`1024 * 1024`) for NVD `.meta` files
+  - `MAX_REMOTE_FEED_BYTES = 200 MiB` (`200 * 1024 * 1024`) for compressed remote feed downloads
+  - `MAX_DECOMPRESSED_FEED_BYTES = 2 GiB` (`2 * 1024 * 1024 * 1024`) for `.gz` decompression
 
-### Sidecar purpose
+## OSV Offline Archive Guards (`osv_enrichment.py`)
 
-- `.sha256`: canonical content digest for the data file.
-- `.meta.json`: timestamps and source/validation metadata (`created_at`, `last_updated`, source URL, validation status).
-- `.integrity.json`: digest signature envelope (`mode`, `digest`, `signature`, `updated_at`).
+When loading OSV `.zip` bundles (`--osv <bundle.zip>`), `OSVEnrichmentSource._validate_zip_member()` enforces strict fail-closed checks (`OSVSecurityError`):
 
-### Integrity modes for feed files
+- Rejects NUL bytes, leading `/` or `\`, backslashes, drive/colon prefixes (`:`), and `..` path-traversal segments.
+- Rejects POSIX symlink entries (`stat.S_IFLNK` in `external_attr >> 16`).
+- Bounds zip size: `DEFAULT_MAX_ZIP_ENTRIES = 250_000`, `DEFAULT_MAX_ZIP_ENTRY_BYTES = 50 MiB`, `DEFAULT_MAX_ZIP_TOTAL_BYTES = 2 GiB`, and `DEFAULT_MAX_ZIP_RATIO = 500` (for entries `> 10 MiB`).
 
-`FeedCacheManager` supports two integrity modes for `.integrity.json`:
+## TTL Policy (`config.yaml`)
 
-1. `sha256` mode: `signature == digest`
-2. `hmac-sha256` mode: signature is `HMAC(secret, digest)`
-
-The mode is controlled by environment variable presence.
-
-## HMAC environment variables
-
-### `VP_FEED_CACHE_HMAC_KEY`
-
-- Used by `FeedCacheManager._feed_integrity_secret()`.
-- If set, feed integrity sidecars are signed with HMAC-SHA256.
-- If unset, feed integrity falls back to plain SHA256 signature mode.
-
-### `VP_SQLITE_HMAC_KEY`
-
-- Used by `NVDFeedCache._sqlite_secret()`.
-- If set, SQLite signature sidecar is HMAC-SHA256.
-- If unset, SQLite signature mode remains plain SHA256.
-
-### Operational recommendation
-
-In production, set both variables to high-entropy secrets and rotate with standard secret-management policy.
-
-## TTL behavior
-
-TTL is derived from `FeedCachePolicy` created by `build_feed_cache_policy(config)`.
-
-### Global structure (`config.yaml`)
-
-- `feed_cache.defaults.ttl_hours`
-- `feed_cache.ttl_hours.<feed_key>`
-
-Examples of feed keys in `ttl_hours`:
-
-- `kev`
-- `epss`
-- `exploit_db`
-- `nvd_yearly`
-- `nvd_modified`
-
-### TTL semantics in `FeedCacheManager.is_fresh()`
+`FeedCacheManager.is_fresh()` evaluates `feed_cache.ttl_hours` (and `feed_cache.feeds.<feed>`):
 
 - `ttl == 0`: always stale.
 - `ttl < 0`: never expires.
-- `ttl > 0`: cache is fresh when age in hours is less than or equal to TTL.
-
-`age` is calculated from `.meta.json` using `last_updated` (fallback `created_at`).
-
-### Failure cases
-
-`is_fresh()` returns stale when:
-
-- metadata file is missing
-- metadata timestamp is missing
-- timestamp parsing fails
-
-## Checksum and integrity lifecycle
-
-`ensure_feed_checksum(key, allow_regen=...)` validates or regenerates feed state:
-
-1. Validate `.sha256` against current data digest.
-2. Validate `.integrity.json` digest and signature.
-3. If files are missing or invalid and `allow_regen` is true, regenerate local state.
-4. If hard mismatch and `allow_regen` is false, fail fast.
-
-This supports strict integrity workflows in offline mode and best-effort recovery when explicitly enabled.
-
-## NVD feed policy and plan
-
-NVD settings are normalized by `nvd_policy_from_config(config)`.
-
-Policy fields include:
-
-- `enabled`
-- `ttl_yearly`
-- `ttl_modified`
-- `start_year`
-- `end_year`
-- `sqlite_enforce_permissions`
-- `sqlite_max_age_hours`
-- `sqlite_max_rows`
-
-`nvd_feed_plan(config)` emits feed plan entries:
-
-1. Modified feed (`nvd.modified`)
-2. Yearly feeds from `start_year` through `end_year`
-
-NVD policy loader also supports legacy key fallbacks and bounds invalid ranges.
-
-## NVD SQLite index (`NVDFeedCache`)
-
-`NVDFeedCache` initializes in bootstrap unless `--no-nvd` is set.
-
-### Index files
-
-- SQLite DB: `nvd_cache.sqlite3`
-- Signature sidecar: `nvd_cache.sqlite3.sig.json`
-
-### Security controls
-
-- Signature verification at startup (`_sqlite_verify_signature`).
-- Optional HMAC signatures via `VP_SQLITE_HMAC_KEY`.
-- Permission checks/hardening via `_sqlite_harden_permissions`.
-- CVE ID validation regex before lookup/upsert paths.
-- Quarantine and reset on integrity failure (`_sqlite_quarantine_and_reset`).
-
-### Quarantine behavior
-
-On tamper or signature failure, the index and signature files are moved to timestamped `.tampered.<UTCSTAMP>` files, then a clean index is rebuilt.
-
-### Pruning policy
-
-`_sqlite_prune()` enforces:
-
-- max row age (`sqlite_max_age_hours`)
-- max retained rows (`sqlite_max_rows`)
-
-This keeps warm cache size bounded over long runtimes.
-
-## NVD parsing and performance
-
-NVD feed parsing uses:
-
-- `ijson` streaming when available
-- `json.load` fallback if `ijson` is unavailable
-
-Feed processing can run in parallel for multi-feed operations and is filtered by target CVEs and year ranges to reduce parse overhead.
-
-## CLI controls that impact cache behavior
-
-- `--refresh-cache`
-- `--allow_regen`
-- `--no-kev`
-- `--no-epss`
-- `--no-exploit`
-- `--kev-source online|offline`
-- `--epss-source online|offline`
-- `--exploit-source online|offline`
-- `--kev-feed [PATH|URL]`
-- `--epss-feed [PATH|URL]`
-- `--no-nvd`
-
-## Failure modes and expected behavior
-
-- Missing cache in offline mode: fail with explicit missing-feed error.
-- Corrupt feed sidecar: regenerated only when allowed by `--allow_regen`.
-- SQLite signature mismatch: quarantine and rebuild path is triggered.
-- Remote NVD metadata unavailable: local cache can still be used depending on freshness and mode.
+- `ttl > 0`: fresh while age since `.meta.json` `last_updated` (or `created_at`) `<= ttl`.
 
 ## Related pages
 
+- [Enrichment Deep Dive](Enrichment%20Deep%20Dive.md)
 - [Configs](Configs.md)
 - [Security Features](Security%20Features.md)
-- [Performance Optimizations](Performance%20Optimizations.md)
-- [Pipeline System](Pipeline%20System.md)
+- [Threat Model](Threat%20Model.md)

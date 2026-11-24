@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """
 Generate a truly large Nessus XML file with aggressive multi-factor scaling.
 Target: 50+ assets, 250k+ findings total.

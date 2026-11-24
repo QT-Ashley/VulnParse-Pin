@@ -1,16 +1,13 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Dict, Optional, TYPE_CHECKING, List, Tuple, Any
+from typing import Dict, Optional, Set, TYPE_CHECKING, List, Sequence, Tuple, Any, Union
 import concurrent.futures as cf
+import json
+import math
+import re
 import threading
 import os
 
@@ -998,3 +995,1325 @@ class ScoringPass(Pass):
         if score >= pol.band_low:
             return "Low"
         return "Informational"
+
+
+_CVSS_PROVENANCE_RANK: Dict[str, int] = {
+    "NVD": 5,
+    "CNA": 4,
+    "GHSA": 3,
+    "OSV": 2,
+    "Scanner-Supplied": 1,
+    "Missing": 0,
+}
+
+_PROVENANCE_NORM: Dict[str, str] = {
+    "nvd": "NVD",
+    "cna": "CNA",
+    "ghsa": "GHSA",
+    "osv": "OSV",
+    "scanner": "Scanner-Supplied",
+    "scanner-supplied": "Scanner-Supplied",
+    "scanner_supplied": "Scanner-Supplied",
+    "missing": "Missing",
+}
+
+_HIGH_IMPACT_CWES = frozenset({
+    "CWE-22",
+    "CWE-77",
+    "CWE-78",
+    "CWE-79",
+    "CWE-89",
+    "CWE-94",
+    "CWE-250",
+    "CWE-269",
+    "CWE-287",
+    "CWE-306",
+    "CWE-434",
+    "CWE-502",
+    "CWE-798",
+    "CWE-918",
+})
+
+_CWE_NUM_RE = re.compile(r"CWE[-_:\s]*0*([0-9]+)", re.IGNORECASE)
+_DEFAULT_EPSS_V5_BREAKPOINTS: Tuple[Tuple[float, float], ...] = (
+    (0.0, 0.0),
+    (0.04, 1.8),
+    (0.10, 3.0),
+    (0.50, 4.2),
+    (1.0, 5.0),
+)
+
+
+def _norm_cwe(val: Any) -> Optional[str]:
+    if not val:
+        return None
+    m = _CWE_NUM_RE.search(str(val))
+    if not m:
+        return None
+    return f"CWE-{int(m.group(1))}"
+
+
+def _safe_float(val: Any) -> Optional[float]:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return f
+
+
+def _ordinal(n: int) -> str:
+    val = int(n)
+    if 10 <= (val % 100) <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(val % 10, "th")
+    return f"{val}{suffix}"
+
+
+def _epss_v5_points(
+    epss_score: Optional[float],
+    epss_percentile: Optional[float] = None,
+    breakpoints: Sequence[Tuple[float, float]] = _DEFAULT_EPSS_V5_BREAKPOINTS,
+) -> float:
+    """Strictly monotonic piecewise-linear EPSS v5 scoring function."""
+    _ = epss_percentile  # Kept in signature for trace/caller symmetry; monotonicity is over epss_score.
+    if epss_score is None:
+        return 0.0
+    try:
+        raw = float(epss_score)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(raw):
+        return 0.0
+    p = 1.0 if (math.isinf(raw) and raw > 0) else (0.0 if math.isinf(raw) else raw)
+    p = max(0.0, min(1.0, p))
+
+    pts = sorted(((float(x), float(y)) for x, y in breakpoints), key=lambda kv: kv[0])
+    if not pts:
+        pts = list(_DEFAULT_EPSS_V5_BREAKPOINTS)
+
+    if p <= pts[0][0]:
+        return float(pts[0][1])
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if p <= x1:
+            if x1 <= x0:
+                return float(max(y0, y1))
+            ratio = (p - x0) / (x1 - x0)
+            y_hi = max(y0, y1)
+            return float(y0 + ratio * (y_hi - y0))
+    return float(pts[-1][1])
+
+
+def _format_epss_display(
+    epss_score: Optional[float],
+    epss_percentile: Optional[float],
+) -> Optional[str]:
+    score = _safe_float(epss_score)
+    pct = _safe_float(epss_percentile)
+    if score is None and pct is None:
+        return None
+    pct_str: Optional[str] = None
+    if pct is not None:
+        pct_num = int(round(pct * 100.0 if pct <= 1.0 else pct))
+        pct_num = max(0, min(100, pct_num))
+        pct_str = _ordinal(pct_num)
+    if score is not None:
+        p = max(0.0, min(1.0, score))
+        base = f"{p * 100.0:.1f}%"
+        return f"{base} / {pct_str}" if pct_str is not None else base
+    return f"N/A / {pct_str}"
+
+
+def _norm_provenance(prov: Optional[str]) -> str:
+    if not prov:
+        return "Missing"
+    return _PROVENANCE_NORM.get(str(prov).strip().lower(), "Missing")
+
+
+def _resolve_best_cvss(
+    snap_score: Optional[float],
+    snap_version: Optional[str],
+    snap_provenance: Optional[str],
+    scanner_score: Optional[float],
+    scanner_vector: Optional[str] = None,
+) -> Tuple[float, Optional[str], str]:
+    best_rank = 0
+    best_score = 0.0
+    best_ver: Optional[str] = None
+    best_prov = "Missing"
+
+    sc_snap = _safe_float(snap_score)
+    if sc_snap is not None and 0.0 <= sc_snap <= 10.0:
+        prov_n = _norm_provenance(snap_provenance)
+        rank = _CVSS_PROVENANCE_RANK.get(prov_n, 0)
+        if rank >= _CVSS_PROVENANCE_RANK["OSV"]:
+            best_rank = rank
+            best_score = sc_snap
+            best_ver = snap_version
+            best_prov = prov_n
+
+    sc_scan = _safe_float(scanner_score)
+    if (sc_scan is None or not (0.0 <= sc_scan <= 10.0)) and scanner_vector:
+        try:
+            from vulnparse_pin.utils.cvss_utils import compute_cvss_base_score
+            vec_score = _safe_float(compute_cvss_base_score(str(scanner_vector)))
+            if vec_score is not None and 0.0 <= vec_score <= 10.0:
+                sc_scan = vec_score
+        except Exception:
+            pass
+    if sc_scan is not None and 0.0 <= sc_scan <= 10.0:
+        scan_rank = _CVSS_PROVENANCE_RANK["Scanner-Supplied"]
+        if scan_rank > best_rank:
+            best_score = sc_scan
+            best_prov = "Scanner-Supplied"
+            if scanner_vector:
+                try:
+                    from vulnparse_pin.utils.cvss_utils import detect_cvss_exact_version
+                    best_ver = detect_cvss_exact_version(str(scanner_vector))
+                except Exception:
+                    best_ver = None
+
+    return best_score, best_ver, best_prov
+
+
+def _coerce_v2_scoring_policy(policy: Any) -> Any:
+    from vulnparse_pin.core.config_projector import (
+        ConfigProjector,
+        RuntimeConfigBundle,
+        ScoringPolicyV2,
+        build_scoring_policy_v2,
+    )
+
+    if policy is None:
+        return ConfigProjector.load_packaged_default_bundle().scoring_policy
+    if isinstance(policy, RuntimeConfigBundle):
+        return policy.scoring_policy
+    if isinstance(policy, ScoringPolicyV2):
+        return policy
+    if isinstance(policy, dict):
+        return build_scoring_policy_v2(policy)
+    if isinstance(policy, ScoringPolicyV1):
+        return ScoringPolicyV2(
+            kev_points=float(policy.kev_evd),
+            verified_exploit_points=float(policy.exploit_evd),
+            max_raw_risk=float(policy.max_raw_risk),
+            max_operational_risk=float(policy.max_op_risk),
+            bands={
+                "critical": float(policy.band_critical),
+                "high": float(policy.band_high),
+                "medium": float(policy.band_medium),
+                "low": float(policy.band_low),
+            },
+            asset_aggregation=str(policy.asset_aggregation),
+            cve_aggregation_mode=str(policy.cve_aggregation_mode),
+            cve_aggregation_decay=float(policy.cve_aggregation_decay),
+            cve_aggregation_max_contributors=int(policy.cve_aggregation_max_contributors),
+            nmap_port_bonus=float(policy.nmap_port_bonus),
+        )
+    raise TypeError(f"Unsupported scoring v2 policy type: {type(policy).__name__}")
+
+
+def _resolve_duckdb_conn(db_obj: Any) -> Any:
+    if db_obj is None:
+        return None
+    inner = getattr(db_obj, "conn", None)
+    if inner is not None and hasattr(inner, "execute"):
+        return inner
+    if hasattr(db_obj, "execute"):
+        return db_obj
+    return None
+
+
+class ScoringV3Pass(Pass):
+    """Dual-track, vectorized DuckDB Scoring@3.0 pass (Track A cve_threat + Track B exposure_weakness)."""
+
+    name: str = "Scoring"
+    version: str = "3.0"
+    requires_passes: tuple[str, ...] = ()
+
+    def __init__(
+        self,
+        policy: Optional[Any] = None,
+        *,
+        critical_extreme_min_critical: int = 3,
+        critical_high_min_critical: int = 1,
+        critical_high_min_high: int = 2,
+        critical_medium_min_high: int = 1,
+        critical_medium_min_medium: int = 5,
+    ) -> None:
+        self.policy = _coerce_v2_scoring_policy(policy)
+        self.critical_extreme_min_critical = max(1, int(critical_extreme_min_critical))
+        self.critical_high_min_critical = max(1, int(critical_high_min_critical))
+        self.critical_high_min_high = max(1, int(critical_high_min_high))
+        self.critical_medium_min_high = max(1, int(critical_medium_min_high))
+        self.critical_medium_min_medium = max(1, int(critical_medium_min_medium))
+
+    def _band(self, raw_score: float) -> str:
+        bands = self.policy.bands
+        if raw_score >= float(bands.get("critical", 12.8)):
+            return "Critical"
+        if raw_score >= float(bands.get("high", 9.6)):
+            return "High"
+        if raw_score >= float(bands.get("medium", 6.4)):
+            return "Medium"
+        if raw_score >= float(bands.get("low", 3.2)):
+            return "Low"
+        return "Informational"
+
+    def _derive_asset_criticality_level(self, crit_c: int, high_c: int, med_c: int) -> str:
+        if crit_c >= self.critical_extreme_min_critical:
+            return "Extreme"
+        if crit_c >= self.critical_high_min_critical or high_c >= self.critical_high_min_high:
+            return "High"
+        if high_c >= self.critical_medium_min_high or med_c >= self.critical_medium_min_medium:
+            return "Medium"
+        return "Low"
+
+    def _score_track_a(
+        self,
+        *,
+        cve_ids: Sequence[str],
+        enrich_map: Dict[str, Tuple[Any, ...]],
+        scanner_cvss_score: Optional[float],
+        scanner_cvss_vector: Optional[str],
+        finding_exploit_evidence: bool,
+        aci_capabilities: Tuple[str, ...],
+        aci_chains: Tuple[str, ...],
+        detection_mode: Optional[str],
+        signal_reliability: float,
+        asset_inventory_status: Optional[str],
+        internet_facing: bool,
+        declared_criticality: Optional[str],
+    ) -> Tuple[float, float, str, Dict[str, Any]]:
+        pol = self.policy
+        contributors: List[Dict[str, Any]] = []
+
+        union_kev = False
+        union_verified_exp = False
+        union_heur_exp = bool(finding_exploit_evidence)
+        kev_meta: Optional[Tuple[Optional[str], Optional[str], Optional[str]]] = None
+
+        for raw_cve in cve_ids:
+            cve = str(raw_cve).strip().upper()
+            if not cve:
+                continue
+            snap = enrich_map.get(cve)
+            if snap is not None:
+                (
+                    snap_cvss,
+                    snap_ver,
+                    snap_prov,
+                    epss_score,
+                    epss_pct,
+                    epss_ver,
+                    epss_date,
+                    epss_pts,
+                    epss_disp,
+                    in_kev,
+                    kev_added,
+                    kev_due,
+                    kev_ransom,
+                    ver_exp,
+                    heur_exp,
+                ) = snap
+            else:
+                snap_cvss = None
+                snap_ver = None
+                snap_prov = "Missing"
+                epss_score = None
+                epss_pct = None
+                epss_ver = None
+                epss_date = None
+                epss_pts = 0.0
+                epss_disp = None
+                in_kev = False
+                kev_added = None
+                kev_due = None
+                kev_ransom = None
+                ver_exp = False
+                heur_exp = False
+
+            cvss_val, cvss_ver, cvss_prov = _resolve_best_cvss(
+                snap_cvss, snap_ver, snap_prov, scanner_cvss_score, scanner_cvss_vector
+            )
+            kev_pts = float(pol.kev_points) if in_kev else 0.0
+            if ver_exp:
+                exp_pts = float(pol.verified_exploit_with_kev_points if in_kev else pol.verified_exploit_points)
+            else:
+                exp_pts = 0.0
+
+            cve_raw = cvss_val + epss_pts + kev_pts + exp_pts
+            union_kev = union_kev or in_kev
+            union_verified_exp = union_verified_exp or ver_exp
+            union_heur_exp = union_heur_exp or heur_exp
+            if in_kev and kev_meta is None:
+                kev_meta = (kev_added, kev_due, kev_ransom)
+
+            contributors.append(
+                {
+                    "cve_id": cve,
+                    "cve_raw": cve_raw,
+                    "cvss_score": cvss_val,
+                    "cvss_version": cvss_ver,
+                    "cvss_provenance": cvss_prov,
+                    "epss_score": epss_score,
+                    "epss_percentile": epss_pct,
+                    "epss_display": epss_disp,
+                    "epss_model_version": epss_ver,
+                    "epss_date": epss_date,
+                    "epss_points": epss_pts,
+                    "in_kev": in_kev,
+                    "kev_date_added": kev_added,
+                    "kev_due_date": kev_due,
+                    "kev_ransomware": kev_ransom,
+                    "kev_points": kev_pts,
+                    "verified_exploit": ver_exp,
+                    "verified_exploit_points": exp_pts,
+                }
+            )
+
+        contributors.sort(key=lambda item: (-float(item["cve_raw"]), str(item["cve_id"])))
+        decay = min(max(float(pol.cve_aggregation_decay), 0.0), 1.0)
+        max_k = max(1, int(pol.cve_aggregation_max_contributors))
+
+        stacked_cve_raw = 0.0
+        for idx, item in enumerate(contributors[:max_k]):
+            stacked_cve_raw += float(item["cve_raw"]) * (decay ** idx)
+
+        primary = contributors[0] if contributors else {
+            "cve_id": None,
+            "cve_raw": 0.0,
+            "cvss_score": 0.0,
+            "cvss_version": None,
+            "cvss_provenance": "Missing",
+            "epss_score": None,
+            "epss_percentile": None,
+            "epss_display": None,
+            "epss_model_version": None,
+            "epss_date": None,
+            "epss_points": 0.0,
+            "in_kev": False,
+            "kev_date_added": None,
+            "kev_due_date": None,
+            "kev_ransomware": None,
+            "kev_points": 0.0,
+            "verified_exploit": False,
+            "verified_exploit_points": 0.0,
+        }
+
+        exposure_pts = float(pol.exposure_bonus) if internet_facing else 0.0
+        crit_key = str(declared_criticality or "").strip().lower()
+        crit_pts = float(pol.criticality_bonuses.get(crit_key, 0.0))
+
+        pre_clamp_raw = stacked_cve_raw + exposure_pts + crit_pts
+        max_raw = float(pol.max_raw_risk)
+        max_op = float(pol.max_operational_risk)
+        raw_score = round(max(0.0, min(max_raw, pre_clamp_raw)), 4)
+        operational_score = round(max(0.0, min(max_op, (raw_score / max_raw) * max_op)), 4) if max_raw > 0 else 0.0
+        risk_band = self._band(raw_score)
+
+        if primary.get("in_kev"):
+            resolved_kev_meta = (
+                primary.get("kev_date_added"),
+                primary.get("kev_due_date"),
+                primary.get("kev_ransomware"),
+            )
+        else:
+            kev_contributor = next((c for c in contributors if c.get("in_kev")), None)
+            if kev_contributor is not None:
+                resolved_kev_meta = (
+                    kev_contributor.get("kev_date_added"),
+                    kev_contributor.get("kev_due_date"),
+                    kev_contributor.get("kev_ransomware"),
+                )
+            else:
+                resolved_kev_meta = kev_meta or (None, None, None)
+        multi_cve_extra = stacked_cve_raw - float(primary.get("cve_raw", 0.0))
+
+        trace = {
+            "scoring_track": "cve_threat",
+            "primary_cve": primary.get("cve_id"),
+            "cvss_score": round(float(primary["cvss_score"]), 4) if primary.get("cvss_provenance") != "Missing" else 0.0,
+            "cvss_version": primary.get("cvss_version"),
+            "cvss_provenance": primary.get("cvss_provenance", "Missing"),
+            "epss_score": primary.get("epss_score"),
+            "epss_percentile": primary.get("epss_percentile"),
+            "epss_display": primary.get("epss_display"),
+            "epss_model_version": primary.get("epss_model_version"),
+            "epss_date": primary.get("epss_date"),
+            "in_kev": bool(union_kev),
+            "kev_date_added": resolved_kev_meta[0] if union_kev else None,
+            "kev_due_date": resolved_kev_meta[1] if union_kev else None,
+            "kev_ransomware": resolved_kev_meta[2] if union_kev else None,
+            "verified_exploit": bool(union_verified_exp),
+            "heuristic_exploit_mention": bool(union_heur_exp),
+            "aci_capabilities": list(aci_capabilities),
+            "aci_chains": list(aci_chains),
+            "detection_mode": detection_mode,
+            "signal_reliability": round(signal_reliability, 4),
+            "asset_inventory_status": asset_inventory_status,
+            "internet_facing": bool(internet_facing),
+            "declared_criticality": declared_criticality,
+            "breakdown": {
+                "cvss_points": round(float(primary["cvss_score"]), 4),
+                "epss_points": round(float(primary["epss_points"]), 4),
+                "kev_points": round(float(primary["kev_points"]), 4),
+                "verified_exploit_points": round(float(primary["verified_exploit_points"]), 4),
+                "heuristic_exploit_points": 0.0,
+                "multi_cve_additional_points": round(multi_cve_extra, 4),
+                "exposure_bonus": round(exposure_pts, 4),
+                "criticality_bonus": round(crit_pts, 4),
+                "pre_clamp_raw_score": round(pre_clamp_raw, 4),
+                "raw_risk_score": raw_score,
+                "operational_score": operational_score,
+                "cve_count": len(contributors),
+            },
+        }
+        return raw_score, operational_score, risk_band, trace
+
+    def _score_track_b(
+        self,
+        *,
+        scanner_cvss_score: Optional[float],
+        scanner_cvss_vector: Optional[str],
+        scanner_severity: Optional[str],
+        finding_exploit_evidence: bool,
+        cwes: Tuple[str, ...],
+        aci_capabilities: Tuple[str, ...],
+        aci_chains: Tuple[str, ...],
+        detection_mode: Optional[str],
+        signal_reliability: float,
+        asset_inventory_status: Optional[str],
+        internet_facing: bool,
+        declared_criticality: Optional[str],
+    ) -> Tuple[float, float, str, Dict[str, Any]]:
+        pol = self.policy
+        exp_cfg = pol.exposure_track or {}
+        sev_map = exp_cfg.get("severity_base") or {
+            "critical": 8.5,
+            "high": 7.0,
+            "medium": 4.5,
+            "low": 2.0,
+            "informational": 0.5,
+            "info": 0.5,
+        }
+
+        sc_scan = _safe_float(scanner_cvss_score)
+        if (sc_scan is None or not (0.0 <= sc_scan <= 10.0)) and scanner_cvss_vector:
+            try:
+                from vulnparse_pin.utils.cvss_utils import compute_cvss_base_score
+                vec_score = _safe_float(compute_cvss_base_score(str(scanner_cvss_vector)))
+                if vec_score is not None and 0.0 <= vec_score <= 10.0:
+                    sc_scan = vec_score
+            except Exception:
+                pass
+        if sc_scan is not None and 0.0 <= sc_scan <= 10.0:
+            base_score = sc_scan
+            cvss_prov = "Scanner-Supplied"
+            cvss_ver: Optional[str] = None
+            if scanner_cvss_vector:
+                try:
+                    from vulnparse_pin.utils.cvss_utils import detect_cvss_exact_version
+                    cvss_ver = detect_cvss_exact_version(str(scanner_cvss_vector))
+                except Exception:
+                    cvss_ver = None
+        else:
+            sev_key = str(scanner_severity or "informational").strip().lower()
+            base_score = float(sev_map.get(sev_key, sev_map.get("informational", 0.5)))
+            cvss_prov = "Missing"
+            cvss_ver = None
+
+        high_impact_caps = set(exp_cfg.get("aci_high_impact_caps") or ())
+        if any(c in high_impact_caps for c in aci_capabilities):
+            aci_cap_bonus = float(exp_cfg.get("aci_high_impact_bonus", 3.5))
+        elif aci_capabilities:
+            aci_cap_bonus = float(exp_cfg.get("aci_exposure_bonus", 2.0))
+        else:
+            aci_cap_bonus = 0.0
+
+        aci_chain_bonus = float(exp_cfg.get("aci_chain_bonus", 1.0)) if aci_chains else 0.0
+        cwe_bonus = float(exp_cfg.get("cwe_high_impact_bonus", 1.5)) if any(c in _HIGH_IMPACT_CWES for c in cwes) else 0.0
+        exposure_pts = float(exp_cfg.get("exposure_bonus", 1.5)) if internet_facing else 0.0
+
+        unweighted_raw = base_score + aci_cap_bonus + aci_chain_bonus + cwe_bonus + exposure_pts
+        weighted_raw = unweighted_raw * float(signal_reliability)
+
+        max_raw = float(pol.max_raw_risk)
+        max_op = float(pol.max_operational_risk)
+        raw_score = round(max(0.0, min(max_raw, weighted_raw)), 4)
+        operational_score = round(max(0.0, min(max_op, (raw_score / max_raw) * max_op)), 4) if max_raw > 0 else 0.0
+        risk_band = self._band(raw_score)
+
+        trace = {
+            "scoring_track": "exposure_weakness",
+            "primary_cve": None,
+            "cvss_score": round(sc_scan, 4) if cvss_prov != "Missing" and sc_scan is not None else None,
+            "cvss_version": cvss_ver,
+            "cvss_provenance": cvss_prov,
+            "epss_score": None,
+            "epss_percentile": None,
+            "epss_display": None,
+            "epss_model_version": None,
+            "epss_date": None,
+            "in_kev": False,
+            "kev_date_added": None,
+            "kev_due_date": None,
+            "kev_ransomware": None,
+            "verified_exploit": False,
+            "heuristic_exploit_mention": bool(finding_exploit_evidence),
+            "aci_capabilities": list(aci_capabilities),
+            "aci_chains": list(aci_chains),
+            "cwes": list(cwes),
+            "detection_mode": detection_mode,
+            "signal_reliability": round(signal_reliability, 4),
+            "asset_inventory_status": asset_inventory_status,
+            "internet_facing": bool(internet_facing),
+            "declared_criticality": declared_criticality,
+            "breakdown": {
+                "base_score": round(base_score, 4),
+                "aci_capability_bonus": round(aci_cap_bonus, 4),
+                "aci_chain_bonus": round(aci_chain_bonus, 4),
+                "cwe_high_impact_bonus": round(cwe_bonus, 4),
+                "exposure_bonus": round(exposure_pts, 4),
+                "unweighted_raw_score": round(unweighted_raw, 4),
+                "signal_reliability": round(signal_reliability, 4),
+                "raw_risk_score": raw_score,
+                "operational_score": operational_score,
+            },
+        }
+        return raw_score, operational_score, risk_band, trace
+
+    def run(self, ctx: "RunContext", scan: Optional["ScanResult"] = None) -> "DerivedPassResult":
+        services = getattr(ctx, "services", None)
+        db = getattr(ctx, "db", None) or getattr(services, "db", None)
+        run_id = getattr(ctx, "run_id", None) or getattr(services, "run_id", None)
+        conn = _resolve_duckdb_conn(db) if (db is not None and run_id is not None) else None
+
+        if conn is not None and run_id is not None:
+            return self._run_duckdb(ctx, conn, str(run_id))
+
+        if scan is None:
+            raise ValueError("ScoringV3Pass requires either DuckDB (ctx.db + ctx.run_id) or ScanResult.")
+        return self._run_scan_result(ctx, scan)
+
+    def _build_duckdb_enrich_map(self, conn: Any, run_id: str) -> Dict[str, Tuple[Any, ...]]:
+        enrich_map: Dict[str, Tuple[Any, ...]] = {}
+        bps = self.policy.epss_breakpoints
+        rows = conn.execute(
+            """
+            SELECT cve_id, cvss_score, cvss_version, cvss_provenance,
+                   epss_score, epss_percentile, epss_model_version, epss_date,
+                   in_kev, kev_date_added, kev_due_date, kev_ransomware,
+                   verified_exploit, heuristic_exploit_mention
+            FROM enrichment_snapshots
+            WHERE run_id = ?
+            """,
+            [run_id],
+        ).fetchall()
+        for (
+            cve_id,
+            cvss_score,
+            cvss_version,
+            cvss_provenance,
+            epss_score,
+            epss_percentile,
+            epss_model_version,
+            epss_date,
+            in_kev,
+            kev_added,
+            kev_due,
+            kev_ransom,
+            ver_exp,
+            heur_exp,
+        ) in rows:
+            cve_u = str(cve_id).strip().upper()
+            epss_s = _safe_float(epss_score)
+            epss_p = _safe_float(epss_percentile)
+            epss_pts = _epss_v5_points(epss_s, epss_p, bps)
+            epss_disp = _format_epss_display(epss_s, epss_p)
+            enrich_map[cve_u] = (
+                _safe_float(cvss_score),
+                cvss_version,
+                cvss_provenance,
+                epss_s,
+                epss_p,
+                epss_model_version,
+                epss_date,
+                epss_pts,
+                epss_disp,
+                bool(in_kev),
+                kev_added,
+                kev_due,
+                kev_ransom,
+                bool(ver_exp),
+                bool(heur_exp),
+            )
+        return enrich_map
+
+    def _bulk_update_finding_reliability(self, conn: Any, run_id: str) -> None:
+        rel_pol = self.policy.signal_reliability
+        if not rel_pol.enabled:
+            conn.execute(
+                "UPDATE findings SET signal_reliability = 1.0 WHERE run_id = ?",
+                [run_id],
+            )
+            return
+
+        weights = dict(rel_pol.weights)
+        if weights:
+            when_clauses = []
+            params: List[Any] = []
+            for mode_key, weight_val in sorted(weights.items()):
+                when_clauses.append("WHEN ? THEN ?")
+                params.extend([str(mode_key).strip().lower(), float(weight_val)])
+            case_sql = f"CASE lower(trim(detection_mode)) {' '.join(when_clauses)} ELSE NULL END"
+        else:
+            case_sql = "NULL"
+
+        sql = f"""
+            UPDATE findings
+            SET signal_reliability = COALESCE(
+                {case_sql},
+                CASE WHEN signal_reliability IS NOT NULL THEN LEAST(2.0, GREATEST(0.0, signal_reliability)) ELSE NULL END,
+                CASE WHEN ingestion_confidence IS NOT NULL THEN LEAST(1.0, GREATEST(0.0, ingestion_confidence)) ELSE NULL END,
+                0.70
+            )
+            WHERE run_id = ?
+        """
+        params.append(run_id)
+        conn.execute(sql, params)
+
+    def _run_duckdb(self, ctx: "RunContext", conn: Any, run_id: str) -> "DerivedPassResult":
+        enrich_map = self._build_duckdb_enrich_map(conn, run_id)
+        cve_has_auth_cvss: Set[str] = {
+            cve_u
+            for cve_u, snap in enrich_map.items()
+            if snap[0] is not None
+            and 0.0 <= snap[0] <= 10.0
+            and _CVSS_PROVENANCE_RANK.get(_norm_provenance(snap[2]), 0) >= _CVSS_PROVENANCE_RANK["OSV"]
+        }
+        rel_pol = self.policy.signal_reliability
+        row_cnt = int((conn.execute("SELECT COUNT(*) FROM findings WHERE run_id = ?", [run_id]).fetchone() or (0,))[0] or 0)
+        populate_derived = row_cnt <= 10_000
+
+        # Skip expensive 335k+ list(cve_id) GROUP BY when findings.cves_json already carries every link
+        need_fc_join = (
+            conn.execute(
+                """
+                SELECT 1
+                FROM (
+                    SELECT finding_id, COUNT(*) AS cnt
+                    FROM finding_cves
+                    WHERE run_id = ?
+                    GROUP BY finding_id
+                ) fc
+                JOIN findings f
+                  ON f.run_id = ? AND f.finding_id = fc.finding_id
+                WHERE (f.cves_json IS NULL OR f.cves_json = '[]')
+                   OR (fc.cnt > 1 AND f.cves_json NOT LIKE '%,%')
+                LIMIT 1
+                """,
+                [run_id, run_id],
+            ).fetchone()
+            is not None
+        )
+
+        # Streaming read cursor (separate cursor avoids disturbing write transaction/appender)
+        cursor = conn.cursor()
+        if need_fc_join:
+            cursor.execute(
+                """
+                SELECT
+                    f.finding_id,
+                    f.asset_id,
+                    f.scoring_track,
+                    f.primary_cve,
+                    f.cves_json,
+                    f.cwes_json,
+                    f.scanner_severity,
+                    f.scanner_cvss_score,
+                    f.scanner_cvss_vector,
+                    f.detection_mode,
+                    f.signal_reliability,
+                    f.ingestion_confidence,
+                    f.exploit_evidence,
+                    a.internet_facing,
+                    a.declared_criticality,
+                    a.inventory_status,
+                    aci.capabilities_json,
+                    aci.chains_json,
+                    fc.cve_list
+                FROM findings f
+                LEFT JOIN assets a
+                  ON a.run_id = f.run_id AND a.asset_id = f.asset_id
+                LEFT JOIN aci_signals aci
+                  ON aci.run_id = f.run_id AND aci.finding_id = f.finding_id
+                LEFT JOIN (
+                    SELECT finding_id, list(cve_id) AS cve_list
+                    FROM finding_cves
+                    WHERE run_id = ?
+                    GROUP BY finding_id
+                ) fc
+                  ON fc.finding_id = f.finding_id
+                WHERE f.run_id = ?
+                """,
+                [run_id, run_id],
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    f.finding_id,
+                    f.asset_id,
+                    f.scoring_track,
+                    f.primary_cve,
+                    f.cves_json,
+                    f.cwes_json,
+                    f.scanner_severity,
+                    f.scanner_cvss_score,
+                    f.scanner_cvss_vector,
+                    f.detection_mode,
+                    f.signal_reliability,
+                    f.ingestion_confidence,
+                    f.exploit_evidence,
+                    a.internet_facing,
+                    a.declared_criticality,
+                    a.inventory_status,
+                    aci.capabilities_json,
+                    aci.chains_json,
+                    NULL AS cve_list
+                FROM findings f
+                LEFT JOIN assets a
+                  ON a.run_id = f.run_id AND a.asset_id = f.asset_id
+                LEFT JOIN aci_signals aci
+                  ON aci.run_id = f.run_id AND aci.finding_id = f.finding_id
+                WHERE f.run_id = ?
+                """,
+                [run_id],
+            )
+
+        total_findings = 0
+        raw_sum = 0.0
+        op_sum = 0.0
+        scored_findings: Dict[str, ScoredFinding] = {}
+        asset_scores: Dict[str, float] = {}
+        asset_band_counts: Dict[str, Dict[str, int]] = {}
+        band_idx_map = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Informational": 4}
+        asset_counts_fast: Dict[str, List[int]] = {}
+        memo: Dict[Tuple[Any, ...], Tuple[str, float, float, str, int, str, Dict[str, Any]]] = {}
+        sig_rel_memo: Dict[Tuple[Any, Any, Any], float] = {}
+        primary_cve_tuple_cache: Dict[str, Tuple[str, ...]] = {}
+        json_list_cache: Dict[str, Tuple[str, ...]] = {}
+        cwe_list_cache: Dict[str, Tuple[str, ...]] = {}
+
+        def _parse_json_tuple(raw_s: Optional[str]) -> Tuple[str, ...]:
+            if not raw_s or raw_s == "[]":
+                return ()
+            cached = json_list_cache.get(raw_s)
+            if cached is not None:
+                return cached
+            try:
+                parsed = json.loads(raw_s)
+                tup = tuple(str(x) for x in parsed if x) if isinstance(parsed, list) else ()
+            except Exception:
+                tup = ()
+            if len(json_list_cache) < 50_000:
+                json_list_cache[raw_s] = tup
+            return tup
+
+        def _parse_cwes(raw_s: Optional[str]) -> Tuple[str, ...]:
+            if not raw_s or raw_s == "[]":
+                return ()
+            cached = cwe_list_cache.get(raw_s)
+            if cached is not None:
+                return cached
+            try:
+                parsed = json.loads(raw_s)
+                vals = [c for c in (_norm_cwe(x) for x in parsed) if c] if isinstance(parsed, list) else []
+                tup = tuple(dict.fromkeys(vals))
+            except Exception:
+                tup = ()
+            if len(cwe_list_cache) < 50_000:
+                cwe_list_cache[raw_s] = tup
+            return tup
+
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            conn.execute("DELETE FROM scores WHERE run_id = ?", [run_id])
+            with conn.appender("scores") as appender:
+                batch_rows: List[Tuple[Any, ...]] = []
+                while True:
+                    chunk = cursor.fetchmany(50_000)
+                    if not chunk:
+                        break
+                    for (
+                        finding_id,
+                        asset_id,
+                        track_hint,
+                        primary_cve,
+                        cves_json,
+                        cwes_json,
+                        scanner_sev,
+                        scanner_cvss,
+                        scanner_cvss_vec,
+                        detection_mode,
+                        explicit_rel,
+                        ing_conf,
+                        exploit_ev,
+                        internet_facing,
+                        declared_crit,
+                        inv_status,
+                        caps_json,
+                        chains_json,
+                        cve_list,
+                    ) in chunk:
+                        total_findings += 1
+                        if cve_list:
+                            cve_tuple = tuple(dict.fromkeys(str(c).strip().upper() for c in cve_list if c))
+                        elif primary_cve and cves_json and "," not in cves_json and cves_json == f'["{primary_cve}"]':
+                            cve_tuple = primary_cve_tuple_cache.get(primary_cve)
+                            if cve_tuple is None:
+                                cve_tuple = (str(primary_cve).strip().upper(),)
+                                if len(primary_cve_tuple_cache) < 100_000:
+                                    primary_cve_tuple_cache[primary_cve] = cve_tuple
+                        elif cves_json and cves_json != "[]":
+                            parsed_cves = _parse_json_tuple(cves_json)
+                            cve_tuple = tuple(dict.fromkeys(str(c).strip().upper() for c in parsed_cves if c))
+                            if primary_cve:
+                                p_u = str(primary_cve).strip().upper()
+                                if p_u and p_u not in cve_tuple:
+                                    cve_tuple = (p_u,) + cve_tuple
+                        elif primary_cve:
+                            cve_tuple = primary_cve_tuple_cache.get(primary_cve)
+                            if cve_tuple is None:
+                                cve_tuple = (str(primary_cve).strip().upper(),)
+                                if len(primary_cve_tuple_cache) < 100_000:
+                                    primary_cve_tuple_cache[primary_cve] = cve_tuple
+                        else:
+                            cve_tuple = ()
+
+                        facing_bool = bool(internet_facing)
+                        exploit_bool = bool(exploit_ev)
+                        sr_key = (detection_mode, explicit_rel, ing_conf)
+                        sig_rel = sig_rel_memo.get(sr_key)
+                        if sig_rel is None:
+                            sig_rel = rel_pol.weight_for(
+                                detection_mode,
+                                ingestion_confidence=_safe_float(ing_conf),
+                                explicit_reliability=_safe_float(explicit_rel),
+                            )
+                            if len(sig_rel_memo) < 10_000:
+                                sig_rel_memo[sr_key] = sig_rel
+
+                        use_track_a = bool(cve_tuple) and (
+                            not track_hint or str(track_hint).strip().lower() != "exposure_weakness"
+                        )
+                        if use_track_a:
+                            all_auth = all(c in cve_has_auth_cvss for c in cve_tuple)
+                            eff_scan_cvss = None if all_auth else scanner_cvss
+                            eff_scan_vec = None if all_auth else scanner_cvss_vec
+                            memo_key = (
+                                1,
+                                cve_tuple,
+                                eff_scan_cvss,
+                                eff_scan_vec,
+                                detection_mode,
+                                sig_rel,
+                                exploit_bool,
+                                facing_bool,
+                                declared_crit,
+                                inv_status,
+                                caps_json,
+                                chains_json,
+                            )
+                        else:
+                            memo_key = (
+                                0,
+                                scanner_cvss,
+                                scanner_cvss_vec,
+                                scanner_sev,
+                                detection_mode,
+                                sig_rel,
+                                exploit_bool,
+                                cwes_json,
+                                facing_bool,
+                                declared_crit,
+                                inv_status,
+                                caps_json,
+                                chains_json,
+                            )
+
+                        cached_score = memo.get(memo_key)
+                        if cached_score is None:
+                            caps = _parse_json_tuple(caps_json)
+                            chains = _parse_json_tuple(chains_json)
+
+                            if use_track_a:
+                                raw_s, op_s, band, trace = self._score_track_a(
+                                    cve_ids=cve_tuple,
+                                    enrich_map=enrich_map,
+                                    scanner_cvss_score=_safe_float(scanner_cvss),
+                                    scanner_cvss_vector=scanner_cvss_vec,
+                                    finding_exploit_evidence=exploit_bool,
+                                    aci_capabilities=caps,
+                                    aci_chains=chains,
+                                    detection_mode=detection_mode,
+                                    signal_reliability=sig_rel,
+                                    asset_inventory_status=inv_status,
+                                    internet_facing=facing_bool,
+                                    declared_criticality=declared_crit,
+                                )
+                                track = "cve_threat"
+                            else:
+                                cwes = _parse_cwes(cwes_json)
+                                raw_s, op_s, band, trace = self._score_track_b(
+                                    scanner_cvss_score=_safe_float(scanner_cvss),
+                                    scanner_cvss_vector=scanner_cvss_vec,
+                                    scanner_severity=scanner_sev,
+                                    finding_exploit_evidence=exploit_bool,
+                                    cwes=cwes,
+                                    aci_capabilities=caps,
+                                    aci_chains=chains,
+                                    detection_mode=detection_mode,
+                                    signal_reliability=sig_rel,
+                                    asset_inventory_status=inv_status,
+                                    internet_facing=facing_bool,
+                                    declared_criticality=declared_crit,
+                                )
+                                track = "exposure_weakness"
+
+                            trace_json_str = json.dumps(trace, ensure_ascii=True, separators=(",", ":"))
+                            bidx = band_idx_map.get(band, 4)
+                            cached_score = (track, raw_s, op_s, band, bidx, trace_json_str, trace)
+                            if len(memo) < 200_000:
+                                memo[memo_key] = cached_score
+
+                        track, raw_s, op_s, band, bidx, trace_json_str, trace_dict = cached_score
+                        batch_rows.append(
+                            (
+                                run_id,
+                                finding_id,
+                                asset_id,
+                                track,
+                                raw_s,
+                                op_s,
+                                band,
+                                trace_json_str,
+                            )
+                        )
+                        if len(batch_rows) >= 50_000:
+                            appender.append_rows(batch_rows)
+                            batch_rows.clear()
+
+                        raw_sum += raw_s
+                        op_sum += op_s
+                        prev_max = asset_scores.get(asset_id)
+                        if prev_max is None or raw_s > prev_max:
+                            asset_scores[asset_id] = raw_s
+
+                        counts = asset_counts_fast.get(asset_id)
+                        if counts is None:
+                            counts = [0, 0, 0, 0, 0]
+                            asset_counts_fast[asset_id] = counts
+                        counts[bidx] += 1
+
+                        if populate_derived:
+                            scored_findings[finding_id] = ScoredFinding(
+                                finding_id=finding_id,
+                                asset_id=asset_id,
+                                raw_score=raw_s,
+                                operational_score=op_s,
+                                risk_band=band,
+                                reason=track,
+                                score_trace=trace_dict,
+                            )
+
+                if batch_rows:
+                    appender.append_rows(batch_rows)
+                    batch_rows.clear()
+
+            # Bulk-update findings.signal_reliability inside DuckDB
+            self._bulk_update_finding_reliability(conn, run_id)
+
+            # Bulk-update assets.derived_criticality via temp staging table + appender
+            asset_criticality: Dict[str, str] = {}
+            crit_rows: List[Tuple[str, str]] = []
+            for aid, counts in asset_counts_fast.items():
+                lvl = self._derive_asset_criticality_level(counts[0], counts[1], counts[2])
+                asset_criticality[aid] = lvl
+                crit_rows.append((aid, lvl))
+                if len(asset_counts_fast) <= 50_000:
+                    asset_band_counts[aid] = {
+                        "Critical": counts[0],
+                        "High": counts[1],
+                        "Medium": counts[2],
+                        "Low": counts[3],
+                        "Informational": counts[4],
+                    }
+
+            if crit_rows:
+                conn.execute("CREATE TEMP TABLE IF NOT EXISTS _stg_asset_crit (asset_id VARCHAR, derived_criticality VARCHAR)")
+                conn.execute("DELETE FROM _stg_asset_crit")
+                with conn.appender("_stg_asset_crit") as crit_app:
+                    for off in range(0, len(crit_rows), 25_000):
+                        crit_app.append_rows(crit_rows[off : off + 25_000])
+                conn.execute(
+                    """
+                    UPDATE assets
+                    SET derived_criticality = s.derived_criticality
+                    FROM _stg_asset_crit s
+                    WHERE assets.run_id = ? AND assets.asset_id = s.asset_id
+                    """,
+                    [run_id],
+                )
+                conn.execute("DROP TABLE IF EXISTS _stg_asset_crit")
+
+            conn.execute("COMMIT")
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+
+        highest_asset: Optional[str] = None
+        highest_score: Optional[float] = None
+        if asset_scores:
+            highest_asset = max(asset_scores, key=asset_scores.get)
+            highest_score = asset_scores[highest_asset]
+
+        avg_raw = round(raw_sum / total_findings, 4) if total_findings else None
+        avg_op = round(op_sum / total_findings, 4) if total_findings else None
+        output_data = {
+            "scored_findings": {
+                fid: {
+                    "finding_id": sf.finding_id,
+                    "asset_id": sf.asset_id,
+                    "raw_score": sf.raw_score,
+                    "operational_score": sf.operational_score,
+                    "risk_band": sf.risk_band,
+                    "reason": sf.reason,
+                    "score_trace": sf.score_trace,
+                }
+                for fid, sf in scored_findings.items()
+            },
+            "asset_scores": asset_scores if len(asset_scores) <= 50_000 else {},
+            "asset_criticality": asset_criticality if len(asset_criticality) <= 50_000 else {},
+            "asset_band_counts": asset_band_counts,
+            "asset_criticality_thresholds": {
+                "extreme_min_critical": self.critical_extreme_min_critical,
+                "high_min_critical": self.critical_high_min_critical,
+                "high_min_high": self.critical_high_min_high,
+                "medium_min_high": self.critical_medium_min_high,
+                "medium_min_medium": self.critical_medium_min_medium,
+            },
+            "coverage": {
+                "total_findings": total_findings,
+                "scored_findings": total_findings,
+                "coverage_ratio": 1.0 if total_findings else 0.0,
+            },
+            "highest_risk_asset": highest_asset,
+            "highest_risk_asset_score": highest_score,
+            "avg_scored_risk": avg_raw,
+            "avg_operational_risk": avg_op,
+        }
+
+        ledger = getattr(getattr(ctx, "services", None), "ledger", None)
+        if ledger is not None:
+            ledger.append_event(
+                component="Scoring",
+                event_type="decision",
+                subject_ref="scoring:summary",
+                reason_code=DecisionReasonCodes.SCORING_SUMMARY_COMPUTED,
+                reason_text="Scoring@3.0 vectorized dual-track summary computed.",
+                factor_refs=["scoring.epss_v5", "scoring.kev_exploit_split", "scoring.exposure_track"],
+                evidence={
+                    "total_findings": total_findings,
+                    "scored_findings": total_findings,
+                    "coverage_ratio": 1.0 if total_findings else 0.0,
+                    "avg_scored_risk": avg_raw,
+                    "avg_operational_risk": avg_op,
+                },
+            )
+
+        ctx.logger.info(
+            "[pass:scoring@3.0] duckdb | scored=%d | avg_raw=%s | avg_op=%s",
+            total_findings,
+            avg_raw,
+            avg_op,
+            extra={"vp_label": "ScoringV3Pass"},
+        )
+        meta = PassMeta(
+            name=self.name,
+            version=self.version,
+            created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            notes="Vectorized dual-track v2 risk scoring (EPSS v5, non-double-count KEV/exploit, Track B reliability).",
+        )
+        return DerivedPassResult(meta=meta, data=output_data)
+
+    def _run_scan_result(self, ctx: "RunContext", scan: "ScanResult") -> "DerivedPassResult":
+        """In-memory ScanResult compatibility mode for Scoring@3.0."""
+        scored_findings: Dict[str, ScoredFinding] = {}
+        asset_scores: Dict[str, float] = {}
+        asset_counts: Dict[str, Dict[str, int]] = {}
+        assets_by_id: Dict[str, Any] = {}
+        total = 0
+        raw_sum = 0.0
+        op_sum = 0.0
+
+        for asset in scan.assets:
+            aid = str(getattr(asset, "asset_id", None) or getattr(asset, "ip_address", None) or "SENTINEL:AssetID_Missing")
+            assets_by_id[aid] = asset
+            internet_facing = bool(getattr(asset, "internet_facing", False))
+            declared_crit = getattr(asset, "declared_criticality", None) or getattr(asset, "criticality", None)
+            inv_status = getattr(asset, "inventory_status", None)
+
+            for f in asset.findings:
+                total += 1
+                fid = str(getattr(f, "finding_id", ""))
+                raw_cves = list(getattr(f, "cves", None) or ())
+                if not raw_cves and getattr(f, "primary_cve", None):
+                    raw_cves = [getattr(f, "primary_cve")]
+                cve_tuple = tuple(dict.fromkeys(str(c).strip().upper() for c in raw_cves if c))
+
+                det_mode = getattr(f, "detection_mode", None)
+                ing_conf = _safe_float(getattr(f, "ingestion_confidence", None))
+                exp_rel = _safe_float(getattr(f, "signal_reliability", None))
+                sig_rel = self.policy.signal_reliability.weight_for(
+                    det_mode, ingestion_confidence=ing_conf, explicit_reliability=exp_rel
+                )
+                caps = tuple(str(c) for c in (getattr(f, "aci_capabilities", None) or ()))
+                chains = tuple(str(c) for c in (getattr(f, "aci_chains", None) or ()))
+                heur_exp = bool(getattr(f, "heuristic_exploit_mention", False) or getattr(f, "exploit_available", False))
+                ver_exp = bool(getattr(f, "verified_exploit", False))
+                in_kev = bool(getattr(f, "cisa_kev", False) or getattr(f, "in_kev", False))
+                scanner_cvss = _safe_float(getattr(f, "cvss_score", None))
+                scanner_vec = getattr(f, "cvss_vector", None)
+
+                if cve_tuple:
+                    enrich_local: Dict[str, Tuple[Any, ...]] = {}
+                    for cve in cve_tuple:
+                        epss_s = _safe_float(getattr(f, "epss_score", None))
+                        epss_p = _safe_float(getattr(f, "epss_percentile", None))
+                        prov = _norm_provenance(getattr(f, "cvss_provenance", None))
+                        if prov == "Missing" and scanner_cvss is not None:
+                            prov = "Scanner-Supplied"
+                        enrich_local[cve] = (
+                            scanner_cvss if prov != "Scanner-Supplied" else None,
+                            getattr(f, "cvss_version", None),
+                            prov if prov != "Scanner-Supplied" else "Missing",
+                            epss_s,
+                            epss_p,
+                            getattr(f, "epss_model_version", None),
+                            getattr(f, "epss_date", None),
+                            _epss_v5_points(epss_s, epss_p, self.policy.epss_breakpoints),
+                            _format_epss_display(epss_s, epss_p),
+                            in_kev,
+                            getattr(f, "kev_date_added", None),
+                            getattr(f, "kev_due_date", None),
+                            getattr(f, "kev_ransomware", None),
+                            ver_exp,
+                            heur_exp,
+                        )
+                    raw_s, op_s, band, trace = self._score_track_a(
+                        cve_ids=cve_tuple,
+                        enrich_map=enrich_local,
+                        scanner_cvss_score=scanner_cvss,
+                        scanner_cvss_vector=scanner_vec,
+                        finding_exploit_evidence=heur_exp,
+                        aci_capabilities=caps,
+                        aci_chains=chains,
+                        detection_mode=det_mode,
+                        signal_reliability=sig_rel,
+                        asset_inventory_status=inv_status,
+                        internet_facing=internet_facing,
+                        declared_criticality=declared_crit,
+                    )
+                else:
+                    cwes = tuple(c for c in (_norm_cwe(x) for x in (getattr(f, "cwes", None) or ())) if c)
+                    raw_s, op_s, band, trace = self._score_track_b(
+                        scanner_cvss_score=scanner_cvss,
+                        scanner_cvss_vector=scanner_vec,
+                        scanner_severity=getattr(f, "severity", None),
+                        finding_exploit_evidence=heur_exp,
+                        cwes=cwes,
+                        aci_capabilities=caps,
+                        aci_chains=chains,
+                        detection_mode=det_mode,
+                        signal_reliability=sig_rel,
+                        asset_inventory_status=inv_status,
+                        internet_facing=internet_facing,
+                        declared_criticality=declared_crit,
+                    )
+
+                sf = ScoredFinding(
+                    finding_id=fid,
+                    asset_id=aid,
+                    raw_score=raw_s,
+                    operational_score=op_s,
+                    risk_band=band,
+                    reason=str(trace["scoring_track"]),
+                    score_trace=trace,
+                )
+                scored_findings[fid] = sf
+                f.raw_risk_score = raw_s
+                f.operational_score = op_s
+                f.risk_band = band
+                f.score_trace = trace
+                raw_sum += raw_s
+                op_sum += op_s
+                if aid not in asset_scores or raw_s > asset_scores[aid]:
+                    asset_scores[aid] = raw_s
+                cnts = asset_counts.setdefault(aid, {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Informational": 0})
+                cnts[band if band in cnts else "Informational"] += 1
+
+        asset_criticality: Dict[str, str] = {}
+        for aid, cnts in asset_counts.items():
+            lvl = self._derive_asset_criticality_level(cnts["Critical"], cnts["High"], cnts["Medium"])
+            asset_criticality[aid] = lvl
+            if aid in assets_by_id:
+                assets_by_id[aid].criticality = lvl
+
+        highest_asset = max(asset_scores, key=asset_scores.get) if asset_scores else None
+        highest_score = asset_scores[highest_asset] if highest_asset else None
+        avg_raw = round(raw_sum / total, 4) if total else None
+        avg_op = round(op_sum / total, 4) if total else None
+
+        output = ScoringPassOutput(
+            scored_findings=scored_findings,
+            asset_scores=asset_scores,
+            asset_criticality=asset_criticality,
+            asset_band_counts=asset_counts,
+            asset_criticality_thresholds={
+                "extreme_min_critical": self.critical_extreme_min_critical,
+                "high_min_critical": self.critical_high_min_critical,
+                "high_min_high": self.critical_high_min_high,
+                "medium_min_high": self.critical_medium_min_high,
+                "medium_min_medium": self.critical_medium_min_medium,
+            },
+            coverage=ScoreCoverage(
+                total_findings=total,
+                scored_findings=len(scored_findings),
+                coverage_ratio=(len(scored_findings) / total) if total else 0.0,
+            ),
+            highest_risk_asset=highest_asset,
+            highest_risk_asset_score=highest_score,
+            avg_scored_risk=avg_raw,
+            avg_operational_risk=avg_op,
+        )
+        meta = PassMeta(
+            name=self.name,
+            version=self.version,
+            created_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            notes="Dual-track v2 risk scoring (ScanResult compatibility mode).",
+        )
+        return DerivedPassResult(meta=meta, data=asdict(output))

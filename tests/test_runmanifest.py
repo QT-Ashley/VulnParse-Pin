@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 import json
 from contextlib import contextmanager
 from pathlib import Path
@@ -589,3 +592,182 @@ def test_runmanifest_handles_tuple_and_namespace_pass_payloads(tmp_path: Path):
     assert metrics_by_name["TopN"]["global_top_findings"] == 1
     assert metrics_by_name["Summary"]["total_assets"] == 1
     assert metrics_by_name["Summary"]["top_risks"] == 1
+
+
+def test_file_sha256_streams_large_files_accurately(tmp_path: Path):
+    import hashlib
+    from vulnparse_pin.utils.runmanifest import _file_sha256
+
+    big_file = tmp_path / "big.bin"
+    payload = (b"A1B2C3D4" * 300_000) + b"TAIL"  # ~2.4 MB (> 2x 1 MiB chunk)
+    big_file.write_bytes(payload)
+
+    expected = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    assert _file_sha256(big_file) == expected
+    assert _file_sha256(tmp_path / "missing.bin") is None
+
+
+def test_build_runmanifest_from_db_and_ledger_tamper_detection(tmp_path: Path):
+    from vulnparse_pin.storage.db import VppDatabase
+    from vulnparse_pin.storage.repositories import (
+        ensure_run,
+        ingest_normalized_batches,
+        insert_ledger_events,
+        upsert_enrichment_snapshots,
+        upsert_scores,
+        upsert_triage_decisions,
+    )
+    from vulnparse_pin.utils.runmanifest import build_runmanifest_from_db, verify_runmanifest
+
+    db = VppDatabase(tmp_path / "manifest.db")
+    run_id = "run-db-manifest"
+    ensure_run(
+        db,
+        run_id,
+        created_at_utc="2026-11-24T00:00:00Z",
+        vpp_version="2.0.0",
+        profile="bod-26-04",
+        config_sha256="sha256:cfg",
+        assets_sha256="sha256:assets",
+        decisions_sha256="sha256:decisions",
+        intel_metadata={
+            "epss_model_version": "v2025.03.14",
+            "epss_score_date": "2026-11-24",
+            "kev_catalog_version": "2026.11.24",
+            "nvd_status": "local-cache",
+            "ghsa_enabled": True,
+            "osv_enabled": True,
+        },
+        input_files=["scan.nessus"],
+    )
+    ingest_normalized_batches(
+        db,
+        run_id,
+        [
+            [
+                {
+                    "ip_address": "10.0.0.1",
+                    "hostname": "app-1.local",
+                    "source_format": "nessus-xml",
+                    "scanner_sig": "nessus:1",
+                    "title": "Sample CVE",
+                    "severity": "High",
+                    "cves": ["CVE-2024-1111"],
+                    "detection_mode": "credentialed_host",
+                    "ingestion_confidence": 0.95,
+                }
+            ]
+        ],
+    )
+    fid = db.query_findings_page(run_id)[0][0]["finding_id"]
+    aid = db.query_findings_page(run_id)[0][0]["asset_id"]
+    upsert_enrichment_snapshots(
+        db,
+        run_id,
+        [
+            {
+                "cve_id": "CVE-2024-1111",
+                "cvss_score": 8.0,
+                "cvss_version": "3.1",
+                "cvss_provenance": "NVD",
+                "epss_score": 0.12,
+                "epss_percentile": 0.93,
+                "in_kev": True,
+                "verified_exploit": True,
+            }
+        ],
+    )
+    upsert_scores(
+        db,
+        run_id,
+        [
+            {
+                "finding_id": fid,
+                "asset_id": aid,
+                "scoring_track": "cve_threat",
+                "raw_risk_score": 13.0,
+                "operational_score": 8.125,
+                "risk_band": "Critical",
+                "score_trace": {"cvss_provenance": "NVD"},
+            }
+        ],
+    )
+    upsert_triage_decisions(
+        db,
+        run_id,
+        [
+            {
+                "finding_id": fid,
+                "asset_id": aid,
+                "profile": "bod-26-04",
+                "priority_tier": "P1",
+                "oal_compat": "OAL-1",
+                "ssvc_action": "Act",
+                "sla_bucket": "14-day",
+                "sla_days": 14,
+                "decision_status": "active",
+            }
+        ],
+    )
+
+    ledger = LedgerService()
+    ledger.append_event(
+        component="Scoring",
+        event_type="decision",
+        subject_ref="scoring:summary",
+        reason_code="SCORING_SUMMARY_COMPUTED",
+        reason_text="Scored 1 finding.",
+        factor_refs=["epss_v5", "kev"],
+    )
+    snap = ledger.snapshot()
+    insert_ledger_events(
+        db,
+        run_id,
+        [
+            {
+                "seq": e.seq,
+                "ts": e.ts,
+                "component": e.component,
+                "event_type": e.event_type,
+                "subject_ref": e.subject_ref,
+                "why": {
+                    "reason_code": e.why.reason_code,
+                    "reason_text": e.why.reason_text,
+                    "factor_refs": e.why.factor_refs,
+                    "confidence": e.why.confidence,
+                    "weight_context": e.why.weight_context,
+                },
+                "evidence_digest": e.evidence_digest,
+                "prev_hash": e.prev_hash,
+                "entry_hash": e.entry_hash,
+            }
+            for e in snap.entries
+        ],
+    )
+
+    manifest = build_runmanifest_from_db(
+        db,
+        run_id,
+        config_hashes={"config_yaml_sha256": "sha256:cfg", "scoring_json_sha256": "sha256:sc", "tn_triage_json_sha256": "sha256:tn"},
+        outputs={"csv": str(tmp_path / "out.csv"), "dossier_html": str(tmp_path / "dossier.html")},
+        mode="compact",
+    )
+    verified = verify_runmanifest(manifest)
+    assert verified["manifest_version"] == "2.0"
+    assert verified["profile"] == "bod-26-04"
+    assert verified["assets_sha256"] == "sha256:assets"
+    assert verified["decisions_sha256"] == "sha256:decisions"
+    assert verified["decision_ledger"]["entry_count"] == 1
+
+    out_path = tmp_path / "db_manifest.json"
+    write_runmanifest(None, manifest, out_path)
+    assert verify_runmanifest(out_path)["run_id"] == run_id
+
+    # Tamper ledger event stored in DuckDB and confirm verify_runmanifest detects it
+    db.execute(
+        "UPDATE ledger_events SET entry_hash = 'sha256:tampered' WHERE run_id = ? AND seq = 1",
+        [run_id],
+    )
+    tampered_manifest = build_runmanifest_from_db(db, run_id)
+    with pytest.raises(ValueError, match="entry_hash mismatch"):
+        verify_runmanifest(tampered_manifest)

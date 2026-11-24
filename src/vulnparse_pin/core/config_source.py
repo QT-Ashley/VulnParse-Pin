@@ -1,11 +1,5 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from __future__ import annotations
 
@@ -112,6 +106,20 @@ class ConfigSource:
         if not isinstance(cfg_topn, dict):
             raise RuntimeError("TopN config must be an object at top-level.")
 
+        return RawConfigPayloads(
+            global_config=cfg_yaml,
+            scoring_config=cfg_json,
+            topn_config=cfg_topn,
+        )
+
+    @staticmethod
+    def load_packaged_defaults() -> RawConfigPayloads:
+        """Load packaged v2 default configuration payloads."""
+        yaml = YAML(typ="safe", pure=True)
+        res_pkg = resources.files("vulnparse_pin.resources")
+        cfg_yaml = yaml.load(res_pkg.joinpath("config.yaml").read_text(encoding="utf-8"))
+        cfg_json = json.loads(res_pkg.joinpath("scoring.json").read_text(encoding="utf-8"))
+        cfg_topn = json.loads(res_pkg.joinpath("tn_triage.json").read_text(encoding="utf-8"))
         return RawConfigPayloads(
             global_config=cfg_yaml,
             scoring_config=cfg_json,

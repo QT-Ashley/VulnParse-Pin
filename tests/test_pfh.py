@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 import os
 import json
 from dataclasses import dataclass
@@ -42,10 +45,99 @@ def test_pfh_denies_symlink_when_forbidden(tmp_path):
     link = tmp_path / "link.txt"
     link.symlink_to(target)
 
-    # the handler resolves symlinks during normalization, so instead we assert that
-    # the normalized path points at the real file (policy cannot block after resolution).
-    resolved = pfh.normalize(link)
-    assert resolved == target.resolve()
+    with pytest.raises(FilePathError):
+        pfh.ensure_writable_file(link)
+    with pytest.raises(FilePathError):
+        pfh.open_for_write(link)
+
+
+def test_pfh_denies_intra_root_dir_and_dangling_symlinks(tmp_path):
+    logger = make_logger(tmp_path)
+    pfh = PermFileHandler(
+        logger,
+        root_dir=tmp_path,
+        allowed_roots=[tmp_path],
+        enforce_roots_on_read=True,
+        enforce_roots_on_write=True,
+        forbid_symlinks_read=True,
+        forbid_symlinks_write=True,
+    )
+    real_dir = tmp_path / "real_dir"
+    real_dir.mkdir()
+    real_file = real_dir / "file.txt"
+    real_file.write_text("ok")
+
+    link_dir = tmp_path / "link_dir"
+    link_dir.symlink_to(real_dir)
+
+    dangling = tmp_path / "dangling.txt"
+    dangling.symlink_to(tmp_path / "does_not_exist.txt")
+
+    file_link = tmp_path / "file_link.txt"
+    file_link.symlink_to(real_file)
+
+    # Write checks reject symlinked directory, symlinked file, traversal via symlink dir, and dangling symlinks
+    with pytest.raises(FilePathError):
+        pfh.ensure_writable_file(link_dir / "new.txt")
+    with pytest.raises(FilePathError):
+        pfh.ensure_writable_file(link_dir / ".." / "escape.txt")
+    with pytest.raises(FilePathError):
+        pfh.ensure_writable_file(dangling)
+
+    # Read checks reject intra-root file symlinks and symlinked directories before resolve()
+    with pytest.raises(FilePathError):
+        pfh.ensure_readable_file(file_link)
+    with pytest.raises(FilePathError):
+        pfh.ensure_readable_file(link_dir / "file.txt")
+    with pytest.raises(FilePathError):
+        pfh.ensure_readable_dir(link_dir)
+    with pytest.raises(FilePathError):
+        pfh.open_for_read(file_link)
+
+
+def test_pfh_allow_workspace_root_validates_and_authorizes(tmp_path):
+    logger = make_logger(tmp_path)
+    base = tmp_path / "base"
+    base.mkdir()
+    pfh = PermFileHandler(
+        logger,
+        root_dir=base,
+        allowed_roots=[base],
+        enforce_roots_on_read=True,
+        enforce_roots_on_write=True,
+        forbid_symlinks_read=False,
+        forbid_symlinks_write=False,
+    )
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    resolved = pfh.allow_workspace_root(workspace)
+    assert resolved == workspace.resolve()
+    assert resolved in pfh.allowed_roots
+    out = pfh.ensure_writable_file(workspace / "sub" / "vpp.db")
+    assert out == (workspace / "sub" / "vpp.db").resolve()
+
+    # Symlink root must be rejected even when forbid_symlinks_* is False
+    sym_ws = tmp_path / "sym_ws"
+    sym_ws.symlink_to(workspace)
+    with pytest.raises(FilePathError):
+        pfh.allow_workspace_root(sym_ws)
+
+    # Missing or non-directory roots must be rejected
+    with pytest.raises(FilePathError):
+        pfh.allow_workspace_root(tmp_path / "missing_ws")
+    reg_file = tmp_path / "not_a_dir.txt"
+    reg_file.write_text("x")
+    with pytest.raises(FilePathError):
+        pfh.allow_workspace_root(reg_file)
+
+
+def test_pfh_describe_policy_formats_modes(tmp_path):
+    logger = make_logger(tmp_path)
+    pfh = PermFileHandler(logger, root_dir=tmp_path, file_mode=0o600, dir_mode=None)
+    policy_text = pfh.describe_policy()
+    assert "0o600" in policy_text
+    assert "None" in policy_text
 
 
 def test_pfh_allows_expected_output_dir(tmp_path):

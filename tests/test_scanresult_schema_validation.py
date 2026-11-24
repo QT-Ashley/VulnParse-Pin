@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -5,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from vulnparse_pin.app.normalization import normalize_input
+from vulnparse_pin.cli.errors import VppError
 from vulnparse_pin.core.classes.decision_reasons import DecisionReasonCodes
 from vulnparse_pin.core.classes.dataclass import Asset, Finding, ScanMetaData, ScanResult
 from vulnparse_pin.core.classes.execution_manifest import LedgerService
@@ -116,10 +120,10 @@ def test_normalization_exits_when_schema_validation_fails(monkeypatch):
     monkeypatch.setattr(norm, "FileInputValidator", lambda *_args, **_kwargs: _ValidationStub())
     monkeypatch.setattr(norm, "validate_scan_result_schema", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad schema")))
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(VppError) as exc:
         normalize_input(_Ctx(), _Detector(), Path("dummy.xml"), allow_large=False)
 
-    assert exc.value.code == 1
+    assert exc.value.exit_code == 1
 
 
 def test_normalization_strict_ingestion_rejects_degraded_findings(monkeypatch):
@@ -157,7 +161,7 @@ def test_normalization_strict_ingestion_rejects_degraded_findings(monkeypatch):
 
     monkeypatch.setattr(norm, "FileInputValidator", lambda *_args, **_kwargs: _ValidationStub())
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(VppError) as exc:
         ctx = _Ctx()
         normalize_input(
             ctx,
@@ -167,7 +171,7 @@ def test_normalization_strict_ingestion_rejects_degraded_findings(monkeypatch):
             strict_ingestion=True,
         )
 
-    assert exc.value.code == 1
+    assert exc.value.exit_code == 1
     codes = [e.why.reason_code for e in ctx.services.ledger.snapshot().entries]
     assert DecisionReasonCodes.INGESTION_STRICT_REJECTED in codes
 
@@ -208,7 +212,7 @@ def test_normalization_min_ingestion_confidence_rejection_emits_ledger(monkeypat
     monkeypatch.setattr(norm, "FileInputValidator", lambda *_args, **_kwargs: _ValidationStub())
 
     ctx = _Ctx()
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(VppError) as exc:
         normalize_input(
             ctx,
             _DetectorLowConfidence(),
@@ -217,6 +221,6 @@ def test_normalization_min_ingestion_confidence_rejection_emits_ledger(monkeypat
             min_ingestion_confidence=0.6,
         )
 
-    assert exc.value.code == 1
+    assert exc.value.exit_code == 1
     codes = [e.why.reason_code for e in ctx.services.ledger.snapshot().entries]
     assert DecisionReasonCodes.INGESTION_CONFIDENCE_THRESHOLD_FAILED in codes

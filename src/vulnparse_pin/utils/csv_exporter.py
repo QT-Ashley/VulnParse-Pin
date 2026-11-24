@@ -1,22 +1,26 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from collections.abc import Sequence
 import csv
+import json
+import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 import unicodedata
+
+import duckdb
 
 from vulnparse_pin.core.classes.dataclass import ScanResult, RunContext
 from vulnparse_pin.core.classes.pass_classes import DerivedPassResult
 from vulnparse_pin.core.passes.types import ScoredFinding
+from vulnparse_pin.storage.db import (
+    _check_no_symlinks_or_loops,
+    ensure_safe_dir_non_pfh,
+    open_for_write_non_pfh,
+)
+from vulnparse_pin.utils.cvss_utils import resolve_effective_cvss_fields
 
 _DANGEROUS_PREFIXES = ("=", "-", "+", "@")
 
@@ -557,3 +561,459 @@ def _build_csv_row(
         "topn_inference_evidence": topn_inference_evidence,
         "topn_inference_rule_hits": topn_inference_rule_hits,
     }
+
+
+V2_ANALYST_PROFILE_COLUMNS = [
+    "run_id",
+    "asset_id",
+    "asset_hostname",
+    "asset_ip",
+    "target_uri",
+    "image_or_repo",
+    "inventory_status",
+    "owner",
+    "internet_facing",
+    "asset_criticality",
+    "finding_id",
+    "title",
+    "severity",
+    "scoring_track",
+    "detection_mode",
+    "signal_reliability",
+    "ingestion_confidence",
+    "fidelity_tier",
+    "source_format",
+    "primary_cve",
+    "cvss_score",
+    "cvss_version",
+    "cvss_provenance",
+    "epss_score",
+    "epss_percentile",
+    "cisa_kev",
+    "verified_exploit",
+    "raw_score",
+    "operational_score",
+    "risk_band",
+    "priority_tier",
+    "oal_compat",
+    "ssvc_action",
+    "sla_bucket",
+    "sla_days",
+    "decision_status",
+    "affected_port",
+    "protocol",
+    "is_deduplicated",
+    "source_count",
+]
+
+V2_FULL_PROFILE_COLUMNS = V2_ANALYST_PROFILE_COLUMNS + [
+    "canonical_key",
+    "cves",
+    "cwes",
+    "ghsa_ids",
+    "cvss_vector",
+    "kev_date_added",
+    "kev_due_date",
+    "kev_ransomware",
+    "heuristic_exploit_mention",
+    "package_purl",
+    "location_uri",
+    "line_number",
+    "service_name",
+    "open_ports",
+    "aci_capabilities",
+    "aci_chains",
+    "aci_confidence",
+    "aci_uplift_score",
+    "description",
+    "solution",
+]
+
+V2_AUDIT_PROFILE_COLUMNS = V2_FULL_PROFILE_COLUMNS + [
+    "matched_rule_id",
+    "decision_id",
+    "rationale_summary",
+    "epss_model_version",
+    "epss_date",
+    "enrichment_sources",
+    "score_trace_json",
+    "assumed_state_json",
+]
+
+
+def _v2_profile_columns(csv_profile: str) -> List[str]:
+    if csv_profile == "full":
+        return list(V2_FULL_PROFILE_COLUMNS)
+    if csv_profile == "analyst":
+        return list(V2_ANALYST_PROFILE_COLUMNS)
+    if csv_profile == "audit":
+        return list(V2_AUDIT_PROFILE_COLUMNS)
+    raise ValueError(f"Unknown csv_profile '{csv_profile}'. Expected one of {sorted(CSV_PROFILES)}")
+
+
+def _resolve_duckdb_conn(db: Any) -> duckdb.DuckDBPyConnection:
+    if isinstance(db, duckdb.DuckDBPyConnection):
+        return db
+    conn = getattr(db, "conn", None)
+    if conn is not None:
+        return conn
+    raise TypeError(f"Expected VppDatabase or DuckDBPyConnection, got {type(db).__name__}")
+
+
+def _json_list_to_joined(raw: Optional[str]) -> str:
+    if not raw or raw == "[]":
+        return ""
+    try:
+        loaded = json.loads(raw)
+        if isinstance(loaded, list):
+            return ";".join(str(x) for x in loaded if x is not None)
+    except Exception:
+        pass
+    return str(raw)
+
+
+def _json_obj_safe(raw: Optional[str]) -> Dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
+
+
+def export_duckdb_csv(
+    db: Any,
+    run_id: str,
+    out_path: Union[str, Path],
+    *,
+    profile: str = "full",
+    pfh: Optional[Any] = None,
+    csv_sanitization: bool = True,
+) -> Path:
+    """
+    Stream findings for `run_id` directly from DuckDB cursor into a CSV file,
+    applying `_sanitize_csv_cell` to every exported cell when `csv_sanitization` is enabled.
+    """
+    prof = str(profile or "full").strip().lower()
+    fieldnames = _v2_profile_columns(prof)
+    conn = _resolve_duckdb_conn(db)
+    rid = str(run_id)
+
+    has_run = conn.execute("SELECT 1 FROM runs WHERE run_id = ? LIMIT 1", [rid]).fetchone()
+    if has_run is None:
+        has_findings = conn.execute("SELECT 1 FROM findings WHERE run_id = ? LIMIT 1", [rid]).fetchone()
+        has_assets = conn.execute("SELECT 1 FROM assets WHERE run_id = ? LIMIT 1", [rid]).fetchone()
+        if has_findings is None and has_assets is None:
+            raise ValueError(f"Run '{rid}' does not exist in database.")
+
+    target = Path(out_path)
+    if pfh is None:
+        _check_no_symlinks_or_loops(target, label="CSV output path")
+        ensure_safe_dir_non_pfh(target.parent, label="CSV output parent directory")
+        _check_no_symlinks_or_loops(target, label="CSV output path")
+
+    sql = """
+        SELECT
+            f.run_id,
+            f.asset_id,
+            a.hostname AS asset_hostname,
+            a.ip_address AS asset_ip,
+            a.target_uri,
+            a.image_or_repo,
+            a.inventory_status,
+            a.owner,
+            a.internet_facing,
+            COALESCE(a.derived_criticality, a.declared_criticality) AS asset_criticality,
+            f.finding_id,
+            f.title,
+            f.scanner_severity AS severity,
+            f.scoring_track,
+            f.detection_mode,
+            f.signal_reliability,
+            f.ingestion_confidence,
+            f.fidelity_tier,
+            f.source_format,
+            COALESCE(UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')), f.primary_cve) AS primary_cve,
+            e.cvss_score AS snap_cvss_score,
+            f.scanner_cvss_score,
+            e.cvss_version AS snap_cvss_version,
+            e.cvss_provenance AS snap_cvss_provenance,
+            e.cvss_vector AS snap_cvss_vector,
+            f.scanner_cvss_vector,
+            e.epss_score,
+            e.epss_percentile,
+            e.epss_model_version,
+            e.epss_date,
+            (
+                COALESCE(e.in_kev, FALSE)
+                OR COALESCE(fc_agg.fc_in_kev, FALSE)
+                OR COALESCE(TRY_CAST(json_extract_string(s.score_trace_json, '$.in_kev') AS BOOLEAN), FALSE)
+            ) AS cisa_kev,
+            CASE
+                WHEN (
+                    COALESCE(e.in_kev, FALSE)
+                    OR COALESCE(fc_agg.fc_in_kev, FALSE)
+                    OR COALESCE(TRY_CAST(json_extract_string(s.score_trace_json, '$.in_kev') AS BOOLEAN), FALSE)
+                )
+                THEN COALESCE(
+                    CASE WHEN COALESCE(e.in_kev, FALSE) THEN NULLIF(CAST(e.kev_date_added AS VARCHAR), '') END,
+                    NULLIF(json_extract_string(s.score_trace_json, '$.kev_date_added'), ''),
+                    fc_agg.fc_kev_date_added
+                )
+                ELSE e.kev_date_added
+            END AS kev_date_added,
+            CASE
+                WHEN (
+                    COALESCE(e.in_kev, FALSE)
+                    OR COALESCE(fc_agg.fc_in_kev, FALSE)
+                    OR COALESCE(TRY_CAST(json_extract_string(s.score_trace_json, '$.in_kev') AS BOOLEAN), FALSE)
+                )
+                THEN COALESCE(
+                    CASE WHEN COALESCE(e.in_kev, FALSE) THEN NULLIF(CAST(e.kev_due_date AS VARCHAR), '') END,
+                    NULLIF(json_extract_string(s.score_trace_json, '$.kev_due_date'), ''),
+                    fc_agg.fc_kev_due_date
+                )
+                ELSE e.kev_due_date
+            END AS kev_due_date,
+            CASE
+                WHEN (
+                    COALESCE(e.in_kev, FALSE)
+                    OR COALESCE(fc_agg.fc_in_kev, FALSE)
+                    OR COALESCE(TRY_CAST(json_extract_string(s.score_trace_json, '$.in_kev') AS BOOLEAN), FALSE)
+                )
+                THEN COALESCE(
+                    CASE WHEN COALESCE(e.in_kev, FALSE) THEN NULLIF(CAST(e.kev_ransomware AS VARCHAR), '') END,
+                    NULLIF(json_extract_string(s.score_trace_json, '$.kev_ransomware'), ''),
+                    fc_agg.fc_kev_ransomware
+                )
+                ELSE e.kev_ransomware
+            END AS kev_ransomware,
+            (
+                COALESCE(e.verified_exploit, FALSE)
+                OR COALESCE(fc_agg.fc_verified_exploit, FALSE)
+                OR COALESCE(TRY_CAST(json_extract_string(s.score_trace_json, '$.verified_exploit') AS BOOLEAN), FALSE)
+            ) AS verified_exploit,
+            (
+                COALESCE(e.heuristic_exploit_mention, FALSE)
+                OR COALESCE(fc_agg.fc_heuristic_exploit, FALSE)
+                OR COALESCE(f.exploit_evidence, FALSE)
+            ) AS heuristic_exploit_mention,
+            s.raw_risk_score AS raw_score,
+            s.operational_score,
+            s.risk_band,
+            s.score_trace_json,
+            td.priority_tier,
+            td.oal_compat,
+            td.ssvc_action,
+            td.sla_bucket,
+            td.sla_days,
+            COALESCE(td.decision_status, 'active') AS decision_status,
+            td.decision_id,
+            td.rationale_summary,
+            td.assumed_state_json,
+            f.affected_port,
+            f.protocol,
+            f.is_deduplicated,
+            f.source_count,
+            a.canonical_key,
+            f.cves_json,
+            f.cwes_json,
+            f.ghsa_ids_json,
+            f.package_purl,
+            f.location_uri,
+            f.line_number,
+            f.service_name,
+            a.open_ports_json,
+            a.matched_rule_id,
+            aci.capabilities_json,
+            aci.chains_json,
+            aci.confidence AS aci_confidence,
+            aci.uplift_score AS aci_uplift_score,
+            f.description,
+            f.solution,
+            e.sources_json
+        FROM findings f
+        LEFT JOIN assets a ON a.run_id = f.run_id AND a.asset_id = f.asset_id
+        LEFT JOIN scores s ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+        LEFT JOIN enrichment_snapshots e ON e.run_id = f.run_id
+            AND UPPER(e.cve_id) = COALESCE(
+                UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')),
+                UPPER(f.primary_cve)
+            )
+        LEFT JOIN (
+            SELECT
+                fc.finding_id,
+                BOOL_OR(COALESCE(es.in_kev, FALSE)) AS fc_in_kev,
+                BOOL_OR(COALESCE(es.verified_exploit, FALSE)) AS fc_verified_exploit,
+                BOOL_OR(COALESCE(es.heuristic_exploit_mention, FALSE)) AS fc_heuristic_exploit,
+                ARG_MIN(
+                    NULLIF(CAST(es.kev_date_added AS VARCHAR), ''),
+                    CASE
+                        WHEN COALESCE(es.in_kev, FALSE) AND NULLIF(CAST(es.kev_date_added AS VARCHAR), '') IS NOT NULL
+                        THEN UPPER(es.cve_id)
+                    END
+                ) AS fc_kev_date_added,
+                ARG_MIN(
+                    NULLIF(CAST(es.kev_due_date AS VARCHAR), ''),
+                    CASE
+                        WHEN COALESCE(es.in_kev, FALSE) AND NULLIF(CAST(es.kev_due_date AS VARCHAR), '') IS NOT NULL
+                        THEN UPPER(es.cve_id)
+                    END
+                ) AS fc_kev_due_date,
+                ARG_MIN(
+                    NULLIF(CAST(es.kev_ransomware AS VARCHAR), ''),
+                    CASE
+                        WHEN COALESCE(es.in_kev, FALSE) AND NULLIF(CAST(es.kev_ransomware AS VARCHAR), '') IS NOT NULL
+                        THEN UPPER(es.cve_id)
+                    END
+                ) AS fc_kev_ransomware
+            FROM finding_cves fc
+            JOIN enrichment_snapshots es ON es.run_id = fc.run_id AND UPPER(es.cve_id) = UPPER(fc.cve_id)
+            WHERE fc.run_id = ?
+            GROUP BY fc.finding_id
+        ) fc_agg ON fc_agg.finding_id = f.finding_id
+        LEFT JOIN triage_decisions td ON td.run_id = f.run_id AND td.finding_id = f.finding_id
+        LEFT JOIN aci_signals aci ON aci.run_id = f.run_id AND aci.finding_id = f.finding_id
+        WHERE f.run_id = ?
+        ORDER BY
+            CASE UPPER(COALESCE(td.priority_tier, 'ZZZZ'))
+                WHEN 'P1' THEN 1
+                WHEN 'P1B' THEN 2
+                WHEN 'P2' THEN 3
+                WHEN 'P3' THEN 4
+                WHEN 'P4' THEN 5
+                ELSE 99
+            END ASC,
+            s.operational_score DESC NULLS LAST,
+            e.epss_score DESC NULLS LAST,
+            f.finding_id ASC
+    """
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute(sql, [rid, rid])
+        cols = [d[0] for d in cursor.description]
+
+        def _write_rows(fh: Any) -> None:
+            writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            while True:
+                batch = cursor.fetchmany(5000)
+                if not batch:
+                    break
+                for raw_tuple in batch:
+                    rec = dict(zip(cols, raw_tuple))
+                    trace = _json_obj_safe(rec.get("score_trace_json"))
+
+                    cvss_score, cvss_prov, cvss_ver, eff_vec = resolve_effective_cvss_fields(
+                        snap_cvss=rec["snap_cvss_score"],
+                        snap_prov=rec["snap_cvss_provenance"],
+                        snap_ver=rec["snap_cvss_version"],
+                        snap_vec=rec["snap_cvss_vector"],
+                        scanner_cvss=rec["scanner_cvss_score"],
+                        scanner_vec=rec["scanner_cvss_vector"],
+                        score_trace=trace,
+                    )
+                    cvss_vec = eff_vec or ""
+                    kev_added = rec["kev_date_added"] or (trace.get("kev_date_added") if rec["cisa_kev"] else None) or ""
+                    kev_due = rec["kev_due_date"] or (trace.get("kev_due_date") if rec["cisa_kev"] else None) or ""
+                    kev_ransom = rec["kev_ransomware"]
+                    if rec["cisa_kev"] and (kev_ransom is None or kev_ransom == ""):
+                        kev_ransom = trace.get("kev_ransomware")
+                    kev_ransom_str = "" if kev_ransom is None else kev_ransom
+
+                    epss_score = rec["epss_score"] if rec["epss_score"] is not None else trace.get("epss_score")
+                    epss_pct = rec["epss_percentile"] if rec["epss_percentile"] is not None else trace.get("epss_percentile")
+
+                    row_dict: Dict[str, Any] = {
+                        "run_id": rec["run_id"] or rid,
+                        "asset_id": rec["asset_id"] or "",
+                        "asset_hostname": rec["asset_hostname"] or "",
+                        "asset_ip": rec["asset_ip"] or "",
+                        "target_uri": rec["target_uri"] or "",
+                        "image_or_repo": rec["image_or_repo"] or "",
+                        "inventory_status": rec["inventory_status"] or "",
+                        "owner": rec["owner"] or "",
+                        "internet_facing": rec["internet_facing"],
+                        "asset_criticality": rec["asset_criticality"] or "",
+                        "finding_id": rec["finding_id"] or "",
+                        "title": rec["title"] or "",
+                        "severity": rec["severity"] or "",
+                        "scoring_track": rec["scoring_track"] or "",
+                        "detection_mode": rec["detection_mode"] or "",
+                        "signal_reliability": rec["signal_reliability"],
+                        "ingestion_confidence": rec["ingestion_confidence"],
+                        "fidelity_tier": rec["fidelity_tier"] or "",
+                        "source_format": rec["source_format"] or "",
+                        "primary_cve": rec["primary_cve"] or "",
+                        "cvss_score": cvss_score,
+                        "cvss_version": cvss_ver or "",
+                        "cvss_provenance": cvss_prov,
+                        "epss_score": epss_score,
+                        "epss_percentile": epss_pct,
+                        "cisa_kev": bool(rec["cisa_kev"]),
+                        "verified_exploit": bool(rec["verified_exploit"]),
+                        "raw_score": rec["raw_score"],
+                        "operational_score": rec["operational_score"],
+                        "risk_band": rec["risk_band"] or "",
+                        "priority_tier": rec["priority_tier"] or "",
+                        "oal_compat": rec["oal_compat"] or "",
+                        "ssvc_action": rec["ssvc_action"] or "",
+                        "sla_bucket": rec["sla_bucket"] or "",
+                        "sla_days": rec["sla_days"],
+                        "decision_status": rec["decision_status"] or "active",
+                        "affected_port": rec["affected_port"],
+                        "protocol": rec["protocol"] or "",
+                        "is_deduplicated": bool(rec["is_deduplicated"]),
+                        "source_count": rec["source_count"],
+                        "canonical_key": rec["canonical_key"] or "",
+                        "cves": _json_list_to_joined(rec["cves_json"]),
+                        "cwes": _json_list_to_joined(rec["cwes_json"]),
+                        "ghsa_ids": _json_list_to_joined(rec["ghsa_ids_json"]),
+                        "cvss_vector": cvss_vec,
+                        "kev_date_added": kev_added,
+                        "kev_due_date": kev_due,
+                        "kev_ransomware": kev_ransom_str,
+                        "heuristic_exploit_mention": bool(rec["heuristic_exploit_mention"]),
+                        "package_purl": rec["package_purl"] or "",
+                        "location_uri": rec["location_uri"] or "",
+                        "line_number": rec["line_number"],
+                        "service_name": rec["service_name"] or "",
+                        "open_ports": _json_list_to_joined(rec["open_ports_json"]),
+                        "aci_capabilities": _json_list_to_joined(rec["capabilities_json"]),
+                        "aci_chains": _json_list_to_joined(rec["chains_json"]),
+                        "aci_confidence": rec["aci_confidence"],
+                        "aci_uplift_score": rec["aci_uplift_score"],
+                        "description": rec["description"] or "",
+                        "solution": rec["solution"] or "",
+                        "matched_rule_id": rec["matched_rule_id"] or "",
+                        "decision_id": rec["decision_id"] or "",
+                        "rationale_summary": rec["rationale_summary"] or "",
+                        "epss_model_version": rec["epss_model_version"] or trace.get("epss_model_version") or "",
+                        "epss_date": rec["epss_date"] or trace.get("epss_date") or "",
+                        "enrichment_sources": _json_list_to_joined(rec["sources_json"]),
+                        "score_trace_json": rec["score_trace_json"] or "",
+                        "assumed_state_json": rec["assumed_state_json"] or "",
+                    }
+                    row_out = (
+                        {col: _sanitize_csv_cell(row_dict.get(col)) for col in fieldnames}
+                        if csv_sanitization
+                        else {col: row_dict.get(col) for col in fieldnames}
+                    )
+                    writer.writerow(row_out)
+
+        if pfh is not None:
+            resolved = pfh.ensure_writable_file(target, label="CSV-Output", create_parents=True, overwrite=True)
+            with pfh.open_for_write(resolved, mode="w", encoding="utf-8", label="CSV-Output", newline="") as fh:
+                _write_rows(fh)
+            return Path(resolved)
+
+        with open_for_write_non_pfh(target, label="CSV-Output", encoding="utf-8", newline="") as fh:
+            _write_rows(fh)
+        return target
+    finally:
+        try:
+            cursor.close()
+        except Exception:
+            pass

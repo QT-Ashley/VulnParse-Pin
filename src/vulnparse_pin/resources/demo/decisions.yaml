@@ -1,0 +1,25 @@
+version: v2
+decisions:
+  - id: dec-internal-curl-defer
+    asset_pattern: "*10.20.1.50*"
+    cve_or_rule_id: CVE-2023-38545
+    status: deferred
+    rationale: "Internal-only legacy batch worker behind mTLS; outbound SOCKS5 proxy disabled until Q1 OS refresh."
+    owner: core-infra@acme.test
+    created_at: "2026-10-01"
+    expires_at: "2027-06-01"
+    assumptions:
+      in_kev: false
+      max_epss: 0.04
+      internet_facing: false
+  - id: dec-edge-xz-defer
+    asset_pattern: "*203.0.113.10*"
+    cve_or_rule_id: CVE-2024-3094
+    status: deferred
+    rationale: "Initially deferred before KEV addition and EPSS spike; rebuild edge base image if threat posture changes."
+    owner: platform-sec@acme.test
+    created_at: "2026-09-15"
+    expires_at: "2027-06-01"
+    assumptions:
+      in_kev: false
+      max_epss: 0.02

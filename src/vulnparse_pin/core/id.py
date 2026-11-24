@@ -1,16 +1,12 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 import hashlib
+import ipaddress
 import re
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlsplit
 
 _WS = re.compile(r"\s+")
 _PUNT = re.compile(r"[^a-z0-9:/._-]+")
@@ -90,3 +86,158 @@ def make_finding_id(canon: str) -> str:
     :rtype: str
     """
     return "fid_v1_" + _sha16(canon)
+
+
+_PLACEHOLDER_TARGETS = frozenset({"", "-", "n/a", "na", "none", "null", "unknown", "unknown_host"})
+
+
+def normalize_ip_value(ip: Optional[str]) -> Optional[str]:
+    """Normalize an IPv4/IPv6 literal to canonical compressed lowercase string, or None."""
+    if not ip:
+        return None
+    raw = str(ip).strip()
+    if not raw or raw.lower() in _PLACEHOLDER_TARGETS:
+        return None
+    if "%" in raw:
+        raw = raw.split("%", 1)[0].strip()
+    try:
+        return ipaddress.ip_address(raw).compressed.lower()
+    except ValueError:
+        return None
+
+
+def normalize_hostname_value(hostname: Optional[str]) -> Optional[str]:
+    """Normalize an FQDN/hostname (lowercased, trailing dot stripped), or None if placeholder."""
+    if not hostname:
+        return None
+    raw = str(hostname).strip().lower().rstrip(".")
+    if not raw or raw in _PLACEHOLDER_TARGETS:
+        return None
+    return raw
+
+
+def normalize_target_uri(target_uri: Optional[str]) -> Optional[str]:
+    """Normalize URL/URI targets consistently (lowercase scheme/host, strip default ports and trailing slash)."""
+    if not target_uri:
+        return None
+    raw = str(target_uri).strip()
+    if not raw or raw.lower() in _PLACEHOLDER_TARGETS:
+        return None
+    if "://" not in raw:
+        normalized = raw.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        return normalized.rstrip("/") or "/"
+    parts = urlsplit(raw)
+    scheme = parts.scheme.lower()
+    host = (parts.hostname or "").lower().rstrip(".")
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    if (scheme in ("http", "ws") and port == 80) or (scheme in ("https", "wss") and port == 443):
+        port = None
+    if host:
+        if ":" in host and not host.startswith("["):
+            host_fmt = f"[{host}]"
+        else:
+            host_fmt = host
+        netloc = f"{host_fmt}:{port}" if port is not None else host_fmt
+    else:
+        netloc = parts.netloc.lower()
+    path = parts.path or ""
+    if path == "/":
+        path = ""
+    elif len(path) > 1:
+        path = path.rstrip("/")
+    return f"{scheme}://{netloc}{path}"
+
+
+def normalize_image_or_repo(image_or_repo: Optional[str]) -> Optional[str]:
+    """Normalize container image references or repository identifiers consistently."""
+    if not image_or_repo:
+        return None
+    raw = str(image_or_repo).strip()
+    if not raw or raw.lower() in _PLACEHOLDER_TARGETS:
+        return None
+    if "://" in raw:
+        norm = normalize_target_uri(raw)
+        if norm and norm.endswith(".git"):
+            norm = norm[:-4]
+        return norm
+    lowered = raw.lower().rstrip("/")
+    for prefix in ("index.docker.io/library/", "registry-1.docker.io/library/", "docker.io/library/"):
+        if lowered.startswith(prefix):
+            lowered = lowered[len(prefix):]
+            break
+    else:
+        for prefix in ("index.docker.io/", "registry-1.docker.io/"):
+            if lowered.startswith(prefix):
+                lowered = "docker.io/" + lowered[len(prefix):]
+                break
+    if lowered.endswith(".git"):
+        lowered = lowered[:-4]
+    return lowered or None
+
+
+def canonicalize_target_key(
+    ip: Optional[str] = None,
+    hostname: Optional[str] = None,
+    target_uri: Optional[str] = None,
+    image_or_repo: Optional[str] = None,
+    *,
+    ip_address: Optional[str] = None,
+    explicit_asset_id: Optional[str] = None,
+) -> str:
+    """
+    Build a deterministic canonical target key across IP, FQDN/hostname, URI, and image/repo.
+    """
+    if explicit_asset_id and str(explicit_asset_id).strip():
+        return f"id={str(explicit_asset_id).strip()}"
+
+    norm_ip = normalize_ip_value(ip if ip is not None else ip_address)
+    norm_host = normalize_hostname_value(hostname)
+    if norm_host is not None:
+        host_as_ip = normalize_ip_value(norm_host)
+        if host_as_ip is not None:
+            if norm_ip is None:
+                norm_ip = host_as_ip
+            norm_host = None
+        elif norm_ip is not None and norm_host == norm_ip:
+            norm_host = None
+
+    norm_image = normalize_image_or_repo(image_or_repo)
+    norm_uri = normalize_target_uri(target_uri)
+
+    if norm_image is not None:
+        parts = [f"image={norm_image}"]
+        if norm_host is not None and norm_host != norm_image:
+            parts.append(f"host={norm_host}")
+        if norm_ip is not None:
+            parts.append(f"ip={norm_ip}")
+        return "|".join(parts)
+
+    if norm_host is not None or norm_ip is not None:
+        parts = []
+        if norm_host is not None:
+            parts.append(f"host={norm_host}")
+        if norm_ip is not None:
+            parts.append(f"ip={norm_ip}")
+        return "|".join(parts)
+
+    if norm_uri is not None:
+        return f"uri={norm_uri}"
+
+    return "unknown"
+
+
+def make_asset_id_v2(canonical_key: str) -> str:
+    """Create canonical v2 asset ID: aid_v2_<20-hex-sha256>."""
+    digest = hashlib.sha256(f"vpp:asset:v2|{canonical_key}".encode("utf-8")).hexdigest()[:20]
+    return f"aid_v2_{digest}"
+
+
+def make_finding_id_v2(asset_id: str, dedup_key: str) -> str:
+    """Create canonical v2 finding ID: fid_v2_<20-hex-sha256>."""
+    digest = hashlib.sha256(f"vpp:finding:v2|asset={asset_id}|key={dedup_key}".encode("utf-8")).hexdigest()[:20]
+    return f"fid_v2_{digest}"

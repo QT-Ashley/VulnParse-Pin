@@ -1,33 +1,34 @@
 # ADR Workflow
 
-This document defines the lightweight Architecture Decision Record (ADR) process used for architecture-impacting changes.
+This document defines the Architecture Decision Record (ADR) process used for architecture-impacting changes in VulnParse-Pin (`Apache-2.0`).
 
 ## Purpose
 
-Use ADRs to make major decisions explicit, reviewable, and historically traceable.
+Use ADRs to make major architectural and security boundary decisions explicit, reviewable, and historically traceable.
 
 An ADR is required when a change alters one or more core seams:
 
-1. Parser detection/selection behavior
-2. Pass pipeline contracts or pass ordering/dependencies
-3. Enrichment orchestration and source contract behavior
-4. Output schema compatibility or long-term artifact semantics
-5. Runtime policy or security default behavior
+1. Parser detection, streaming reader, or XML/archive security behavior
+2. DuckDB `.vpp.db` schema (`schema.sql`), canonical identity (`aid_v2_`/`fid_v2_`), or cross-scanner deduplication
+3. Pass pipeline contracts (`run_v2_duckdb_pipeline`), scoring/triage profiles (`Scoring@3.0`, `Triage@2.0`), or `DiffEngine` gate semantics
+4. Enrichment orchestration, HMAC cache integrity, or CVSS provenance precedence
+5. Output schemas (`RunManifest`, `assets.schema.json`, `decisions.schema.json`, Dossier/Roadmap contracts)
+6. Runtime security defaults (PFH, `_UMASK_LOCK`, read-only `vpp verify`, clean-room `Apache-2.0` dependency boundaries)
 
 ## ADR Lifecycle
 
-1. Draft: create a new ADR from template before implementation starts.
-2. Review: link ADR in PR and request maintainer review.
-3. Accept or reject: maintainers set final status.
-4. Implement: code and tests must align with accepted ADR.
-5. Supersede (if needed): create a new ADR and mark older one superseded.
+1. **Draft:** Create a new ADR from [ADR Template](adr/ADR-Template.md) before implementation starts.
+2. **Review:** Link the ADR in the PR alongside the [Architecture Review Checklist](Architecture%20Review%20Checklist.md).
+3. **Accept or reject:** Maintainers record the final status.
+4. **Implement:** Code, schemas, and tests must align with the accepted ADR.
+5. **Supersede or annotate:** Never overwrite historical decisions silently; either create a superseding ADR or add a dated `v2.x Status` note referencing subsequent evolution.
 
 ## File Location and Naming
 
 Store ADRs in `documentation/docs/adr/` using zero-padded numbering:
 
-- `ADR-0001-title.md`
-- `ADR-0002-title.md`
+- `ADR-0001-config-seam.md`
+- `ADR-0002-enrichment-seam.md`
 
 Do not renumber existing ADRs.
 
@@ -37,29 +38,19 @@ Do not renumber existing ADRs.
 2. Date
 3. Context and problem statement
 4. Decision
-5. Consequences (positive and negative)
-6. Compatibility impact
-7. Test and rollout plan
-8. Rollback strategy
+5. Alternatives considered
+6. Consequences (positive and negative)
+7. Compatibility & licensing impact (including clean-room `Apache-2.0` dependency compliance)
+8. Test and rollout plan
+9. Rollback strategy
 
 Use the template at [ADR Template](adr/ADR-Template.md).
 
-## PR Requirements for ADR-Scoped Changes
-
-For architecture-impacting PRs:
-
-1. ADR link is present in PR description.
-2. ADR status is `Accepted` before merge.
-3. Contract tests and docs updates are included.
-4. Changelog notes reference the ADR when user-visible behavior changes.
-
 ## When ADR Is Not Required
 
-ADR is generally not required for:
-
-1. Pure bug fixes that do not alter architecture or contracts.
-2. Internal refactors preserving behavior and contract semantics.
-3. Documentation-only updates without behavior changes.
+- Pure bug fixes that do not alter architecture, schema, or security contracts
+- Internal refactors preserving behavior and contract semantics
+- Documentation-only updates without behavior changes
 
 When uncertain, default to opening a brief ADR.
 

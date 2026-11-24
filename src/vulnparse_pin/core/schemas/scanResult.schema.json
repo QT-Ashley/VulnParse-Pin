@@ -253,7 +253,35 @@
               "ghsa_advisory_count": { "type": ["integer", "null"] },
               "ghsa_max_severity": { "type": ["string", "null"] },
               "ghsa_match_type": { "type": ["string", "null"] },
-              "selected_for_display": { "type": ["boolean", "null"] }
+              "selected_for_display": { "type": ["boolean", "null"] },
+              "cwe_ids": {
+                "type": ["array", "null"],
+                "items": { "type": "string" }
+              },
+              "cwe_id": { "type": ["string", "null"] },
+              "cvss_provenance": { "type": ["string", "null"] },
+              "cvss_version": { "type": ["string", "null"] },
+              "epss_percentile": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+              "epss_model_version": { "type": ["string", "null"] },
+              "epss_date": { "type": ["string", "null"] },
+              "kev_date_added": { "type": ["string", "null"] },
+              "kev_due_date": { "type": ["string", "null"] },
+              "kev_ransomware": { "type": ["boolean", "string", "null"] },
+              "kev_required_action": { "type": ["string", "null"] },
+              "verified_exploit": { "type": ["boolean", "null"] },
+              "heuristic_exploit_mention": { "type": ["boolean", "null"] },
+              "ghsa_ids": {
+                "type": ["array", "null"],
+                "items": { "type": "string" }
+              },
+              "osv_ids": {
+                "type": ["array", "null"],
+                "items": { "type": "string" }
+              },
+              "sources": {
+                "type": ["array", "null"],
+                "items": { "type": "string" }
+              }
             }
           }
         },
@@ -283,7 +311,7 @@
         },
         "fidelity_tier": {
           "type": ["string", "null"],
-          "enum": ["full", "partial", "minimal", null],
+          "enum": ["full", "partial", "minimal", "high", "medium", "low", null],
           "description": "Ingestion fidelity tier based on scanner export richness"
         },
         "missing_fields": {
@@ -314,7 +342,7 @@
           "type": ["number", "null"],
           "description": "Initial risk score calculated by scoring pass before adjustments",
           "minimum": 0,
-          "maximum": 10
+          "maximum": 25.0
         },
         "risk_score": {
           "type": ["number", "null"],
@@ -334,7 +362,36 @@
         "triage_priority": {
           "type": ["string", "null"],
           "description": "Triage priority assigned by TopN pass (Critical, High, etc.)"
-        }
+        },
+        "cwes": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        },
+        "ghsa_ids": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        },
+        "service_name": { "type": ["string", "null"] },
+        "location_uri": { "type": ["string", "null"] },
+        "line_number": { "type": ["integer", "null"] },
+        "package_purl": { "type": ["string", "null"] },
+        "detection_mode": { "type": ["string", "null"] },
+        "tags": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        },
+        "scoring_track": { "type": ["string", "null"] },
+        "primary_cve": { "type": ["string", "null"] },
+        "signal_reliability": { "type": ["number", "null"], "minimum": 0, "maximum": 2 },
+        "epss_percentile": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "cvss_provenance": { "type": ["string", "null"] },
+        "cvss_version": { "type": ["string", "null"] },
+        "triage_profile": { "type": ["string", "null"] },
+        "ssvc_action": { "type": ["string", "null"] },
+        "sla_bucket": { "type": ["string", "null"] },
+        "sla_days": { "type": ["integer", "null"] },
+        "decision_status": { "type": ["string", "null"] },
+        "decision_id": { "type": ["string", "null"] }
       }
     },
     "DerivedContext": {

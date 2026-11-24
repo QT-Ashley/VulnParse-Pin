@@ -1,4 +1,19 @@
-version: v1
+version: v2
+profile: default
+
+signal_reliability:
+  enabled: true
+  weights:
+    active_dast: 1.0
+    credentialed_host: 1.0
+    sca_container: 0.90
+    uncredentialed_banner: 0.85
+    static_sast: 0.55
+    network_probe: 0.80
+
+triage:
+  default_profile: default
+  static_sast_p1_cap: true
 
 feed_cache:
   defaults:
@@ -11,6 +26,8 @@ feed_cache:
     epss: 6
     nvd_yearly: 24
     nvd_modified: 2
+    osv: 24
+    ghsa: 24
 
   feeds:
     exploit_db:
@@ -27,11 +44,14 @@ feed_cache:
       ttl_yearly: 24
       ttl_modified: 2
       start_year: 2002
-      end_year: 2025
+      end_year: null
       sqlite_enforce_permissions: true
       sqlite_file_mode: "0o600"
       sqlite_max_age_hours: 336
       sqlite_max_rows: 500000
+    osv:
+      enabled: true
+      ttl_hours: 24
 
 summary:
   top_n_findings: 20
@@ -43,8 +63,9 @@ enrichment:
   ghsa_cache:
     sqlite_max_age_hours: 336
     sqlite_max_rows: 500000
+  osv_source: null
   confidence:
-    model_version: v1
+    model_version: v2
     max_score: 100
     base_scanner: 35
     weights:
@@ -53,6 +74,7 @@ enrichment:
       epss: 10
       exploitdb: 10
       ghsa: 15
+      osv: 15
     ghsa_signals:
       advisory_confidence_bonus: 3
       max_advisory_confidence_bonus: 9
@@ -76,4 +98,3 @@ webhook:
   allow_spool: true
   spool_subdir: webhook_spool
   endpoints: []
-

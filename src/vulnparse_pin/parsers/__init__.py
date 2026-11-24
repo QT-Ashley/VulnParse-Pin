@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 from vulnparse_pin.core.schema_detector import ParserSpec
 from .nessus_parser import NessusParser
 from .openvas_parser import OpenVASParser
@@ -7,6 +10,8 @@ from .qualys_parser import QualysXMLParser
 from .nmap_parser import NmapXMLParser
 from .nessus_csv_parser import NessusCSVParser
 from .qualys_csv_parser import QualysCSVParser
+from .sarif_parser import SarifParser
+from .nuclei_jsonl_parser import NucleiJSONLParser
 
 PARSER_SPECS = [
     ParserSpec(name="openvas-xml", parser_cls=OpenVASXMLParser,
@@ -21,8 +26,15 @@ PARSER_SPECS = [
 
     ParserSpec(name="nmap-xml", parser_cls=NmapXMLParser,
                formats=("xml",), scanner="nmap", priority=25,
-               stability="experimental",
-               deprecation_notice="Nmap parser is scaffolded and will be completed in v1.2.1"),
+               stability="stable"),
+
+    ParserSpec(name="sarif-2.1.0", parser_cls=SarifParser,
+               formats=("sarif", "json"), scanner="sarif", priority=12,
+               stability="stable"),
+
+    ParserSpec(name="nuclei-jsonl", parser_cls=NucleiJSONLParser,
+               formats=("jsonl", "json"), scanner="nuclei", priority=14,
+               stability="stable"),
 
     ParserSpec(name="openvas-json", parser_cls=OpenVASParser,
                formats=("json",), scanner="openvas", priority=10,

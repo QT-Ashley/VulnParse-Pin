@@ -17,8 +17,7 @@ Enable security teams to turn raw scanner output into trusted remediation decisi
 ## Governance intent
 
 - Keep core behavior reproducible and test-backed
-- Support community collaboration through open licensing
-- Provide commercial pathways for organizations with proprietary constraints
+- Support community collaboration and frictionless adoption through permissive Apache 2.0 open-source licensing (v2.0.0+)
 
 ## Success criteria
 

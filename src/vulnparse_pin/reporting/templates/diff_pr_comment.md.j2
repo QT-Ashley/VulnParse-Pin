@@ -1,0 +1,70 @@
+## VulnParse-Pin Scan Diff Summary (`{{ diff.base_run_id | md_escape }}` -> `{{ diff.target_run_id | md_escape }}`)
+
+- **Diff ID:** `{{ diff.diff_id | md_escape }}`
+- **Generated (UTC):** {{ diff.generated_at_utc | md_escape }}
+
+| Category | Count |
+|----------|-------|
+| Newly Introduced High-Risk (All New) | **{{ diff.summary.newly_introduced_high_risk | default(0) }}** ({{ diff.summary.newly_introduced_all | default(0) }} total new) |
+| Threat-Intel Escalated | **{{ diff.summary.threat_intel_escalated | default(0) }}** |
+| Verified Remediated | **{{ diff.summary.verified_remediated | default(0) }}** (patched={{ diff.summary.verified_remediated_confirmed | default(0) }}, asset_missing={{ diff.summary.verified_remediated_asset_missing | default(0) }}) |
+| Stale-Assumption Alerts (`invalidated_assumptions`) | **{{ diff.summary.invalidated_assumptions | default(0) }}** |
+| Shadow Assets (New / Resolved) | {{ diff.summary.shadow_assets_new | default(0) }} / {{ diff.summary.shadow_assets_resolved | default(0) }} |
+
+### Stale-Assumption Alerts
+
+{% if diff.invalidated_assumptions %}
+> **WARNING:** {{ diff.invalidated_assumptions | length }} previously deferred, risk-accepted, or baseline finding(s) breached assumption predicates.
+
+| Finding ID | Asset | CVE | Kind | Decision ID | Violated Predicates | Tier Drift | Reasons |
+|------------|-------|-----|------|-------------|---------------------|------------|---------|
+{% for item in diff.invalidated_assumptions %}
+| {{ item.finding_id | md_escape }} | {{ (item.hostname or item.ip_address or item.asset_id) | md_escape }} | {{ (item.primary_cve or 'N/A') | md_escape }} | {{ item.invalidation_kind | md_escape }} | {{ (item.decision_id or 'N/A') | md_escape }} | {{ (item.violated_predicates | join(', ')) | md_escape }} | {{ (item.base_priority_tier or 'N/A') | md_escape }} -> {{ (item.target_priority_tier or 'N/A') | md_escape }} | {{ (item.reasons | join('; ')) | md_escape }} |
+{% endfor %}
+{% else %}
+No stale-assumption alerts detected.
+{% endif %}
+
+### Newly Introduced High-Risk Findings
+
+{% if diff.newly_introduced_high_risk %}
+| Finding ID | Asset | CVE / Title | Tier / SLA | Op Score | CVSS (Prov) | EPSS | KEV | Status |
+|------------|-------|-------------|------------|----------|-------------|------|-----|--------|
+{% for item in diff.newly_introduced_high_risk %}
+| {{ item.finding_id | md_escape }} | {{ (item.hostname or item.ip_address or item.asset_id) | md_escape }} | {{ (item.primary_cve or item.title) | md_escape }} | {{ (item.priority_tier or 'N/A') | md_escape }} / {{ (item.sla_bucket or 'N/A') | md_escape }} | {{ item.operational_score | fmt_score }} | {% if item.cvss_score is not none %}{{ item.cvss_score | fmt_score(1) }} ({{ (item.cvss_provenance or 'N/A') | md_escape }}){% else %}Missing{% endif %} | {{ item.epss_score | fmt_epss(item.epss_percentile) }} | {{ 'Yes' if item.in_kev else 'No' }} | {{ (item.decision_status or 'active') | md_escape }} |
+{% endfor %}
+{% else %}
+No newly introduced high-risk findings.
+{% endif %}
+
+### Threat-Intel Escalated Findings
+
+{% if diff.threat_intel_escalated %}
+| Finding ID | Asset | CVE / Title | Escalation Reasons | Priority (Base -> Target) | Op Score (Base -> Target) | KEV (Base -> Target) |
+|------------|-------|-------------|--------------------|---------------------------|---------------------------|----------------------|
+{% for item in diff.threat_intel_escalated %}
+| {{ item.finding_id | md_escape }} | {{ (item.hostname or item.ip_address or item.asset_id) | md_escape }} | {{ (item.primary_cve or item.title) | md_escape }} | {{ (item.escalation_reasons | join(', ')) | md_escape }} | {{ (item.base_priority_tier or 'N/A') | md_escape }} -> {{ (item.target_priority_tier or 'N/A') | md_escape }} | {{ item.base_operational_score | fmt_score }} -> {{ item.target_operational_score | fmt_score }} | {{ item.base_in_kev }} -> {{ item.target_in_kev }} |
+{% endfor %}
+{% else %}
+No persisting findings escalated in threat intelligence or exposure.
+{% endif %}
+
+### Verified Remediated Findings
+
+{% if diff.verified_remediated %}
+| Finding ID | Asset | CVE / Title | Remediation Status | Base Tier / Score | Base KEV |
+|------------|-------|-------------|--------------------|-------------------|----------|
+{% for item in diff.verified_remediated %}
+| {{ item.finding_id | md_escape }} | {{ (item.hostname or item.ip_address or item.asset_id) | md_escape }} | {{ (item.primary_cve or item.title) | md_escape }} | {{ item.remediation_status | md_escape }} | {{ (item.base_priority_tier or 'N/A') | md_escape }} / {{ item.base_operational_score | fmt_score }} | {{ 'Yes' if item.base_in_kev else 'No' }} |
+{% endfor %}
+{% else %}
+No findings verified remediated in this diff.
+{% endif %}
+
+{% if diff.shadow_assets_delta.newly_observed or diff.shadow_assets_delta.became_shadow or diff.shadow_assets_delta.resolved %}
+### Shadow Asset Changes
+
+- **Newly Observed Shadow Assets:** {{ diff.shadow_assets_delta.newly_observed | length }}
+- **Became Shadow Assets:** {{ diff.shadow_assets_delta.became_shadow | length }}
+- **Resolved Shadow Assets:** {{ diff.shadow_assets_delta.resolved | length }}
+{% endif %}

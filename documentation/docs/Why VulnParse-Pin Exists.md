@@ -28,7 +28,7 @@ VulnParse-Pin converts raw scanner artifacts into a normalized, enriched, and ra
 It does this with:
 
 - Schema detection and parser normalization
-- Intelligence enrichment (KEV, EPSS, NVD, Exploit-DB)
+- Intelligence enrichment (KEV, EPSS, NVD, Exploit-DB, GHSA)
 - Configurable scoring policy
 - Top-N triage pass for asset/finding prioritization
 
@@ -53,7 +53,7 @@ For organizations, this means:
 
 For contributors and researchers, this means:
 
-- Open implementation under AGPLv3+
+- Open implementation under the permissive Apache License, Version 2.0 (v2.0.0+)
 - Auditable internals for scoring and parser behavior
 - Practical code paths for experimentation in enrichment and ranking
 
@@ -62,4 +62,3 @@ For contributors and researchers, this means:
 VulnParse-Pin exists because vulnerability management needs a bridge between raw findings and operational decisions.
 
 That bridge must be open, testable, secure, and fast enough for real-world scale.
-

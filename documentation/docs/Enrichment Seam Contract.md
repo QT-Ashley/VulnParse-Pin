@@ -1,178 +1,62 @@
 # Enrichment Seam Contract
 
-This document defines an implementation-ready seam contract for enrichment, with staged migration and rollback guidance.
+This document defines the v2.0.0 seam contract separating threat-intelligence source loading, finding/snapshot enrichment application, and downstream pipeline handoff.
 
 ## Objective
 
-Create a clear orchestration boundary between:
+Isolate enrichment concerns across explicit module boundaries:
 
-1. Source loading and cache retrieval
-2. Finding-level enrichment application
-3. Post-enrichment indexing and pass handoff
+1. **Source loading & cache verification** (`src/vulnparse_pin/app/enrichment_source_loader.py`)
+2. **Enrichment application & DuckDB snapshot hydration** (`src/vulnparse_pin/app/enrichment.py`)
+3. **Post-enrichment indexing & handoff** (`src/vulnparse_pin/app/index_builder.py`, `src/vulnparse_pin/app/enrichment_handoff.py`)
 
-The goal is to reduce coupling in `run_enrichment_pipeline` while preserving current behavior, performance, and auditability.
+## Implemented v2.0 Architecture
 
-## Current State (baseline)
+### Contract A: Source Loader (`EnrichmentSourceLoader`)
 
-Today, the enrichment stage combines several concerns in one flow:
+`EnrichmentSourceLoader` (`src/vulnparse_pin/app/enrichment_source_loader.py`) resolves `EnrichmentSourcePlan` from CLI flags and config policy and loads all 6 source families:
 
-1. Source selection and fetch/import (`KEV`, `EPSS`, `Exploit-DB`, `NVD`)
-2. Finding mutation and enrichment status updates
-3. Enrichment telemetry aggregation
-4. Post-enrichment index build and service wiring
-5. Immediate pass-runner handoff
+- **KEV** (`KEVFeedCache` / `kev_cache.sqlite3`)
+- **EPSS v5** (`EPSSFeedCache` / `epss_cache.sqlite3`)
+- **Exploit-DB** (`files_exploit.csv` via `FeedCacheManager`)
+- **NVD** (`NVDFeedCache` / `nvd_cache.sqlite3`)
+- **GHSA** (`GHSAEnrichmentSource` / `ghsa_cache.sqlite3`, opt-in via `--ghsa`)
+- **OSV** (`OSVEnrichmentSource` / `osv_cache.sqlite3`, opt-in via `--osv`)
 
-Primary orchestration lives in `src/vulnparse_pin/app/enrichment.py`.
+It returns `EnrichmentSourceResult`, encapsulating loaded lookup objects/dicts, source metadata (`epss_model_version`, `kev_catalog_version`, SHA-256 digests), and `nvd_status`.
 
-## Seam Contract
+### Contract B: DuckDB Snapshot Hydration (`populate_enrichment_snapshots`) & `EnrichmentApplicator`
 
-### Contract A: Source adapter boundary
+- **v2.0 DuckDB path (`populate_enrichment_snapshots`):** Queries `.vpp.db` (`finding_cves`, `findings`) for only the matched CVEs and `package_purl`s in the active `run_id`, applies `resolve_cvss_with_provenance()` (`NVD > CNA > GHSA > OSV > Scanner-Supplied > Missing`), merges KEV, EPSS v5, and Exploit-DB/negation-aware heuristic flags, and bulk-inserts rows into `enrichment_snapshots` while updating `runs.intel_metadata_json`.
+- **Legacy `ScanResult` path (`EnrichmentApplicator.apply`):** Applies loaded sources and `apply_heuristic_exploit_tags_batch()` in-memory for `ScanResult` callers, returning `EnrichmentApplyResult(scan_result, stats_summary)`.
 
-Each enrichment source should expose one source adapter contract.
+### Contract C: Post-Enrichment Index & Handoff
 
-```python
-class SourceAdapter(Protocol):
-    key: str  # kev | epss | exploit_db | nvd
+- `index_builder.py` builds `PostEnrichmentIndex` for `ScanResult` consumers.
+- `EnrichmentHandoffBuilder` (`enrichment_handoff.py`) attaches source metadata to `Services` and hands `EnrichmentPipelineState` off cleanly to `PassRunner` / `run_v2_duckdb_pipeline()`.
 
-    def load(self, ctx: RunContext, plan: SourceLoadPlan) -> SourceLoadResult:
-        ...
-```
+## Invariants
 
-#### SourceLoadPlan
+- **Strict source isolation:** Parsers never fetch network feeds; scoring/triage passes read `enrichment_snapshots` rather than querying external APIs or raw cache files.
+- **Fail-closed cache integrity:** `VP_FEED_CACHE_HMAC_KEY` and `VP_SQLITE_HMAC_KEY` anti-downgrade and quarantine rules are enforced inside the source/cache layer before data reaches `enrichment_snapshots`.
+- **Deterministic provenance:** Every snapshot records `cvss_provenance`, `sources_json`, `epss_model_version`, and `enrichment_confidence`.
 
-Required fields:
+## Blast Radius & Compatibility
 
-1. `mode`: `online` or `offline`
-2. `force_refresh`: bool
-3. `allow_regen`: bool
-4. `path_or_url`: optional source locator
+Affected modules:
 
-#### SourceLoadResult
+1. `src/vulnparse_pin/app/enrichment_source_loader.py`
+2. `src/vulnparse_pin/app/enrichment.py`
+3. `src/vulnparse_pin/app/enrichment_handoff.py`
+4. `src/vulnparse_pin/app/index_builder.py`
+5. `src/vulnparse_pin/utils/{enricher.py,feed_cache.py,nvdcacher.py,ghsa_enrichment.py,osv_enrichment.py,exploit_enrichment_service.py}`
 
-Required fields:
-
-1. `enabled`: bool
-2. `available`: bool
-3. `payload`: typed source data or `None`
-4. `status`: canonical status string for runmanifest/docs
-5. `meta`: source metadata (ttl/cache/source-type)
-
-### Contract B: Enrichment application boundary
-
-Enrichment application should consume source results and mutate findings through one orchestrated step.
-
-```python
-class EnrichmentApplicator(Protocol):
-    def apply(
-        self,
-        ctx: RunContext,
-        scan: ScanResult,
-        sources: dict[str, SourceLoadResult],
-        *,
-        offline_mode: bool,
-    ) -> EnrichmentApplyResult:
-        ...
-```
-
-#### EnrichmentApplyResult
-
-Required fields:
-
-1. `scan_result`: enriched `ScanResult`
-2. `source_summary`: stable source availability summary
-3. `stats`: normalized enrichment counters
-4. `warnings`: machine-readable warning list
-
-### Contract C: Pipeline handoff boundary
-
-Post-enrichment indexing and derived pass handoff should consume `EnrichmentApplyResult` and produce one handoff object.
-
-```python
-@dataclass(frozen=True)
-class EnrichmentPipelineState:
-    scan_result: ScanResult
-    sources: dict
-    nvd_status: str
-```
-
-Current `EnrichmentPipelineState` in `src/vulnparse_pin/app/enrichment.py` remains the compatibility target for this spike.
-
-## Non-goals
-
-1. No scoring/TopN algorithm changes
-2. No scanner parser behavior changes
-3. No runmanifest schema changes
-4. No feed format changes
-
-## Migration Sketch
-
-### Stage 0 (compatibility wrappers)
-
-1. Keep `run_enrichment_pipeline` as entrypoint.
-2. Add wrapper adapters around existing loaders (`load_kev`, `load_epss`, `load_exploit_data`, and the NVD cache refresh flow).
-3. Preserve all existing source flags and semantics.
-
-### Stage 1 (source loading split)
-
-1. Move source loading decisions into a dedicated source-orchestrator module.
-2. Return `SourceLoadResult` per source.
-3. Keep current apply logic unchanged.
-
-### Stage 2 (application split)
-
-1. Move finding-level enrichment into an applicator module.
-2. Keep exploit batch/parallel behavior unchanged.
-3. Keep existing stats fields and status update behavior.
-
-### Stage 3 (index/handoff split)
-
-1. Isolate post-enrichment index build and `RunContext.services` rewire.
-2. Keep pass execution order and dependency validation unchanged.
-
-### Stage 4 (cleanup)
-
-1. Remove transitional glue once tests prove parity.
-2. Keep backwards-compatible output shape and source summary keys.
-
-## Blast Radius
-
-Potentially affected areas:
-
-1. `src/vulnparse_pin/app/enrichment.py`
-2. `src/vulnparse_pin/utils/enricher.py`
-3. `src/vulnparse_pin/utils/exploit_enrichment_service.py`
-4. `src/vulnparse_pin/utils/nvdcacher.py`
-5. runmanifest source summary consumers
-
-Low-risk by design because migration stages preserve existing entrypoints and output contracts.
-
-## Rollback Strategy
-
-1. Retain original `run_enrichment_pipeline` path behind one feature-toggle branch during staged implementation.
-2. If drift is detected, route back to legacy orchestration immediately.
-3. Keep legacy source-summary map keys stable: `exploitdb`, `kev`, `epss`, `nvd`, `stats`.
-
-## Verification Plan
-
-Minimum validation for implementation phase:
-
-1. Existing enrichment-related tests pass unchanged.
-2. Runmanifest tests confirm unchanged summary shape and expected stats.
-3. Offline/online matrix validation for KEV, EPSS, Exploit-DB, and NVD status paths.
-4. Large-input sanity run to verify no regression in batching/parallel behavior.
-
-## Exit Criteria
-
-1. Seam contracts are documented and accepted.
-2. Migration plan is staged and reversible.
-3. Blast radius and rollback steps are explicit.
-4. Test matrix for parity is defined.
+Both `run_enrichment_pipeline()` (for legacy `ScanResult` callers) and `populate_enrichment_snapshots()` (for v2.0 `.vpp.db` pipelines) share `EnrichmentSourceLoader` and `resolve_cvss_with_provenance()`.
 
 ## Related Docs
 
 - [Architecture](Architecture.md)
 - [Pipeline System](Pipeline%20System.md)
-- [Extension Playbooks](Extension%20Playbooks.md)
-- [Architecture Review Checklist](Architecture%20Review%20Checklist.md)
-- [ADR Workflow](ADR%20Workflow.md)
+- [Enrichment Deep Dive](Enrichment%20Deep%20Dive.md)
+- [Caching Deep Dive](Caching%20Deep%20Dive.md)
 - [ADR-0002: Enrichment Seam Architecture](adr/ADR-0002-enrichment-seam.md)

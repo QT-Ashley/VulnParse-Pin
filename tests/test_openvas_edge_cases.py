@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 import pytest
 from vulnparse_pin.parsers.openvas_parser import OpenVASParser
 from vulnparse_pin.utils.logger import LoggerWrapper

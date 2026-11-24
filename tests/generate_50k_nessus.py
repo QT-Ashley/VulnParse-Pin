@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """
 Generate a moderately large Nessus XML with 50k findings that's valid and parseable.
 Strategy: Clone full hosts rather than duplicating items within, to preserve structure.
