@@ -36,6 +36,13 @@ Normalize • Enrich • Prioritize • Defend • Diff
 
 > **License Forward Cut (`v2.0.0+`):** VulnParse-Pin `v2.0.0` and later are licensed under **Apache-2.0** with zero copyleft Python runtime dependencies. Historical releases `v1.0.0–v1.2.2` remain licensed under `AGPL-3.0-or-later`.
 
+<p align="center">
+  <img src="documentation/img/vpp-decision-dossier.png" alt="VulnParse-Pin v2.0.0 Decision Defense Dossier (dossier.html)" width="920">
+</p>
+<p align="center">
+  <em>Self-contained offline <strong>Decision Defense Dossier</strong> (<code>dossier.html</code>) — CISA KEV + EPSS v5 + CVSS provenance, stale-deferral invalidation alerts, shadow-asset disclosure, and SHA-256 <code>RunManifest</code> chain with zero external CDNs.</em>
+</p>
+
 ---
 
 ## Try It Offline in 60 Seconds

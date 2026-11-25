@@ -228,3 +228,48 @@ async def test_tui_handles_missing_empty_and_zero_finding_db_safely(tmp_path: Pa
         await pilot.pause()
         assert "[WARN] No finding selected" in empty_app.last_status_message
         assert "No findings match" in str(empty_app.query_one("#finding-inspector", Static).render())
+
+
+@pytest.mark.asyncio
+async def test_tui_skips_empty_latest_run_and_cycles_runs_with_r(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    demo_db, decisions_path, export_dir = _seed_demo_workspace(tmp_path, monkeypatch)
+    with VppDatabase(demo_db, read_only=False) as db:
+        ensure_run(
+            db,
+            "empty-latest-run",
+            created_at_utc="2099-01-01T00:00:00Z",
+            profile="default",
+            overwrite=True,
+        )
+
+    app = VppApp(
+        db_path=demo_db,
+        decisions_path=decisions_path,
+        output_dir=export_dir,
+        page_size=25,
+    )
+    async with app.run_test(size=(130, 42)) as pilot:
+        await pilot.pause()
+        # Skips empty-latest-run and opens demo-current with populated findings
+        assert app.run_id == "demo-current"
+        assert app.total_filtered > 0
+        assert len(app.available_runs) == 3
+
+        # Cycle backwards/next across runs with 'r'
+        await pilot.press("r")
+        await pilot.pause()
+        assert app.run_id == "demo-baseline"
+        assert app.total_filtered > 0
+
+        await pilot.press("r")
+        await pilot.pause()
+        assert app.run_id == "empty-latest-run"
+        assert app.total_filtered == 0
+        assert "Workspace DB" in str(app.query_one("#finding-inspector", Static).render())
+
+        await pilot.press("r")
+        await pilot.pause()
+        assert app.run_id == "demo-current"
+        assert app.total_filtered > 0

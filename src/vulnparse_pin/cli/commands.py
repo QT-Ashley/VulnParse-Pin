@@ -54,6 +54,7 @@ from vulnparse_pin.core.schema_detector import SchemaDetector
 from vulnparse_pin.parsers import PARSER_SPECS
 from vulnparse_pin.storage.db import VppDatabase, _check_no_symlinks_or_loops, _validate_duckdb_paths
 from vulnparse_pin.storage.repositories import (
+    delete_run,
     ensure_run,
     get_run_summary_counts,
     get_shadow_assets,
@@ -607,6 +608,11 @@ def _print_v2_summary(
         )
     if db_path is not None:
         print(f"  Workspace DB: {db_path}")
+        try:
+            is_default_db = Path(db_path).name == ".vpp.db" and Path(db_path).resolve().parent == Path.cwd().resolve()
+        except OSError:
+            is_default_db = False
+        print("  Open in TUI: vpp ui" if is_default_db else f"  Open in TUI: vpp ui --db {db_path}")
     if outputs:
         for k, v in outputs.items():
             if v is not None:
@@ -669,59 +675,68 @@ def run_scan_command(args: Any) -> int:
     }
 
     with VppDatabase(db_path) as db:
-        ensure_run(
-            db,
-            run_id,
-            vpp_version=__version__,
-            profile=args.profile,
-            config_sha256=config_hashes["config_yaml_sha256"],
-            assets_sha256=assets_sha,
-            decisions_sha256=decisions_sha,
-            input_files=[str(p) for p in args.input_files],
-            baseline_run_id=getattr(args, "baseline_run_id", None),
-            overwrite=bool(getattr(args, "run_id", None)),
-        )
+        had_existing_run = db.execute("SELECT 1 FROM runs WHERE run_id = ?", [run_id]).fetchone() is not None
+        try:
+            ensure_run(
+                db,
+                run_id,
+                vpp_version=__version__,
+                profile=args.profile,
+                config_sha256=config_hashes["config_yaml_sha256"],
+                assets_sha256=assets_sha,
+                decisions_sha256=decisions_sha,
+                input_files=[str(p) for p in args.input_files],
+                baseline_run_id=getattr(args, "baseline_run_id", None),
+                overwrite=bool(getattr(args, "run_id", None)),
+            )
 
-        _stream_files_to_db(
-            ctx,
-            runtime.detector,
-            db,
-            run_id,
-            args.input_files,
-            asset_matcher=asset_matcher,
-            allow_large=bool(getattr(args, "allow_large", False)),
-            allow_degraded_input=bool(getattr(args, "allow_degraded_input", True)),
-            strict_ingestion=bool(getattr(args, "strict_ingestion", False)) or bool(getattr(args, "strict_schema", False)),
-            min_ingestion_confidence=float(getattr(args, "min_ingestion_confidence", 0.0) or 0.0),
-            show_ingestion_summary=bool(getattr(args, "show_ingestion_summary", False)),
-        )
+            _stream_files_to_db(
+                ctx,
+                runtime.detector,
+                db,
+                run_id,
+                args.input_files,
+                asset_matcher=asset_matcher,
+                allow_large=bool(getattr(args, "allow_large", False)),
+                allow_degraded_input=bool(getattr(args, "allow_degraded_input", True)),
+                strict_ingestion=bool(getattr(args, "strict_ingestion", False)) or bool(getattr(args, "strict_schema", False)),
+                min_ingestion_confidence=float(getattr(args, "min_ingestion_confidence", 0.0) or 0.0),
+                show_ingestion_summary=bool(getattr(args, "show_ingestion_summary", False)),
+            )
 
-        sources = _load_duckdb_sources(ctx, db, run_id, args, runtime)
-        target_cves, target_purls = _collect_run_cves_and_purls(db, run_id)
-        populate_enrichment_snapshots(
-            db,
-            run_id,
-            ctx,
-            sources,
-            target_cves=target_cves,
-            target_purls=target_purls,
-        )
+            sources = _load_duckdb_sources(ctx, db, run_id, args, runtime)
+            target_cves, target_purls = _collect_run_cves_and_purls(db, run_id)
+            populate_enrichment_snapshots(
+                db,
+                run_id,
+                ctx,
+                sources,
+                target_cves=target_cves,
+                target_purls=target_purls,
+            )
 
-        v2_ctx = _build_v2_ctx(
-            ctx,
-            db=db,
-            run_id=run_id,
-            asset_matcher=asset_matcher,
-            decisions_registry=decisions_reg,
-        )
-        run_v2_duckdb_pipeline(
-            v2_ctx,
-            bundle=runtime.config_bundle,
-            profile=args.profile,
-            nmap_path=str(args.nmap_ctx) if getattr(args, "nmap_ctx", None) else None,
-            decisions_registry=decisions_reg,
-        )
-        _flush_ledger_to_db(db, run_id, v2_ctx)
+            v2_ctx = _build_v2_ctx(
+                ctx,
+                db=db,
+                run_id=run_id,
+                asset_matcher=asset_matcher,
+                decisions_registry=decisions_reg,
+            )
+            run_v2_duckdb_pipeline(
+                v2_ctx,
+                bundle=runtime.config_bundle,
+                profile=args.profile,
+                nmap_path=str(args.nmap_ctx) if getattr(args, "nmap_ctx", None) else None,
+                decisions_registry=decisions_reg,
+            )
+            _flush_ledger_to_db(db, run_id, v2_ctx)
+        except Exception:
+            if not had_existing_run:
+                try:
+                    delete_run(db, run_id)
+                except Exception:
+                    pass
+            raise
 
         diff_report = None
         if getattr(args, "baseline_run_id", None):

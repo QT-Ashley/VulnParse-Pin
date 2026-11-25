@@ -89,6 +89,7 @@
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
+      white-space: nowrap;
     }
     .badge-p1, .badge-kev, .badge-inv { background: var(--p1-bg); color: var(--p1); }
     .badge-p2 { background: var(--p2-bg); color: var(--p2); }
@@ -125,9 +126,9 @@
       padding: 7px 10px;
       text-align: left;
       vertical-align: top;
-      word-break: break-word;
+      overflow-wrap: break-word;
     }
-    th { background: #f1f5f9; font-weight: 600; }
+    th { background: #f1f5f9; font-weight: 600; white-space: nowrap; }
     code {
       background: var(--code-bg);
       padding: 1px 5px;

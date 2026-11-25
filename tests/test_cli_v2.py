@@ -27,7 +27,7 @@ from vulnparse_pin.cli.args import get_args
 from vulnparse_pin.cli.errors import VppError
 from vulnparse_pin.main import main
 from vulnparse_pin.storage.db import VppDatabase
-from vulnparse_pin.storage.repositories import get_run_summary_counts, query_findings_page
+from vulnparse_pin.storage.repositories import get_run_summary_counts, list_runs, query_findings_page
 
 
 @pytest.fixture(autouse=True)
@@ -413,3 +413,22 @@ def test_intel_status_and_legacy_alias_shim(
             assert "deprecated" in err_ver.lower()
 
         assert main(["--debug-path-policy"]) == 0
+
+
+def test_failed_scan_cleans_up_orphan_run_in_existing_db(tmp_path: Path) -> None:
+    db_path = tmp_path / ".vpp.db"
+    bad_xml = tmp_path / "broken.xml"
+    bad_xml.write_text("<not-valid-nessus", encoding="utf-8")
+
+    with ExitStack() as stack:
+        demo_dir = stack.enter_context(resources.as_file(resources.files("vulnparse_pin.resources.demo")))
+        rc_ok = main(["scan", str(demo_dir / "demo.nessus"), "--db", str(db_path), "--offline"])
+        assert rc_ok == 0
+
+    rc_fail = main(["scan", str(bad_xml), "--db", str(db_path), "--offline"])
+    assert rc_fail != 0
+
+    with VppDatabase(db_path, read_only=True) as db:
+        runs = list_runs(db)
+        assert len(runs) == 1
+        assert runs[0]["finding_count"] > 0

@@ -380,6 +380,43 @@ def _default_signal_reliability(detection_mode: Optional[str], ingestion_confide
     return 0.7
 
 
+_RUN_SCOPED_CHILD_TABLES: Tuple[str, ...] = (
+    "ledger_events",
+    "triage_decisions",
+    "scores",
+    "aci_signals",
+    "enrichment_snapshots",
+    "finding_cves",
+    "finding_evidence",
+    "findings",
+    "asset_aliases",
+    "assets",
+)
+
+
+def _clear_run_children(conn: duckdb.DuckDBPyConnection, run_id: str) -> None:
+    """Remove all run-scoped child rows for ``run_id`` prior to overwriting or deleting a run."""
+    for table in _RUN_SCOPED_CHILD_TABLES:
+        conn.execute(f"DELETE FROM {table} WHERE run_id = ?", [run_id])
+    conn.execute("DELETE FROM diff_events WHERE base_run_id = ? OR target_run_id = ?", [run_id, run_id])
+
+
+def delete_run(db: Any, run_id: str) -> None:
+    """Atomically delete a run row and all associated child records from DuckDB."""
+    conn = _get_conn(db)
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        _clear_run_children(conn, run_id)
+        conn.execute("DELETE FROM runs WHERE run_id = ?", [run_id])
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+
+
 def ensure_run(
     db: Any,
     run_id: str,
@@ -403,39 +440,49 @@ def ensure_run(
     files_json = json.dumps(list(input_files), ensure_ascii=True) if input_files is not None else None
 
     if overwrite:
-        conn.execute(
-            """
-            INSERT INTO runs (
-                run_id, created_at_utc, vpp_version, profile,
-                config_sha256, assets_sha256, decisions_sha256,
-                intel_metadata_json, manifest_digest, input_files_json, baseline_run_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (run_id) DO UPDATE SET
-                created_at_utc = EXCLUDED.created_at_utc,
-                vpp_version = COALESCE(EXCLUDED.vpp_version, runs.vpp_version),
-                profile = COALESCE(EXCLUDED.profile, runs.profile),
-                config_sha256 = COALESCE(EXCLUDED.config_sha256, runs.config_sha256),
-                assets_sha256 = COALESCE(EXCLUDED.assets_sha256, runs.assets_sha256),
-                decisions_sha256 = COALESCE(EXCLUDED.decisions_sha256, runs.decisions_sha256),
-                intel_metadata_json = COALESCE(EXCLUDED.intel_metadata_json, runs.intel_metadata_json),
-                manifest_digest = COALESCE(EXCLUDED.manifest_digest, runs.manifest_digest),
-                input_files_json = COALESCE(EXCLUDED.input_files_json, runs.input_files_json),
-                baseline_run_id = COALESCE(EXCLUDED.baseline_run_id, runs.baseline_run_id)
-            """,
-            [
-                run_id,
-                ts,
-                vpp_version,
-                profile,
-                config_sha256,
-                assets_sha256,
-                decisions_sha256,
-                intel_json,
-                manifest_digest,
-                files_json,
-                baseline_run_id,
-            ],
-        )
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            _clear_run_children(conn, run_id)
+            conn.execute(
+                """
+                INSERT INTO runs (
+                    run_id, created_at_utc, vpp_version, profile,
+                    config_sha256, assets_sha256, decisions_sha256,
+                    intel_metadata_json, manifest_digest, input_files_json, baseline_run_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (run_id) DO UPDATE SET
+                    created_at_utc = EXCLUDED.created_at_utc,
+                    vpp_version = COALESCE(EXCLUDED.vpp_version, runs.vpp_version),
+                    profile = COALESCE(EXCLUDED.profile, runs.profile),
+                    config_sha256 = COALESCE(EXCLUDED.config_sha256, runs.config_sha256),
+                    assets_sha256 = COALESCE(EXCLUDED.assets_sha256, runs.assets_sha256),
+                    decisions_sha256 = COALESCE(EXCLUDED.decisions_sha256, runs.decisions_sha256),
+                    intel_metadata_json = COALESCE(EXCLUDED.intel_metadata_json, runs.intel_metadata_json),
+                    manifest_digest = COALESCE(EXCLUDED.manifest_digest, runs.manifest_digest),
+                    input_files_json = COALESCE(EXCLUDED.input_files_json, runs.input_files_json),
+                    baseline_run_id = COALESCE(EXCLUDED.baseline_run_id, runs.baseline_run_id)
+                """,
+                [
+                    run_id,
+                    ts,
+                    vpp_version,
+                    profile,
+                    config_sha256,
+                    assets_sha256,
+                    decisions_sha256,
+                    intel_json,
+                    manifest_digest,
+                    files_json,
+                    baseline_run_id,
+                ],
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
     else:
         conn.execute(
             """

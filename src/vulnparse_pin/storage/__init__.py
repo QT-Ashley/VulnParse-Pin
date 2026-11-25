@@ -3,6 +3,7 @@
 
 from vulnparse_pin.storage.db import VppDatabase
 from vulnparse_pin.storage.repositories import (
+    delete_run,
     ensure_run,
     get_finding_detail,
     get_run_summary_counts,
@@ -20,6 +21,7 @@ from vulnparse_pin.storage.repositories import (
 
 __all__ = [
     "VppDatabase",
+    "delete_run",
     "ensure_run",
     "get_finding_detail",
     "get_run_summary_counts",

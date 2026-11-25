@@ -228,13 +228,35 @@ def _format_score_trace_lines(detail: Dict[str, Any]) -> List[str]:
     return lines
 
 
-def _format_finding_inspector(detail: Optional[Dict[str, Any]], *, has_findings: bool) -> str:
+def _format_finding_inspector(
+    detail: Optional[Dict[str, Any]],
+    *,
+    has_findings: bool,
+    db_path: Optional[Union[str, Path]] = None,
+    run_id: Optional[str] = None,
+    run_count: int = 0,
+) -> str:
     if not detail:
         if not has_findings:
-            return (
-                "No findings match the current filter or run.\n\n"
-                "Press '0' to clear filters, or press 'd' to review Diff & Shadow Assets."
+            lines = [
+                "No findings match the current filter or run.",
+                "",
+            ]
+            if db_path is not None:
+                lines.append(f"Workspace DB : {db_path}")
+            if run_id:
+                lines.append(f"Active Run   : {run_id} ({run_count} run(s) in DB)")
+            lines.extend(
+                [
+                    "",
+                    "Tips:",
+                    "  - Press '0' to clear active filters.",
+                    "  - Press 'r' to cycle to another scan run in this DB.",
+                    "  - Press 'd' to review Diff & Shadow Assets.",
+                    "  - Pass '--db PATH' if your scan wrote elsewhere (e.g. 'vpp ui --db .vpp-demo.db').",
+                ]
             )
+            return "\n".join(lines)
         return "Select a finding row to inspect score_trace, SSVC path, and merged evidence."
 
     trace = detail.get("score_trace") or {}
@@ -419,6 +441,7 @@ class VppApp(App[None]):
         Binding("left_square_bracket", "prev_page", "Prev", key_display="[", priority=False),
         Binding("right_square_bracket", "next_page", "Next", key_display="]", priority=False),
         Binding("d", "switch_diff_tab", "Diff", priority=False),
+        Binding("r", "cycle_run", "Run", priority=False),
         Binding("e", "export_selected_dossier", "Export Finding", priority=False),
         Binding("E", "export_full_dossier", "Export Run", priority=False),
         Binding("f", "open_defer_modal", "Defer", priority=False),
@@ -436,6 +459,7 @@ class VppApp(App[None]):
         "prev_page",
         "next_page",
         "switch_diff_tab",
+        "cycle_run",
         "export_selected_dossier",
         "export_full_dossier",
         "open_defer_modal",
@@ -455,6 +479,7 @@ class VppApp(App[None]):
         super().__init__()
         self.db_path = Path(db_path)
         self.run_id = run_id
+        self._explicit_run_id: bool = run_id is not None
         self.decisions_path = Path(decisions_path) if decisions_path else None
         self.output_dir = Path(output_dir)
         self.template_dir = Path(template_dir) if template_dir else None
@@ -470,6 +495,7 @@ class VppApp(App[None]):
         self.total_filtered: int = 0
         self.current_rows: List[Dict[str, Any]] = []
         self.selected_finding_id: Optional[str] = None
+        self.available_runs: List[Dict[str, Any]] = []
         self.active_run_meta: Optional[Dict[str, Any]] = None
         self.summary_counts: Dict[str, Any] = {}
         self.shadow_assets: List[Dict[str, Any]] = []
@@ -537,6 +563,7 @@ class VppApp(App[None]):
 
     def _reload_all(self) -> None:
         if not self.db_path.exists() or self.db_path.is_symlink():
+            self.available_runs = []
             self.summary_counts = {}
             self.shadow_assets = []
             self.diff_report = None
@@ -557,6 +584,7 @@ class VppApp(App[None]):
 
         with VppDatabase(self.db_path, read_only=True) as db:
             runs = list_runs(db)
+            self.available_runs = runs
             if not runs:
                 self.summary_counts = {}
                 self.shadow_assets = []
@@ -579,7 +607,10 @@ class VppApp(App[None]):
             if self.run_id and any(r["run_id"] == self.run_id for r in runs):
                 selected_run = next(r for r in runs if r["run_id"] == self.run_id)
             else:
-                selected_run = runs[0]
+                selected_run = next(
+                    (r for r in runs if int(r.get("finding_count") or 0) > 0),
+                    runs[0],
+                )
                 self.run_id = selected_run["run_id"]
             self.active_run_meta = selected_run
 
@@ -623,9 +654,15 @@ class VppApp(App[None]):
         )
         profile = (self.active_run_meta or {}).get("profile") or "default"
         sla_text = ", ".join(f"{k}:{v}" for k, v in sorted(by_sla.items())) or "none"
+        run_ids = [str(r["run_id"]) for r in self.available_runs]
+        if self.run_id in run_ids:
+            run_pos = f"{run_ids.index(self.run_id) + 1}/{len(run_ids)}"
+        else:
+            run_pos = f"1/{max(1, len(run_ids))}"
 
         banner = (
-            f"Run: {self.run_id} | Profile: {profile} | Findings: {counts.get('total_findings', 0)} "
+            f"DB: {self.db_path.name} | Run: {self.run_id} ({run_pos}) | Profile: {profile} | "
+            f"Findings: {counts.get('total_findings', 0)} "
             f"(KEV={counts.get('kev_findings', 0)}, Dedup={counts.get('deduplicated_findings', 0)})\n"
             f"Tiers: P1={by_tier.get('P1', 0)} P1B={by_tier.get('P1B', 0)} P2={by_tier.get('P2', 0)} "
             f"P3={by_tier.get('P3', 0)} P4={by_tier.get('P4', 0)} | "
@@ -738,7 +775,13 @@ class VppApp(App[None]):
             self.selected_finding_id = None
             has_any = int(self.summary_counts.get("total_findings", 0) or 0) > 0
             self.query_one("#finding-inspector", Static).update(
-                _format_finding_inspector(None, has_findings=has_any)
+                _format_finding_inspector(
+                    None,
+                    has_findings=has_any,
+                    db_path=self.db_path,
+                    run_id=self.run_id,
+                    run_count=len(self.available_runs),
+                )
             )
 
     def _render_diff_panel(self) -> None:
@@ -888,6 +931,23 @@ class VppApp(App[None]):
         else:
             tabs.active = "tab-diff"
             self.query_one("#diff-scroll", VerticalScroll).focus()
+
+    def action_cycle_run(self) -> None:
+        if len(self.available_runs) <= 1:
+            self._set_status(f"Only {len(self.available_runs)} run recorded in {self.db_path.name}.")
+            return
+        run_ids = [str(r["run_id"]) for r in self.available_runs]
+        cur_idx = run_ids.index(self.run_id) if self.run_id in run_ids else -1
+        next_idx = (cur_idx + 1) % len(self.available_runs)
+        next_run = self.available_runs[next_idx]
+        self.run_id = str(next_run["run_id"])
+        self.page_offset = 0
+        self.selected_finding_id = None
+        self._reload_all()
+        self._set_status(
+            f"Switched to run {next_idx + 1}/{len(self.available_runs)}: "
+            f"{self.run_id} (findings={int(next_run.get('finding_count') or 0)})"
+        )
 
     def _export_dossier(self, *, finding_id: Optional[str]) -> None:
         if not self.run_id or not self.db_path.exists():
