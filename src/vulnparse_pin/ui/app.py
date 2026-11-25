@@ -55,6 +55,7 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DEFAULT_CSS = """
 Screen {
     layout: vertical;
+    overflow-y: hidden;
 }
 #kpi-banner {
     height: auto;
@@ -76,6 +77,13 @@ Screen {
 }
 #search-input {
     margin: 0 1;
+}
+#main-tabs {
+    height: 1fr;
+}
+TabPane {
+    height: 1fr;
+    padding: 0;
 }
 #findings-split {
     height: 1fr;

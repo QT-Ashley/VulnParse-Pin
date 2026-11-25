@@ -46,6 +46,10 @@ pipx install "vulnparse-pin[ui]" && vpp demo
 
 *(Headless / CI installation without Textual TUI dependencies: `pipx install vulnparse-pin` or `pip install vulnparse-pin`, then run `vpp demo --no-ui`.)*
 
+<p align="center">
+  <img src="documentation/img/vpp-demo.gif" alt="VulnParse-Pin v2.0.0 interactive offline demo" width="900">
+</p>
+
 `vpp demo` launches **100% offline in under 2 seconds** against a bundled multi-scanner sample pack (Nessus XML, Trivy SARIF, Nuclei JSONL, Semgrep SARIF, Nmap XML, pattern `assets.yaml`, `decisions.yaml`, and miniature EPSS v5 / KEV / NVD / GHSA snapshots):
 
 - Deduplicates cross-scanner detections into a `.vpp-demo.db` DuckDB workspace (`aid_v2_` / `fid_v2_`)
@@ -54,7 +58,7 @@ pipx install "vulnparse-pin[ui]" && vpp demo
 - Exports a self-contained **HTML + Markdown Decision Defense Dossier**, **Client Executive Roadmap**, and **RunManifest** (`vpp_demo_output/`)
 - Opens the interactive **`vpp ui`** terminal workspace (filter P1/Exposure/KEV/Shadow via `1`/`t`/`k`/`u`, inspect live `score_trace`, press `e` to export dossiers, or `f` to record a deferral)
 
-*(Demo screencast script: [`documentation/demo/vpp-demo.tape`](documentation/demo/vpp-demo.tape).)*
+*(Demo screencast: [`documentation/img/vpp-demo.gif`](documentation/img/vpp-demo.gif) • VHS tape: [`documentation/demo/vpp-demo.tape`](documentation/demo/vpp-demo.tape).)*
 
 ---
 

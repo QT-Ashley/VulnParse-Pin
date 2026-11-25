@@ -54,6 +54,9 @@ async def test_tui_filters_pagination_inspector_diff_and_export(
         assert "demo-current" in kpi_text
         assert "SHADOW ASSETS:" in kpi_text
         assert "INVALIDATED DEFERRALS:" in kpi_text
+        assert app.query_one("#kpi-banner", Static).region.y >= 1
+        assert app.query_one("#filter-bar", Static).region.y >= 1
+        assert app.query_one("#status-line", Static).region.y >= 1
 
         inspector_text = str(app.query_one("#finding-inspector", Static).render())
         assert "[Score Trace]" in inspector_text
