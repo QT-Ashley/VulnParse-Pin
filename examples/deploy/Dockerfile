@@ -1,8 +1,11 @@
-# Local Self-Build Dockerfile for VulnParse-Pin v2.0.0 (Apache-2.0)
+# PyPI / Wheelhouse Self-Build Dockerfile for VulnParse-Pin v2.0.0 (Apache-2.0)
 #
-# Note: Build this image locally from PyPI or an offline wheelhouse archive.
-# Official GHCR Cosign-signed OCI images (ghcr.io/qt-ashley/vulnparse-pin)
-# are planned for Phase 2 in ROADMAP.md.
+# Use the repository-root `Dockerfile` (`docker build -t vulnparse-pin:2.0.0 .`) to
+# build directly from a git checkout, or pull the official attested multi-arch image:
+#   docker pull ghcr.io/qt-ashley/vulnparse-pin:2.0.0
+#
+# Use this standalone Dockerfile when building from PyPI or an offline wheelhouse archive
+# without cloning the full repository source tree.
 #
 # Build examples:
 #   docker build -t vulnparse-pin:2.0.0 -f examples/deploy/Dockerfile .
@@ -41,7 +44,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     XDG_DATA_HOME="/cache/data" \
     XDG_CONFIG_HOME="/cache/config" \
     XDG_CACHE_HOME="/cache/xdg" \
-    TMPDIR="/tmp"
+    TMPDIR="/tmp" \
+    TERM="xterm-256color"
 
 RUN groupadd --gid 10001 vpp \
     && useradd --uid 10001 --gid 10001 --home-dir /work --shell /usr/sbin/nologin vpp \

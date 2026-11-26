@@ -19,6 +19,7 @@ logs/
 !config/**
 .history/
 .*
+!.dockerignore
 !.github/
 !.github/workflows/
 !.github/workflows/*.yml

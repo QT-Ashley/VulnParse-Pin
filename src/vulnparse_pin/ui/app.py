@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
+from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -30,6 +31,7 @@ from textual.widgets import (
 )
 
 from vulnparse_pin import __version__
+from vulnparse_pin.app.output import record_deferral_db_update
 from vulnparse_pin.app.runtime_helpers import authorize_output_dir, authorize_output_path
 from vulnparse_pin.core.apppaths import AppPaths
 from vulnparse_pin.core.assets_context import DecisionsRegistry, upsert_decision
@@ -93,17 +95,23 @@ TabPane {
     height: 1fr;
     border: solid $primary-darken-2;
 }
+#findings-table:focus {
+    border: solid $primary;
+}
 #inspector-scroll {
     width: 42%;
     height: 1fr;
     border: solid $secondary-darken-2;
     padding: 0 1;
 }
+#inspector-scroll:focus {
+    border: solid $accent;
+}
 #diff-scroll {
     height: 1fr;
     padding: 0 1;
 }
-DeferralModal {
+DeferralModal, HelpModal {
     align: center middle;
 }
 #defer-dialog {
@@ -111,9 +119,29 @@ DeferralModal {
     max-width: 92%;
     height: auto;
     max-height: 90%;
+    overflow-y: auto;
     padding: 1 2;
     background: $surface;
     border: thick $primary;
+}
+#help-dialog {
+    width: 72;
+    max-width: 95%;
+    height: auto;
+    max-height: 92%;
+    overflow-y: auto;
+    padding: 1 2;
+    background: $surface;
+    border: thick $primary;
+}
+#help-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+#help-buttons {
+    margin-top: 1;
+    height: auto;
+    align: right middle;
 }
 #defer-buttons {
     margin-top: 1;
@@ -235,11 +263,17 @@ def _format_finding_inspector(
     db_path: Optional[Union[str, Path]] = None,
     run_id: Optional[str] = None,
     run_count: int = 0,
+    empty_due_to_filter: bool = False,
 ) -> str:
     if not detail:
         if not has_findings:
+            header = (
+                "No findings match the current filter (press '0' to reset)."
+                if empty_due_to_filter
+                else "No findings match the current filter or run."
+            )
             lines = [
-                "No findings match the current filter or run.",
+                header,
                 "",
             ]
             if db_path is not None:
@@ -379,13 +413,7 @@ class DeferralModal(ModalScreen[Optional[Dict[str, Any]]]):
     def action_cancel(self) -> None:
         self.dismiss(None)
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "defer-cancel":
-            self.dismiss(None)
-            return
-        if event.button.id != "defer-save":
-            return
-
+    def _submit(self) -> None:
         asset_pattern = self.query_one("#defer-asset", Input).value.strip()
         cve_or_rule_id = self.query_one("#defer-id", Input).value.strip()
         status_val = self.query_one("#defer-status", Select).value
@@ -419,6 +447,71 @@ class DeferralModal(ModalScreen[Optional[Dict[str, Any]]]):
             payload["expires_at"] = expires
         self.dismiss(payload)
 
+    @on(Input.Submitted)
+    def _on_input_submitted(self, event: Input.Submitted) -> None:
+        rationale_inp = self.query_one("#defer-rationale", Input)
+        owner_inp = self.query_one("#defer-owner", Input)
+        rationale = rationale_inp.value.strip()
+        owner = owner_inp.value.strip()
+        if event.input.id == "defer-rationale" and not owner:
+            owner_inp.focus()
+            return
+        if event.input.id == "defer-owner" or (rationale and owner):
+            self._submit()
+            return
+        if not rationale:
+            rationale_inp.focus()
+        else:
+            owner_inp.focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "defer-cancel":
+            self.dismiss(None)
+            return
+        if event.button.id != "defer-save":
+            return
+        self._submit()
+
+
+_HELP_SHORTCUTS_TEXT = "\n".join(
+    [
+        "1-4 / 0   Filter P1/P2/P3/P4 lane / Clear all filters",
+        "t / k / u Cycle track / Toggle KEV / Toggle Shadow Assets",
+        "/ / Esc   Focus search / Return focus to findings table",
+        "[ / ]     Previous / Next findings page",
+        "i         Toggle focus between table & Inspector (Esc=table)",
+        "d         Toggle Findings <-> Diff & Stale Assumptions tab",
+        "r         Cycle active scan run in DuckDB",
+        "f         Record deferral/acceptance/mitigation (decisions.yaml)",
+        "e / E     Export selected finding / full run dossier",
+        "? / q     Show this help / Quit (Esc, ?, or Enter to close)",
+    ]
+)
+
+
+class HelpModal(ModalScreen[None]):
+    """Compact keybinding reference overlay that fits 80x24 terminals."""
+
+    BINDINGS = [
+        Binding("escape", "close_help", "Close", priority=True),
+        Binding("question_mark", "close_help", "Close", priority=True),
+        Binding("enter", "close_help", "Close", priority=True),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help-dialog"):
+            yield Label("VulnParse-Pin TUI Shortcuts", id="help-title")
+            yield Static(_HELP_SHORTCUTS_TEXT, id="help-body", markup=False)
+            with Horizontal(id="help-buttons"):
+                yield Button("Close", variant="primary", id="help-close")
+
+    def action_close_help(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "help-close":
+            self.dismiss(None)
+
 
 class VppApp(App[None]):
     """Interactive DuckDB-backed triage, diff, and dossier defense console."""
@@ -440,11 +533,13 @@ class VppApp(App[None]):
         Binding("escape", "unfocus_search", "Table", priority=False, show=False),
         Binding("left_square_bracket", "prev_page", "Prev", key_display="[", priority=False),
         Binding("right_square_bracket", "next_page", "Next", key_display="]", priority=False),
+        Binding("i", "toggle_inspector_focus", "Inspector", priority=False),
         Binding("d", "switch_diff_tab", "Diff", priority=False),
         Binding("r", "cycle_run", "Run", priority=False),
         Binding("e", "export_selected_dossier", "Export Finding", priority=False),
         Binding("E", "export_full_dossier", "Export Run", priority=False),
         Binding("f", "open_defer_modal", "Defer", priority=False),
+        Binding("question_mark", "open_help_modal", "Help", key_display="?", priority=False),
         Binding("q", "quit", "Quit", priority=False),
     ]
 
@@ -458,11 +553,13 @@ class VppApp(App[None]):
         "unfocus_search",
         "prev_page",
         "next_page",
+        "toggle_inspector_focus",
         "switch_diff_tab",
         "cycle_run",
         "export_selected_dossier",
         "export_full_dossier",
         "open_defer_modal",
+        "open_help_modal",
     }
 
     def __init__(
@@ -536,7 +633,8 @@ class VppApp(App[None]):
                 )
                 with Horizontal(id="findings-split"):
                     yield DataTable(id="findings-table", cursor_type="row")
-                    with VerticalScroll(id="inspector-scroll"):
+                    with VerticalScroll(id="inspector-scroll") as inspector_scroll:
+                        inspector_scroll.can_focus = True
                         yield Static("", id="finding-inspector", markup=False)
             with TabPane("Diff & Stale Assumptions", id="tab-diff"):
                 with VerticalScroll(id="diff-scroll"):
@@ -777,10 +875,11 @@ class VppApp(App[None]):
             self.query_one("#finding-inspector", Static).update(
                 _format_finding_inspector(
                     None,
-                    has_findings=has_any,
+                    has_findings=False,
                     db_path=self.db_path,
                     run_id=self.run_id,
                     run_count=len(self.available_runs),
+                    empty_due_to_filter=has_any,
                 )
             )
 
@@ -870,12 +969,20 @@ class VppApp(App[None]):
         self._reload_findings()
         self.query_one("#findings-table", DataTable).focus()
 
+    def _ensure_findings_tab_focused(self) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        if tabs.active != "tab-findings":
+            tabs.active = "tab-findings"
+            self.query_one("#findings-table", DataTable).focus()
+
     def action_filter_priority(self, tier: str) -> None:
+        self._ensure_findings_tab_focused()
         self.filter_priority = None if self.filter_priority == tier else tier
         self.page_offset = 0
         self._reload_findings()
 
     def action_clear_filters(self) -> None:
+        self._ensure_findings_tab_focused()
         self.filter_priority = None
         self.filter_track = None
         self.filter_kev = None
@@ -889,6 +996,7 @@ class VppApp(App[None]):
         self._set_status("Cleared all filters.")
 
     def action_cycle_track(self) -> None:
+        self._ensure_findings_tab_focused()
         order = [None, "cve_threat", "exposure_weakness"]
         idx = order.index(self.filter_track) if self.filter_track in order else 0
         self.filter_track = order[(idx + 1) % len(order)]
@@ -896,11 +1004,13 @@ class VppApp(App[None]):
         self._reload_findings()
 
     def action_toggle_kev(self) -> None:
+        self._ensure_findings_tab_focused()
         self.filter_kev = None if self.filter_kev is True else True
         self.page_offset = 0
         self._reload_findings()
 
     def action_toggle_unmatched(self) -> None:
+        self._ensure_findings_tab_focused()
         self.filter_inventory = None if self.filter_inventory == "unmatched_shadow" else "unmatched_shadow"
         self.page_offset = 0
         self._reload_findings()
@@ -910,8 +1020,25 @@ class VppApp(App[None]):
         self.query_one("#search-input", Input).focus()
 
     def action_unfocus_search(self) -> None:
-        if isinstance(self.focused, Input):
+        inspector = self.query_one("#inspector-scroll", VerticalScroll)
+        if isinstance(self.focused, Input) or self.focused is inspector:
             self.query_one("#findings-table", DataTable).focus()
+
+    def action_toggle_inspector_focus(self) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        inspector = self.query_one("#inspector-scroll", VerticalScroll)
+        table = self.query_one("#findings-table", DataTable)
+        if tabs.active != "tab-findings":
+            tabs.active = "tab-findings"
+            inspector.focus()
+            return
+        if self.focused is inspector:
+            table.focus()
+        else:
+            inspector.focus()
+
+    def action_open_help_modal(self) -> None:
+        self.push_screen(HelpModal())
 
     def action_prev_page(self) -> None:
         if self.page_offset > 0:
@@ -1068,6 +1195,7 @@ class VppApp(App[None]):
                         profile=profile,
                         decisions_registry=reg,
                     ).run(ctx)
+                    record_deferral_db_update(db, self.run_id, decisions_target, ctx, saved)
 
             self._reload_all()
             self._set_status(
@@ -1077,4 +1205,4 @@ class VppApp(App[None]):
             self._set_status(f"[ERR] Failed to save deferral: {exc}")
 
 
-__all__ = ["DeferralModal", "VppApp"]
+__all__ = ["DeferralModal", "HelpModal", "VppApp"]

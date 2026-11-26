@@ -29,20 +29,67 @@ if TYPE_CHECKING:
 _QID_ALIASES = ("qid", "vuln id", "vulnerability id", "id")
 _TITLE_ALIASES = ("title", "name", "vulnerability", "vulnerability title")
 _SEVERITY_ALIASES = ("severity", "risk", "threat")
-_CVSS_ALIASES = ("cvss", "cvss score", "cvss base", "cvss3 base", "cvss_base")
-_CVSS_VEC_ALIASES = ("cvss vector", "cvss_vector", "cvss3 vector")
+_CVSS_V4_ALIASES = ("cvss4 base", "cvss v4.0 base", "cvss4_base", "cvss v4 base")
+_CVSS_V31_ALIASES = (
+    "cvss3.1 base",
+    "cvss31 base",
+    "cvss 3.1 base",
+    "cvss v3.1 base",
+    "cvss3_1_base",
+    "cvss3.1",
+    "cvss31",
+)
+_CVSS_V3_ALIASES = ("cvss3.0 base", "cvss3 base", "cvss v3.0 base", "cvss3_base", "cvss3")
+_CVSS_V2_ALIASES = ("cvss base", "cvss_base", "cvss v2.0 base", "cvss2 base", "cvss score", "cvss")
+_CVSS_ALIASES = (*_CVSS_V4_ALIASES, *_CVSS_V31_ALIASES, *_CVSS_V3_ALIASES, *_CVSS_V2_ALIASES)
+
+_CVSS_V4_VEC_ALIASES = ("cvss4 vector", "cvss v4.0 vector", "cvss4_vector", "cvss v4 vector")
+_CVSS_V31_VEC_ALIASES = (
+    "cvss3.1 vector",
+    "cvss31 vector",
+    "cvss 3.1 vector",
+    "cvss v3.1 vector",
+    "cvss3_1_vector",
+)
+_CVSS_V3_VEC_ALIASES = ("cvss3.0 vector", "cvss3 vector", "cvss v3.0 vector", "cvss3_vector")
+_CVSS_V2_VEC_ALIASES = ("cvss vector", "cvss_vector", "cvss v2.0 vector", "cvss2 vector")
+_CVSS_VEC_ALIASES = (
+    *_CVSS_V4_VEC_ALIASES,
+    *_CVSS_V31_VEC_ALIASES,
+    *_CVSS_V3_VEC_ALIASES,
+    *_CVSS_V2_VEC_ALIASES,
+)
+
 _IP_ALIASES = ("ip", "ip address", "host ip", "asset ip")
-_HOST_ALIASES = ("hostname", "fqdn", "host", "dns")
+_HOST_ALIASES = ("hostname", "fqdn", "dns", "dns name", "netbios", "netbios name", "host")
 _CVE_ALIASES = ("cve", "cves", "cve id", "cve_id")
 _CWE_ALIASES = ("cwe", "cwes", "cwe id", "cwe_id")
 _PORT_ALIASES = ("port", "service port", "affected_port")
 _PROTO_ALIASES = ("protocol", "proto", "transport")
 _DESC_ALIASES = ("description", "details", "diagnosis")
 _SOL_ALIASES = ("solution", "fix", "remediation")
-_OUT_ALIASES = ("result", "evidence", "plugin output")
+_OUT_ALIASES = ("results", "result", "evidence", "plugin output")
 _REF_ALIASES = ("references", "vendor reference", "see also")
 _CRED_ALIASES = ("authenticated", "authentication", "credentialed")
+_HEADER_SCAN_MAX_ROWS = 25
 _MAX_CSV_FIELD_BYTES = min(32 * 1024 * 1024, sys.maxsize)
+
+
+def _normalize_cvss_vector(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.startswith("SENTINEL:"):
+        return None
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    if "#" in s:
+        prefix, rest = s.split("#", 1)
+        if prefix.upper().startswith("CVSS"):
+            s = rest.strip()
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    return s or None
 
 
 def _is_ip(value: str) -> bool:
@@ -91,39 +138,44 @@ class QualysCSVParser(BaseParser):
             sample = raw_head.decode("utf-8", errors="ignore")
             if not sample.strip():
                 return 0.0, [("header", "missing")]
-            try:
-                dialect = csv.Sniffer().sniff(sample[:4096], delimiters=",;\t|")
-            except csv.Error:
-                dialect = csv.excel
-            header_row = next(csv.reader(io.StringIO(sample), dialect), None)
-        except OSError:
+            dialect = cls._sniff_csv_dialect(sample)
+            header_row = cls._find_header_row(csv.reader(io.StringIO(sample), dialect))
+        except (OSError, csv.Error):
             return 0.0, [("parse", "failed")]
 
         if not header_row:
             return 0.0, [("header", "missing")]
 
-        header = [str(h).lstrip("\ufeff").strip().lower() for h in header_row if str(h).strip()]
-        if len(header) < 3:
+        header_norm = {
+            cls._normalize_key(str(h).lstrip("\ufeff")) for h in header_row if str(h).strip()
+        }
+        if len(header_norm) < 3:
             return 0.0, [("header", "too_few_columns")]
 
+        qid_norm = {cls._normalize_key(a) for a in _QID_ALIASES}
+        title_norm = {cls._normalize_key(a) for a in _TITLE_ALIASES}
+        sev_cvss_norm = {cls._normalize_key(a) for a in (*_SEVERITY_ALIASES, *_CVSS_ALIASES)}
+        asset_norm = {cls._normalize_key(a) for a in (*_IP_ALIASES, *_HOST_ALIASES)}
+        cve_norm = {cls._normalize_key(a) for a in _CVE_ALIASES}
+
         score = 0.0
-        if any(h in _QID_ALIASES for h in header):
+        if header_norm & qid_norm:
             score += 0.35
             evidence.append(("header", "qid"))
-        if any(h in _TITLE_ALIASES for h in header):
+        if header_norm & title_norm:
             score += 0.20
             evidence.append(("header", "title"))
-        if any(h in _SEVERITY_ALIASES or h in _CVSS_ALIASES for h in header):
+        if header_norm & sev_cvss_norm:
             score += 0.20
             evidence.append(("header", "severity_or_cvss"))
-        if any(h in _IP_ALIASES or h in _HOST_ALIASES for h in header):
+        if header_norm & asset_norm:
             score += 0.15
             evidence.append(("header", "asset_identifier"))
-        if any(h in _CVE_ALIASES for h in header):
+        if header_norm & cve_norm:
             score += 0.10
             evidence.append(("header", "cve"))
 
-        if not any(h in _QID_ALIASES for h in header):
+        if not (header_norm & qid_norm):
             score = max(0.0, score - 0.25)
             evidence.append(("header", "missing_qid"))
 
@@ -142,19 +194,16 @@ class QualysCSVParser(BaseParser):
 
         csv.field_size_limit(_MAX_CSV_FIELD_BYTES)
         with self._open_read(path, self.ctx, mode="r", encoding="utf-8-sig", label="Qualys CSV") as handle:
-            sample = handle.read(4096)
+            sample = handle.read(16384)
             if not sample.strip():
                 raise ValueError("Qualys CSV parsing failed: empty file.")
             sample_clean = sample.lstrip("\ufeff")
-            try:
-                dialect = csv.Sniffer().sniff(sample_clean, delimiters=",;\t|")
-            except csv.Error:
-                dialect = csv.excel
+            dialect = self._sniff_csv_dialect(sample_clean)
             handle.seek(0)
             reader = csv.reader(handle, dialect=dialect)
 
             try:
-                header_row = next(reader, None)
+                header_row = self._find_header_row(reader)
             except csv.Error as exc:
                 raise ValueError(f"Qualys CSV parsing failed: {exc}") from exc
             if not header_row:
@@ -204,14 +253,13 @@ class QualysCSVParser(BaseParser):
                     qid = self._pick_indexed(row, qid_idx)
                     title = self._pick_indexed(row, title_idx)
                     severity_raw = self._pick_indexed(row, sev_idx)
-                    cvss_score = self._safe_float(self._pick_indexed(row, cvss_idx))
+                    cvss_score, has_out_of_range_cvss = self._pick_cvss_score(row, cvss_idx)
+                    if has_out_of_range_cvss and cvss_score is None:
+                        dropped_rows += 1
+                        continue
                     severity = self._map_severity(severity_raw, cvss_score)
 
                     if not asset_identifier or not title or (severity == "Unknown" and cvss_score is None):
-                        dropped_rows += 1
-                        continue
-
-                    if cvss_score is not None and not (0.0 <= cvss_score <= 10.0):
                         dropped_rows += 1
                         continue
 
@@ -228,7 +276,7 @@ class QualysCSVParser(BaseParser):
                     if proto not in {"tcp", "udp", "icmp"}:
                         proto = "tcp"
 
-                    cvss_vector = self._pick_indexed(row, vec_idx)
+                    cvss_vector = self._pick_cvss_vector(row, vec_idx)
                     description = self._pick_indexed(row, desc_idx) or ""
                     solution = self._pick_indexed(row, sol_idx) or ""
                     plugin_output = self._pick_indexed(row, out_idx) or ""
@@ -388,6 +436,64 @@ class QualysCSVParser(BaseParser):
                 out.append(idx)
         return tuple(out)
 
+    @classmethod
+    def _sniff_csv_dialect(cls, sample: str):
+        snippet = sample[:16384]
+        for candidate in (snippet[:4096], snippet):
+            try:
+                return csv.Sniffer().sniff(candidate, delimiters=",;\t|")
+            except csv.Error:
+                pass
+        lines = [ln for ln in snippet.splitlines() if ln.strip()]
+        for start in range(1, min(_HEADER_SCAN_MAX_ROWS, len(lines))):
+            tail = "\n".join(lines[start:])
+            try:
+                return csv.Sniffer().sniff(tail, delimiters=",;\t|")
+            except csv.Error:
+                continue
+        best_delim = ","
+        best_count = 0
+        for delim in (",", ";", "\t", "|"):
+            cnt = max((ln.count(delim) for ln in lines[:_HEADER_SCAN_MAX_ROWS]), default=0)
+            if cnt > best_count:
+                best_count = cnt
+                best_delim = delim
+        if best_delim == ",":
+            return csv.excel
+        class _FallbackDialect(csv.excel):
+            delimiter = best_delim
+        return _FallbackDialect
+
+    @classmethod
+    def _is_qualys_header_row(cls, row: Sequence[str]) -> bool:
+        non_empty = [str(c).lstrip("\ufeff").strip() for c in row if str(c).strip()]
+        if len(non_empty) < 3:
+            return False
+        norm_set = {cls._normalize_key(c) for c in non_empty}
+        qid_norm = {cls._normalize_key(a) for a in _QID_ALIASES}
+        host_norm = {cls._normalize_key(a) for a in (*_IP_ALIASES, *_HOST_ALIASES)}
+        detail_norm = {
+            cls._normalize_key(a)
+            for a in (*_TITLE_ALIASES, *_SEVERITY_ALIASES, "type", "vuln status", "vulnstatus")
+        }
+        return bool((norm_set & qid_norm) and (norm_set & host_norm) and (norm_set & detail_norm))
+
+    @classmethod
+    def _find_header_row(cls, reader) -> Optional[List[str]]:
+        non_empty_seen = 0
+        for row in reader:
+            if not row or all(not str(c).strip() for c in row):
+                continue
+            non_empty_seen += 1
+            if cls._is_qualys_header_row(row):
+                row_copy = list(row)
+                if row_copy:
+                    row_copy[0] = row_copy[0].lstrip("\ufeff")
+                return row_copy
+            if non_empty_seen >= _HEADER_SCAN_MAX_ROWS:
+                break
+        return None
+
     @staticmethod
     def _pick_indexed(row: List[str], indices: Tuple[int, ...]) -> Optional[str]:
         row_len = len(row)
@@ -396,6 +502,33 @@ class QualysCSVParser(BaseParser):
                 val = row[idx].strip()
                 if val:
                     return val
+        return None
+
+    def _pick_cvss_score(
+        self, row: List[str], indices: Tuple[int, ...]
+    ) -> Tuple[Optional[float], bool]:
+        row_len = len(row)
+        saw_out_of_range = False
+        for idx in indices:
+            if idx < row_len:
+                raw = row[idx].strip()
+                if not raw:
+                    continue
+                val = self._safe_float(raw)
+                if val is not None:
+                    if 0.0 <= val <= 10.0:
+                        return val, False
+                    saw_out_of_range = True
+        return None, saw_out_of_range
+
+    @staticmethod
+    def _pick_cvss_vector(row: List[str], indices: Tuple[int, ...]) -> Optional[str]:
+        row_len = len(row)
+        for idx in indices:
+            if idx < row_len:
+                norm = _normalize_cvss_vector(row[idx])
+                if norm:
+                    return norm
         return None
 
     @staticmethod

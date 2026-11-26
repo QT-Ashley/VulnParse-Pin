@@ -777,6 +777,20 @@ def load_epss(
             content_encoding = "none"
 
         local_digest = hashlib.sha256(raw_csv).hexdigest()
+        is_managed_cache = False
+        try:
+            if cache_path.exists() and os.path.samefile(src_path, cache_path):
+                is_managed_cache = True
+        except OSError:
+            is_managed_cache = False
+
+        if is_managed_cache:
+            fc.ensure_feed_checksum("epss", allow_regen=allow_regen)
+            if (not force_refresh) and epss_db.is_warm_for_sha(local_digest):
+                ctx.logger.print_info("Local EPSS matches cache & SQLite index; warm-hit.", label="EPSS Loader")
+                return epss_db.query_cves(target_cves)
+            return _parse_and_index(cache_path, source_sha=local_digest)
+
         try:
             if (not force_refresh) and cache_path.exists():
                 cache_digest = fc.compute_checksum(key)
@@ -1214,6 +1228,20 @@ def load_kev(
 
         cache_path, _, _ = fc.resolve("kev")
         local_digest = hashlib.sha256(raw).hexdigest()
+
+        is_managed_cache = False
+        try:
+            if cache_path.exists() and os.path.samefile(feed_path, cache_path):
+                is_managed_cache = True
+        except OSError:
+            is_managed_cache = False
+
+        if is_managed_cache:
+            fc.ensure_feed_checksum("kev", allow_regen=allow_regen)
+            if (not force_refresh) and kev_db.is_warm_for_sha(local_digest):
+                ctx.logger.print_info("Local KEV matches cache & SQLite index; warm-hit.")
+                return kev_db.query_cves(target_cves)
+            return _parse_and_index(cache_path, source_sha=local_digest)
 
         try:
             if (not force_refresh) and cache_path.exists():

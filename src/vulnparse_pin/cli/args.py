@@ -6,14 +6,14 @@ from __future__ import annotations
 import argparse
 import atexit
 from contextlib import ExitStack
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import os
 from pathlib import Path
 import sys
 from typing import Optional, Sequence, Union
-from urllib.parse import urlsplit
 
 from vulnparse_pin import __version__
+from vulnparse_pin.core.config_validator import validate_webhook_https_url
 
 PathLikeSimple = Union[str, Path]
 
@@ -56,8 +56,55 @@ _VALUE_TAKING_FLAGS = frozenset({
     "--asset", "--id", "--status", "--rationale", "--owner", "--expires",
     "--in-kev", "--max-epss", "--max-epss-percentile", "--internet-facing",
     "--max-cvss", "--decision-id",
-    "--feed",
+    "--feed", "--years",
 })
+
+
+class _LegacyArgError(ValueError):
+    """Raised when legacy v1 CLI flags contain conflicting or incomplete syntax."""
+
+
+def _env_is_portable() -> bool:
+    return os.getenv("VULNPARSE_PIN_PORTABLE", "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def parse_nvd_years_spec(raw: str) -> set[int]:
+    """Parse and validate --years (YYYY or YYYY-YYYY comma-separated) against 2002..now_year+1."""
+    spec = str(raw).strip()
+    if not spec:
+        raise ValueError("--years must not be empty (expected e.g. 2024, 2021-2026, or 2021,2024).")
+    max_year = datetime.now(timezone.utc).year + 1
+    years: set[int] = set()
+    for part in spec.split(","):
+        token = part.strip()
+        if not token:
+            raise ValueError(f"Invalid --years list '{raw}': empty entry.")
+        if "-" in token:
+            pieces = token.split("-")
+            if (
+                len(pieces) != 2
+                or not (pieces[0].isdigit() and len(pieces[0]) == 4 and pieces[1].isdigit() and len(pieces[1]) == 4)
+            ):
+                raise ValueError(f"Invalid year range '{token}' in --years (expected YYYY-YYYY).")
+            start_y, end_y = int(pieces[0]), int(pieces[1])
+            if start_y > end_y:
+                raise ValueError(f"Invalid year range '{token}' in --years: start year must be <= end year.")
+            if start_y < 2002 or end_y > max_year:
+                raise ValueError(f"Year range '{token}' out of NVD bounds (2002-{max_year}).")
+            years.update(range(start_y, end_y + 1))
+        else:
+            if not (token.isdigit() and len(token) == 4):
+                raise ValueError(f"Invalid year '{token}' in --years (expected 4-digit YYYY).")
+            year_val = int(token)
+            if year_val < 2002 or year_val > max_year:
+                raise ValueError(f"Year '{token}' out of NVD bounds (2002-{max_year}).")
+            years.add(year_val)
+    return years
+
+
+def _validate_years_spec(raw: str) -> str:
+    parse_nvd_years_spec(raw)
+    return str(raw).strip()
 
 
 def _resolve_demo_inputs() -> tuple[Optional[Path], Optional[Path]]:
@@ -125,15 +172,10 @@ def valid_nmap_adapter_file(path: PathLikeSimple) -> Path:
 
 
 def valid_https_url(value: str) -> str:
-    url = str(value).strip()
-    parts = urlsplit(url)
-    if parts.scheme.lower() != "https":
-        raise argparse.ArgumentTypeError("Webhook endpoint must use https.")
-    if not parts.netloc:
-        raise argparse.ArgumentTypeError("Webhook endpoint must include a host.")
-    if parts.username or parts.password:
-        raise argparse.ArgumentTypeError("Webhook endpoint must not embed credentials.")
-    return url
+    try:
+        return validate_webhook_https_url(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def valid_log_level(level: str) -> str:
@@ -248,80 +290,36 @@ def _preprocess_legacy_argv(raw_argv: Sequence[str]) -> tuple[list[str], bool]:
             return reordered, False
         return tokens, False
 
+    if (has_verify_rm and has_demo) or (has_verify_rm and has_file):
+        raise _LegacyArgError(
+            "--verify-runmanifest cannot be combined with --demo or -f/--file. "
+            "Use 'vpp verify <runmanifest.json>' or 'vpp scan <file>'."
+        )
+    if has_demo and has_file:
+        raise _LegacyArgError(
+            "--demo uses bundled fixtures and cannot be combined with -f/--file. "
+            "Use 'vpp scan <file>' to scan your own file."
+        )
+
     if has_verify_rm:
         rm_path, rest = _extract_flag_value(tokens, ("--verify-runmanifest",))
+        if not rm_path or not str(rm_path).strip():
+            raise _LegacyArgError(
+                "--verify-runmanifest requires a runmanifest.json path "
+                "(deprecated; use 'vpp verify <runmanifest.json>')."
+            )
         print(
             "[DEPRECATED] '--verify-runmanifest' is deprecated; use 'vpp verify <runmanifest.json>'.",
             file=sys.stderr,
         )
-        out = ["verify"]
-        if rm_path:
-            out.append(rm_path)
-        i = 0
-        while i < len(rest):
-            tok = rest[i]
-            if tok in ("--log-level", "-Ll", "--log-file", "-Lf"):
-                out.append(tok)
-                if i + 1 < len(rest):
-                    out.append(rest[i + 1])
-                    i += 2
-                else:
-                    i += 1
-                continue
-            if tok.startswith(("--log-level=", "-Ll=", "--log-file=", "-Lf=")):
-                out.append(tok)
-                i += 1
-                continue
-            if tok in (
-                "--portable",
-                "-P",
-                "--forbid-symlinks-read",
-                "--forbid-symlinks_read",
-                "-Sr",
-                "--allow-symlinks-read",
-                "--forbid-symlinks-write",
-                "--forbid-symlinks_write",
-                "-Sw",
-                "--enforce-root-read",
-                "-err",
-                "--enforce-root-write",
-                "-erw",
-            ):
-                out.append(tok)
-                i += 1
-                continue
-            i += 1
-        return out, False
+        return ["verify", rm_path, *rest], False
 
     if has_demo:
         print(
             "[DEPRECATED] '--demo' is deprecated; use 'vpp demo --no-ui'.",
             file=sys.stderr,
         )
-        filtered: list[str] = []
-        i = 0
-        while i < len(tokens):
-            tok = tokens[i]
-            if tok == "--demo":
-                i += 1
-                continue
-            if tok in ("--db", "--profile", "--output-dir", "--log-level", "-Ll", "--log-file", "-Lf", "--template-dir"):
-                filtered.append(tok)
-                if i + 1 < len(tokens):
-                    filtered.append(tokens[i + 1])
-                    i += 2
-                else:
-                    i += 1
-                continue
-            if tok.startswith(("--db=", "--profile=", "--output-dir=", "--log-level=", "--log-file=", "--template-dir=")):
-                filtered.append(tok)
-                i += 1
-                continue
-            if tok in ("--portable", "-P", "--forbid-symlinks-read", "--forbid-symlinks_read", "-Sr", "--allow-symlinks-read", "--forbid-symlinks-write", "--forbid-symlinks_write", "-Sw", "--enforce-root-read", "-err", "--enforce-root-write", "-erw"):
-                filtered.append(tok)
-                i += 1
-                continue
-            i += 1
+        filtered = [tok for tok in tokens if tok != "--demo"]
         return ["demo", "--no-ui", *filtered], True
 
     if has_file or has_debug_policy:
@@ -531,7 +529,10 @@ def _validate_scan_args(parser: argparse.ArgumentParser, args: argparse.Namespac
             parser.error(f"Output directory '{cand}' is not writable.")
 
     if args.overlay_mode != "flatten" and (not args.presentation):
-        parser.error("--overlay-mode requires --presentation")
+        parser.error("--overlay-mode requires --presentation (e.g. --presentation --overlay-mode namespace).")
+
+    if args.run_id and args.baseline_run_id and args.run_id == args.baseline_run_id:
+        parser.error("--baseline-run-id must differ from --run-id.")
 
     if args.min_ingestion_confidence < 0.0 or args.min_ingestion_confidence > 1.0:
         parser.error("--min-ingestion-confidence must be between 0.0 and 1.0")
@@ -539,14 +540,30 @@ def _validate_scan_args(parser: argparse.ArgumentParser, args: argparse.Namespac
     if args.strict_ingestion:
         args.allow_degraded_input = False
 
+    if args.confirm_unsafe_csv and not args.no_csv_sanitize:
+        parser.error("--confirm-unsafe-csv has no effect without --no-csv-sanitize.")
+
     if (not args.output_csv) and args.no_csv_sanitize:
-        parser.error("[Security Warning] --no-csv-sanitize requires --output-csv")
+        parser.error(
+            "[Security Warning] --no-csv-sanitize requires --output-csv (or --output-all) "
+            "and explicit --confirm-unsafe-csv."
+        )
+
+    if args.output_csv and args.no_csv_sanitize and not args.confirm_unsafe_csv:
+        print(
+            "[Security Warning] --no-csv-sanitize disables CSV formula-injection escaping and requires "
+            "--confirm-unsafe-csv (scan will abort with exit code 2 otherwise).",
+            file=sys.stderr,
+        )
 
     if args.csv_profile != "full" and not args.output_csv:
         parser.error("--csv-profile requires --output-csv when using non-default profiles.")
 
     if (not args.no_exploit) and (args.exploit_source == "offline") and (not args.exploit_db):
-        parser.error("Offline exploit source requires --exploit-db to be set.")
+        parser.error(
+            "Offline exploit source requires --exploit-db PATH to be set "
+            "(or pass --no-exploit to disable Exploit-DB enrichment)."
+        )
 
     if args.ghsa is not None:
         ghsa_value = str(args.ghsa).strip()
@@ -618,8 +635,14 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     diff_p.add_argument("--db", default=".vpp.db", metavar="PATH", help="DuckDB workspace path.")
     diff_p.add_argument("--decisions", type=valid_input_file, default=None, metavar="PATH", help="Decisions registry YAML.")
     diff_p.add_argument("--assets", type=valid_input_file, default=None, metavar="PATH", help="Optional assets.yaml when diffing two scan files on the fly.")
-    diff_p.add_argument("--profile", choices=["default", "bod-26-04"], default="default", help="Triage profile if ingesting scan files.")
+    diff_p.add_argument("--profile", choices=["default", "bod-26-04"], default=None, help="Triage profile override (defaults to stored run profile or 'default').")
     diff_p.add_argument("--offline", action="store_true", default=False, help="Offline mode if ingesting scan files.")
+    diff_p.add_argument(
+        "--re-enrich",
+        action="store_true",
+        default=False,
+        help="Re-evaluate target run CVEs against current local KEV/EPSS/NVD caches before diffing.",
+    )
     diff_p.add_argument("--fail-on", choices=["p1", "p2", "kev", "stale-assumption", "none"], default="none", help="Exit with code 2 when specified delta condition triggers.")
     diff_p.add_argument("--output-md", default=None, metavar="PATH", help="Write Markdown diff report.")
     diff_p.add_argument("--output-pr-comment", default=None, metavar="PATH", help="Write concise PR comment Markdown.")
@@ -716,6 +739,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     intel_p.add_argument("--nvd", dest="nvd_source", default=None, metavar="PATH", help="Local NVD JSON / .json.gz / directory.")
     intel_p.add_argument("--ghsa", default=None, metavar="PATH", help="Local GHSA advisory JSON/directory.")
     intel_p.add_argument("--osv", default=None, metavar="PATH", help="Local OSV JSON/directory/zip.")
+    intel_p.add_argument(
+        "--years",
+        default=None,
+        metavar="YEARS",
+        help="Optional NVD year or range/list for 'intel sync' (e.g. 2021-2026 or 2021,2024).",
+    )
     intel_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Print status as JSON.")
 
     return parser, {
@@ -730,15 +759,59 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     }
 
 
+def _validate_export_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.confirm_unsafe_csv and not args.no_csv_sanitize:
+        parser.error("--confirm-unsafe-csv has no effect without --no-csv-sanitize.")
+    if args.no_csv_sanitize and args.format != "csv":
+        parser.error("--no-csv-sanitize only applies when --format csv is selected.")
+    if args.no_csv_sanitize and not args.confirm_unsafe_csv:
+        print(
+            "[Security Warning] --no-csv-sanitize disables CSV formula-injection escaping and requires "
+            "--confirm-unsafe-csv (export will abort with exit code 2 otherwise).",
+            file=sys.stderr,
+        )
+    if args.csv_profile != "full" and args.format != "csv":
+        parser.error("--csv-profile requires --format csv when using non-default profiles.")
+    if args.pretty_print and args.format != "json":
+        parser.error("--pretty-print only applies when --format json is selected.")
+
+
+def _validate_intel_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if getattr(args, "years", None) is not None:
+        if args.action != "sync":
+            parser.error("--years is only supported with 'vpp intel sync' (e.g. vpp intel sync --feed nvd --years 2021-2026).")
+        if args.feed not in ("all", "nvd"):
+            parser.error(f"--years only applies to NVD feeds (--feed nvd or --feed all), not --feed {args.feed}.")
+        try:
+            args.years = _validate_years_spec(args.years)
+        except ValueError as exc:
+            parser.error(str(exc))
+
+
 def get_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     raw_argv = sys.argv[1:] if argv is None else list(argv)
-    rewritten, is_legacy_demo = _preprocess_legacy_argv(raw_argv)
-
     parser, subparsers_map = build_parser()
+
+    try:
+        rewritten, is_legacy_demo = _preprocess_legacy_argv(raw_argv)
+    except _LegacyArgError as exc:
+        parser.error(str(exc))
+
     args = parser.parse_args(rewritten)
+
+    if getattr(args, "enforce_root_read", False) and not getattr(args, "portable", False) and not _env_is_portable():
+        print(
+            "[WARNING] --enforce-root-read without --portable (-P) restricts reads to the OS user data "
+            "directory; pass --portable (-P) to allow reading files under the current working directory.",
+            file=sys.stderr,
+        )
 
     if args.command == "scan":
         _validate_scan_args(subparsers_map["scan"], args)
+    elif args.command == "export":
+        _validate_export_args(subparsers_map["export"], args)
+    elif args.command == "intel":
+        _validate_intel_args(subparsers_map["intel"], args)
     elif args.command == "defer":
         if args.max_epss is not None and not (0.0 <= args.max_epss <= 1.0):
             subparsers_map["defer"].error("--max-epss must be between 0.0 and 1.0")

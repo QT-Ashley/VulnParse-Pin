@@ -44,7 +44,7 @@ Every subcommand (`scan`, `demo`, `diff`, `ui`, `export`, `verify`, `defer`, `in
 - `--forbid-symlinks-read`, `--forbid-symlinks_read`, `-Sr`: Reject symlinks when resolving read paths (default: `True`).
 - `--allow-symlinks-read`: Explicitly allow following symlinks during read operations.
 - `--forbid-symlinks-write`, `--forbid-symlinks_write`, `-Sw`: Reject symlinks when resolving write paths (default: `True`).
-- `--enforce-root-read`, `-err`: Restrict read operations to `PermFileHandler` acceptable roots (default: `False`).
+- `--enforce-root-read`, `-err`: Restrict read operations to `PermFileHandler` acceptable roots (default: `False`). Without `--portable`, `root_dir` is the OS user data directory (for example `~/.local/share/VulnParse-Pin/`), so scanning files under `$PWD` fails closed with `FilePathError`. Pair `--enforce-root-read` with `--portable` (`-P`) when scanning or verifying files under `$PWD`.
 - `--enforce-root-write`, `-erw`: Restrict write operations to `PermFileHandler` acceptable roots (default: `True`; explicit CLI output paths are authorized via `authorize_output_path` without escaping symlink checks).
 - `--file-mode <OCTAL>`, `-fm <OCTAL>`: POSIX-only chmod mode for written files (default: `0o600`).
 - `--dir-mode <OCTAL>`, `-dm <OCTAL>`: POSIX-only chmod mode for created directories (default: `0o700`).
@@ -52,7 +52,7 @@ Every subcommand (`scan`, `demo`, `diff`, `ui`, `export`, `verify`, `defer`, `in
 
 ### Portability
 
-- `--portable`, `-P`: Store config, cache, logs, and default outputs in `./data` relative to the current working directory (or frozen executable directory) instead of OS user data directories. Also enabled by setting `VULNPARSE_PIN_PORTABLE=1` (or `true`/`yes`/`y`/`on`).
+- `--portable`, `-P`: Store config, cache, logs, and default outputs in `./data` relative to the current working directory (or frozen executable directory) instead of OS user data directories, and set `$PWD` as `PermFileHandler.root_dir` (allowing `--enforce-root-read` to permit inputs under `$PWD`). Also enabled by setting `VULNPARSE_PIN_PORTABLE=1` (or `true`/`yes`/`y`/`on`).
 
 ---
 
@@ -113,7 +113,7 @@ vpp scan [OPTIONS] [files ...]
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--template-dir DIR` | `None` | Custom Jinja2 reporting templates directory (symlink-checked). |
-| `--output-dossier PATH` | `None` | Write Decision Defense Dossier `.md` and `.html` (file stem or directory). |
+| `--output-dossier PATH` | `None` | Write Decision Defense Dossier `.md` and `.html` (file stem or directory). Note: single-pass `vpp scan` dossiers show `Pending post-export RunManifest seal (see runmanifest.json)`; run `vpp export --format dossier-html` post-scan to embed the sealed `sha256:...` digest. |
 | `--output-html PATH` | `None` | Write standalone HTML Decision Defense Dossier. |
 | `--output FILE`, `-o FILE`, `--output-json FILE` | `None` | Write normalized + derived JSON output. |
 | `--output-csv PATH`, `-oC PATH` | `None` | Write CSV output. |
@@ -128,7 +128,7 @@ vpp scan [OPTIONS] [files ...]
 | `--overlay-mode {flatten,namespace}` | `flatten` | Presentation overlay mode (requires `--presentation`). |
 | `--no-csv-sanitize`, `-noC` | `False` | Disable CSV cell formula-injection sanitization (requires `--output-csv` and `--confirm-unsafe-csv`, otherwise fails with exit `2`). |
 | `--confirm-unsafe-csv` | `False` | Explicit confirmation required to disable CSV sanitization. |
-| `--webhook-endpoint URL` | `None` | Override configured webhook target with an HTTPS URL (credentials in URL are rejected). |
+| `--webhook-endpoint URL` | `None` | Override configured webhook target with an HTTPS URL (credentials in URL rejected; requires `VP_WEBHOOK_HMAC_KEY`, excludes validly deferred/accepted/mitigated findings, and logs a `WEBHOOK_DELIVERY` ledger event). |
 | `--webhook-oal-filter {all,P1,P1b,P2}` | `None` | Filter webhook `top_findings` payload by Operational Action Lane. |
 
 Example:
@@ -179,18 +179,20 @@ vpp diff [OPTIONS] [base] [target]
 | `--db PATH` | `.vpp.db` | DuckDB workspace path when diffing stored runs. |
 | `--decisions PATH` | `None` | Decisions registry YAML for stale-assumption checks. |
 | `--assets PATH` | `None` | Optional `assets.yaml` when diffing two scan files on the fly. |
-| `--profile {default,bod-26-04}` | `default` | Triage profile when ingesting two scan files on the fly. |
+| `--profile {default,bod-26-04}` | `default` | Triage profile when ingesting two scan files on the fly or re-enriching. |
 | `--offline` | `False` | Offline enrichment mode when ingesting two scan files on the fly. |
+| `--re-enrich` | `False` | Re-evaluate target run CVEs against current local KEV/EPSS/NVD caches before diffing without mutating frozen historical `runs` rows (works in both 1-run and multi-run `.vpp.db` workspaces for scheduled drift checks when no new scan files are supplied). |
 | `--fail-on {p1,p2,kev,stale-assumption,none}` | `none` | Exit with code `2` when the specified delta condition triggers. |
 | `--output-md PATH` | `None` | Write Markdown diff report. |
 | `--output-pr-comment PATH` | `None` | Write concise PR comment Markdown. |
 | `--output-json PATH` | `None` | Write structured JSON diff report. |
 | `--template-dir DIR` | `None` | Custom Jinja2 templates directory. |
 
-Example CI gate:
+Example CI / scheduled drift gates:
 
 ```bash
 vpp diff --db .vpp.db --decisions decisions.yaml --fail-on stale-assumption --output-pr-comment out/pr_comment.md
+vpp diff --db .vpp.db --decisions decisions.yaml --re-enrich --fail-on stale-assumption --output-json out/drift.json
 ```
 
 ---
@@ -212,16 +214,19 @@ vpp ui [OPTIONS]
 | `--template-dir DIR` | `None` | Custom Jinja2 templates directory. |
 
 Keyboard shortcuts inside `vpp ui`:
-- `1` / `2` / `3` / `4`: Filter by priority tier `P1` / `P2` / `P3` / `P4`
-- `0`: Clear all filters
-- `t`: Cycle scoring track (`cve_threat` / `exposure_weakness` / all)
-- `k`: Toggle CISA KEV filter
-- `u`: Toggle unmatched shadow assets filter
+- `1` / `2` / `3` / `4`: Filter by priority tier `P1` / `P2` / `P3` / `P4` (automatically switches back to the **Findings** tab and focuses the table if pressed from **Diff & Stale Assumptions**)
+- `0`: Clear all filters (automatically switches back to **Findings** if on **Diff**)
+- `t`: Cycle scoring track (`cve_threat` / `exposure_weakness` / all; auto-switches back to **Findings**)
+- `k`: Toggle CISA KEV filter (auto-switches back to **Findings**)
+- `u`: Toggle unmatched shadow assets filter (auto-switches back to **Findings**)
 - `/`: Focus search input (`Esc` returns to table)
+- `i`: Toggle keyboard focus between the findings table and the detail inspector scroll pane (switches to **Findings** if on **Diff**; use `Up`/`Down`/`PageDown` to scroll and `Esc` to return focus to the table)
 - `[` / `]`: Previous / next page
+- `r`: Cycle across available scan runs recorded in `.vpp.db`
 - `d`: Switch to **Diff & Stale Assumptions** tab
 - `e` / `E`: Export selected finding dossier / full run dossier
-- `f`: Open deferral / acceptance / mitigation modal
+- `f`: Open deferral / acceptance / mitigation modal (`Enter` in **Rationale** moves focus to **Owner** when empty, and `Enter` submits once required fields are populated)
+- `?`: Open the compact keybinding help modal (`Esc`, `?`, or `Enter` closes; main-screen hotkeys are blocked while open)
 - `q`: Quit
 
 ---
@@ -310,9 +315,16 @@ vpp intel [status|sync] [OPTIONS]
 | `--epss-feed PATH_OR_URL` | `None` | Custom EPSS source for `sync`. |
 | `--exploit-db PATH`, `-edb PATH` | `None` | Local Exploit-DB CSV source for `sync`. |
 | `--nvd PATH` | `None` | Local NVD JSON / `.json.gz` / directory for `sync`. |
+| `--years YEARS` | `config.yaml` NVD policy range (`start_year`..`end_year`) | Optional NVD year, range, or comma-separated list for `vpp intel sync --feed nvd` (for example `2024`, `2021-2026`, or `2021,2023-2025`). When omitted, syncs the configured `config.yaml` NVD policy year range (`start_year`..`end_year`). |
 | `--ghsa PATH` | `None` | Local GHSA advisory JSON/directory for `sync`. |
 | `--osv PATH` | `None` | Local OSV JSON/directory/zip for `sync`. |
 | `--json` | `False` | Print `vpp intel status` output as structured JSON. |
+
+Example NVD range sync:
+
+```bash
+vpp intel sync --feed nvd --years 2021-2026
+```
 
 ---
 
@@ -324,7 +336,7 @@ vpp intel [status|sync] [OPTIONS]
 | Legacy `v1.x` Invocation | Rewritten v2.0 Command |
 | --- | --- |
 | `vpp -f scan.nessus -o out.json` / `vpp --file scan.nessus ...` | `vpp scan -f scan.nessus -o out.json` |
-| `vpp --demo` | `vpp demo --no-ui` (runs packaged legacy OpenVAS + Nmap demo compatibility flow) |
+| `vpp --demo` | `vpp demo --no-ui` (delegates to `vpp demo` using the bundled v2 multi-scanner demo pack) |
 | `vpp --verify-runmanifest runmanifest.json` | `vpp verify runmanifest.json` |
 | `vpp --debug-path-policy` | `vpp scan --debug-path-policy` |
 

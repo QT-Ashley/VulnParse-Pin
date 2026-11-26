@@ -129,6 +129,40 @@ vpp intel status --json
 
 - For non-interactive `vpp demo` runs without `[ui]`, pass `vpp demo --no-ui`.
 
+### 9. `dossier.html` Displays `Pending post-export RunManifest seal (see runmanifest.json)`
+
+**Cause:**
+- During single-pass `vpp scan` (or `vpp demo`), `dossier.html` and `dossier.md` are written *before* `RunManifest` hashes all output artifacts into `output_hashes` (preventing a circular SHA-256 self-hash).
+
+**Fix:**
+- This is expected for inline single-pass exports; `runmanifest.json` holds the authoritative sealed digest and hash of `dossier.html`. If you need the sealed `sha256:...` digest embedded inside `dossier.html` itself (for standalone distribution outside the RunManifest bundle), re-export post-scan from `.vpp.db`:
+
+  ```bash
+  vpp export --db .vpp.db --format dossier-html -o out/dossier.html
+  ```
+
+### 10. `--enforce-root-read` Rejects Scan Files Under `$PWD`
+
+**Symptoms:**
+- `FilePathError: ... is outside allowed roots` when running `vpp scan ... --enforce-root-read` or `vpp verify ... --enforce-root-read` on files in the current working directory.
+
+**Cause:**
+- Without `--portable`, `PermFileHandler` anchors `root_dir` to the OS user data directory (`~/.local/share/VulnParse-Pin/`), not `$PWD`.
+
+**Fix:**
+- Combine `--enforce-root-read` with `--portable` (`-P`) so `$PWD` becomes `root_dir`:
+
+  ```bash
+  vpp scan scans/nessus.xml --portable --enforce-root-read
+  vpp verify out/runmanifest.json --portable --enforce-root-read
+  ```
+
+### 11. Vendor Export & Webhook Caveats
+
+- **Qualys CSV metadata preambles:** `QualysCSVParser` skips up to 25 non-empty report header lines to locate the real `qid` header row; if a custom export has a longer preamble, trim excess title rows above the `QID` column header.
+- **Nmap port-only XML vs. `--nmap`:** Passing `nmap.xml` positionally (`vpp scan nmap.xml`) emits `Informational` open-port findings; pass `--nmap nmap.xml` alongside primary Nessus/Qualys/Trivy/Nuclei scans to enrich exposure and open-port tiebreaking.
+- **Signed webhook fails closed:** Setting `--webhook-endpoint` (or `webhook.enabled: true`) without `VP_WEBHOOK_HMAC_KEY` exported fails closed rather than sending unsigned payloads. Export `VP_WEBHOOK_HMAC_KEY` before running `vpp scan`.
+
 ---
 
 ## General Input & Performance Checks

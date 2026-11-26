@@ -116,6 +116,6 @@ VulnParse-Pin supports the following environment variables across runtime storag
 
 ## Additional Notes
 
-- **Distribution format (`v2.0.0+`)**: Starting with `v2.0.0`, VulnParse-Pin ships as standard signed/attested Python wheels and source distributions via PyPI and [GitHub Releases](https://github.com/QT-Ashley/VulnParse-Pin/releases) (PyInstaller `--onefile` binaries were retired after `v1.2.2`). For containerized or read-only deployments, see [Deployment Options](Deployment%20Options.md).
+- **Distribution format (`v2.0.0+`)**: Starting with `v2.0.0`, VulnParse-Pin ships as standard attested Python wheels and source distributions via PyPI and [GitHub Releases](https://github.com/QT-Ashley/VulnParse-Pin/releases), plus multi-arch OCI container images at `ghcr.io/qt-ashley/vulnparse-pin` and a root source [Dockerfile](../../Dockerfile) (PyInstaller `--onefile` binaries were retired after `v1.2.2`). For containerized or read-only deployments, see [Deployment Options](Deployment%20Options.md).
 - **Support**: For questions or issues, visit [GitHub Issues](https://github.com/QT-Ashley/VulnParse-Pin/issues) or email [support@vulnparse-pin.com](mailto:support@vulnparse-pin.com).
 - **Upgrades**: Review [Upgrade and Migration](Upgrade%20and%20Migration.md) before upgrading from `v1.x` to `v2.0.0`.

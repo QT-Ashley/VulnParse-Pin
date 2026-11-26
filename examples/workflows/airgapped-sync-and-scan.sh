@@ -24,6 +24,8 @@ DECISIONS_FILE="${DECISIONS_FILE:-examples/configs/decisions.example.yaml}"
 PROFILE="${PROFILE:-bod-26-04}"
 
 # Optional local enrichment archives inside ./data or mounted enclave media (must reside under $PWD when --enforce-root-read is enabled)
+KEV_FEED="${KEV_FEED:-}"
+EPSS_FEED="${EPSS_FEED:-}"
 NVD_LOCAL_PATH="${NVD_LOCAL_PATH:-}"
 GHSA_LOCAL_PATH="${GHSA_LOCAL_PATH:-}"
 OSV_LOCAL_PATH="${OSV_LOCAL_PATH:-}"
@@ -53,10 +55,24 @@ case "$mode" in
 
     echo "[1/3] Syncing threat-intel caches in portable mode (./data/cache)..."
     sync_args=(intel sync --feed all --portable)
-    [[ -n "$NVD_LOCAL_PATH" ]] && sync_args+=(--nvd "$NVD_LOCAL_PATH")
-    [[ -n "$GHSA_LOCAL_PATH" ]] && sync_args+=(--ghsa "$GHSA_LOCAL_PATH")
-    [[ -n "$OSV_LOCAL_PATH" ]] && sync_args+=(--osv "$OSV_LOCAL_PATH")
-    [[ -n "$EXPLOIT_DB_CSV" ]] && sync_args+=(--exploit-db "$EXPLOIT_DB_CSV")
+    if [[ -n "$KEV_FEED" ]]; then
+      sync_args+=(--kev-feed "$KEV_FEED")
+    fi
+    if [[ -n "$EPSS_FEED" ]]; then
+      sync_args+=(--epss-feed "$EPSS_FEED")
+    fi
+    if [[ -n "$NVD_LOCAL_PATH" ]]; then
+      sync_args+=(--nvd "$NVD_LOCAL_PATH")
+    fi
+    if [[ -n "$GHSA_LOCAL_PATH" ]]; then
+      sync_args+=(--ghsa "$GHSA_LOCAL_PATH")
+    fi
+    if [[ -n "$OSV_LOCAL_PATH" ]]; then
+      sync_args+=(--osv "$OSV_LOCAL_PATH")
+    fi
+    if [[ -n "$EXPLOIT_DB_CSV" ]]; then
+      sync_args+=(--exploit-db "$EXPLOIT_DB_CSV")
+    fi
     "$VPP_BIN" "${sync_args[@]}"
 
     echo "[2/3] Verifying feed integrity and SQLite HMAC sidecars..."
@@ -96,6 +112,10 @@ EOF
 
     echo "[1/3] Checking offline feed cache & HMAC health..."
     "$VPP_BIN" intel status --portable --json | tee "${OUT_DIR}/intel-status-enclave.json"
+    if grep -Eq '"health":[[:space:]]*"(tampered|world-writable|symlink|corrupt)"' "${OUT_DIR}/intel-status-enclave.json"; then
+      echo "[ERROR] Offline threat-intel cache integrity check failed in ${OUT_DIR}/intel-status-enclave.json; refusing to start scan." >&2
+      exit 1
+    fi
 
     # Note: In --portable mode, CWD is an authorized root for --enforce-root-read.
     # Pass --exploit-source offline only when --exploit-db PATH is supplied (required by cli/args.py);
@@ -112,11 +132,21 @@ EOF
       --output-dossier "${OUT_DIR}/dossier"
       --output-runmanifest "${OUT_DIR}/runmanifest.json"
     )
-    [[ -f "$ASSETS_FILE" ]] && scan_args+=(--assets "$ASSETS_FILE")
-    [[ -f "$DECISIONS_FILE" ]] && scan_args+=(--decisions "$DECISIONS_FILE")
-    [[ -n "$NVD_LOCAL_PATH" ]] && scan_args+=(--nvd "$NVD_LOCAL_PATH")
-    [[ -n "$GHSA_LOCAL_PATH" ]] && scan_args+=(--ghsa "$GHSA_LOCAL_PATH")
-    [[ -n "$OSV_LOCAL_PATH" ]] && scan_args+=(--osv "$OSV_LOCAL_PATH")
+    if [[ -f "$ASSETS_FILE" ]]; then
+      scan_args+=(--assets "$ASSETS_FILE")
+    fi
+    if [[ -f "$DECISIONS_FILE" ]]; then
+      scan_args+=(--decisions "$DECISIONS_FILE")
+    fi
+    if [[ -n "$NVD_LOCAL_PATH" ]]; then
+      scan_args+=(--nvd "$NVD_LOCAL_PATH")
+    fi
+    if [[ -n "$GHSA_LOCAL_PATH" ]]; then
+      scan_args+=(--ghsa "$GHSA_LOCAL_PATH")
+    fi
+    if [[ -n "$OSV_LOCAL_PATH" ]]; then
+      scan_args+=(--osv "$OSV_LOCAL_PATH")
+    fi
     if [[ -n "$EXPLOIT_DB_CSV" ]]; then
       scan_args+=(--exploit-source offline --exploit-db "$EXPLOIT_DB_CSV")
     fi

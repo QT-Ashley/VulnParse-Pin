@@ -37,15 +37,18 @@ Key bindings available inside `vpp ui`:
 
 | Key | Action |
 | --- | --- |
-| `1` / `2` / `3` / `4` / `0` | Filter by priority tier (`P1`, `P2`, `P3`, `P4`) or `0` to clear filters |
-| `t` | Cycle scoring track (`cve_threat` vs. `exposure_weakness`) |
-| `k` | Toggle CISA KEV filter |
-| `u` | Toggle `unmatched_shadow` assets filter |
+| `1` / `2` / `3` / `4` / `0` | Filter by priority tier (`P1`, `P2`, `P3`, `P4`) or `0` to clear filters (auto-switches back to **Findings** if on **Diff**) |
+| `t` | Cycle scoring track (`cve_threat` vs. `exposure_weakness`; auto-switches to **Findings**) |
+| `k` | Toggle CISA KEV filter (auto-switches to **Findings**) |
+| `u` | Toggle `unmatched_shadow` assets filter (auto-switches to **Findings**) |
 | `/` | Focus search input (`Esc` returns to table) |
+| `i` | Toggle focus between findings table and inspector scroll pane (`Esc` returns to table) |
 | `[` / `]` | Previous / next page |
+| `r` | Cycle through available scan runs in `.vpp.db` |
 | `d` | Switch to Diff tab (`demo-baseline` → `demo-current`) |
 | `e` / `E` | Export Decision Defense Dossier for selected finding (`e`) or full run (`E`) |
-| `f` | Open interactive deferral modal (`vpp defer`) |
+| `f` | Open interactive deferral modal (`Enter` advances Rationale -> Owner or submits) |
+| `?` | Open keybinding help modal (`Esc`, `?`, or `Enter` closes) |
 | `q` | Quit |
 
 ---
@@ -209,6 +212,15 @@ vpp diff \
 
 Sync threat-intel feeds on a schedule (`cron`, `systemd` timer, or Kubernetes `CronJob`), evaluate `vpp diff --fail-on stale-assumption`, and separate operational failures (`exit 1`) from policy drift alerts (`exit 2`).
 
+When `SCAN_FILES` is empty (no new scan reports to ingest), pass `--re-enrich` on `vpp diff` to re-evaluate existing target-run CVEs against freshly synced local KEV/EPSS/NVD caches without mutating frozen historical `runs` rows (works in both 1-run and multi-run `.vpp.db` workspaces):
+
+```bash
+vpp intel sync --feed kev
+vpp intel sync --feed epss
+vpp intel sync --feed nvd --years 2021-2026
+vpp diff --db .vpp.db --decisions decisions.yaml --re-enrich --fail-on stale-assumption --output-json out/drift_report.json
+```
+
 - Runnable script: [`examples/workflows/scheduled-kev-drift-check.sh`](../../examples/workflows/scheduled-kev-drift-check.sh)
 - Scheduler templates: [`examples/deploy/k8s-cronjob-vpp-drift.yaml`](../../examples/deploy/k8s-cronjob-vpp-drift.yaml), [`examples/deploy/systemd/vpp-drift.service`](../../examples/deploy/systemd/vpp-drift.service)
 
@@ -226,7 +238,7 @@ VPP_WEBHOOK_OAL_FILTER="P1" \
   ./examples/workflows/scheduled-kev-drift-check.sh
 ```
 
-Direct CLI flags for webhook overrides on `vpp scan`:
+Direct CLI flags for webhook overrides on `vpp scan` (requires `VP_WEBHOOK_HMAC_KEY` to be set; fails closed if missing/invalid, excludes validly deferred/accepted/mitigated findings, and logs a hash-chained `WEBHOOK_DELIVERY` ledger event):
 
 ```bash
 vpp scan scans/trivy.sarif \
@@ -268,6 +280,8 @@ export VP_SQLITE_HMAC_KEY="shared-staging-enclave-sqlite-secret"
 ./examples/workflows/airgapped-sync-and-scan.sh scan scans/nessus.xml scans/trivy.sarif
 ```
 
+> **Note on `--enforce-root-read` + `--portable`:** Without `--portable`, `PermFileHandler` anchors `allowed_roots` to the OS user data directory (`~/.local/share/VulnParse-Pin/`), so `--enforce-root-read` rejects scan files under `$PWD`. Pairing `--portable` (`-P`) with `--enforce-root-read` sets `$PWD` as `root_dir`, permitting reads under `$PWD` while blocking reads outside it.
+>
 > **Note on `--exploit-source offline`:** `cli/args.py` requires `--exploit-db <PATH>` whenever `--exploit-source offline` is passed explicitly. When using the synced cache without a standalone Exploit-DB CSV path, `--offline` alone reads the cached `files_exploit.csv` under `cache/exploit_db/` if present.
 
 ---

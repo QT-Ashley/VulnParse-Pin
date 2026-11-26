@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD009 MD026 MD032 MD033 MD041 MD045 -->
 
 <p align="center">
-  <img src="/assets/logos/vpp_logo_pack_transparent/logo.svg" width="420">
+  <img src="https://raw.githubusercontent.com/QT-Ashley/VulnParse-Pin/main/assets/logos/vpp_logo_pack_transparent/logo.svg" width="420">
 </p>
 
 <h1 align="center">VulnParse‑Pin v2.0.0</h1>
@@ -15,13 +15,13 @@ Normalize • Enrich • Prioritize • Defend • Diff
 </p>
 
 <p align="center">
-<a href="https://docs.vulnparse-pin.com">Documentation</a> •
-<a href="documentation/docs/Overview.md">Overview</a> •
-<a href="documentation/docs/Features.md">Features</a> •
-<a href="documentation/docs/Architecture.md">Architecture</a> •
-<a href="documentation/docs/Getting%20Started%20In%205%20Minutes.md">Getting Started</a> •
-<a href="CHANGELOG.md">Changelog</a> •
-<a href="documentation/docs/Licensing.md">Licensing</a>
+<a href="https://qt-ashley.github.io/VulnParse-Pin/">Documentation</a> •
+<a href="https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Overview.md">Overview</a> •
+<a href="https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Features.md">Features</a> •
+<a href="https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Architecture.md">Architecture</a> •
+<a href="https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Getting%20Started%20In%205%20Minutes.md">Getting Started</a> •
+<a href="https://github.com/QT-Ashley/VulnParse-Pin/blob/main/CHANGELOG.md">Changelog</a> •
+<a href="https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Licensing.md">Licensing</a>
 </p>
 
 ![Static Badge](https://img.shields.io/badge/VulnParsePin-vpp-0096FF?style=plastic&logo=github)
@@ -37,7 +37,7 @@ Normalize • Enrich • Prioritize • Defend • Diff
 > **License Forward Cut (`v2.0.0+`):** VulnParse-Pin `v2.0.0` and later are licensed under **Apache-2.0** with zero copyleft Python runtime dependencies. Historical releases `v1.0.0–v1.2.2` remain licensed under `AGPL-3.0-or-later`.
 
 <p align="center">
-  <img src="documentation/img/vpp-decision-dossier.png" alt="VulnParse-Pin v2.0.0 Decision Defense Dossier (dossier.html)" width="920">
+  <img src="https://raw.githubusercontent.com/QT-Ashley/VulnParse-Pin/main/documentation/img/vpp-decision-dossier.png" alt="VulnParse-Pin v2.0.0 Decision Defense Dossier (dossier.html)" width="920">
 </p>
 <p align="center">
   <em>Self-contained offline <strong>Decision Defense Dossier</strong> (<code>dossier.html</code>) — CISA KEV + EPSS v5 + CVSS provenance, stale-deferral invalidation alerts, shadow-asset disclosure, and SHA-256 <code>RunManifest</code> chain with zero external CDNs.</em>
@@ -54,7 +54,7 @@ pipx install "vulnparse-pin[ui]" && vpp demo
 *(Headless / CI installation without Textual TUI dependencies: `pipx install vulnparse-pin` or `pip install vulnparse-pin`, then run `vpp demo --no-ui`.)*
 
 <p align="center">
-  <img src="documentation/img/vpp-demo.gif" alt="VulnParse-Pin v2.0.0 interactive offline demo" width="900">
+  <img src="https://raw.githubusercontent.com/QT-Ashley/VulnParse-Pin/main/documentation/img/vpp-demo.gif" alt="VulnParse-Pin v2.0.0 interactive offline demo" width="900">
 </p>
 
 `vpp demo` launches **100% offline in under 2 seconds** against a bundled multi-scanner sample pack (Nessus XML, Trivy SARIF, Nuclei JSONL, Semgrep SARIF, Nmap XML, pattern `assets.yaml`, `decisions.yaml`, and miniature EPSS v5 / KEV / NVD / GHSA snapshots):
@@ -63,9 +63,9 @@ pipx install "vulnparse-pin[ui]" && vpp demo
 - Scores both **CVE Threat** (`Track A`) and **Non-CVE Exposure & Weakness** (`Track B`) under `--profile bod-26-04`
 - Flags **Unmatched Shadow Assets** and **Invalidated Deferrals** via `DiffEngine`
 - Exports a self-contained **HTML + Markdown Decision Defense Dossier**, **Client Executive Roadmap**, and **RunManifest** (`vpp_demo_output/`)
-- Opens the interactive **`vpp ui`** terminal workspace (filter P1/Exposure/KEV/Shadow via `1`/`t`/`k`/`u`, inspect live `score_trace`, press `e` to export dossiers, or `f` to record a deferral)
+- Opens the interactive **`vpp ui`** terminal workspace (filter P1/Exposure/KEV/Shadow via `1`/`t`/`k`/`u`, focus/scroll inspector via `i`, cycle runs via `r`, open help via `?`, press `e` to export dossiers, or `f` to record a deferral)
 
-*(Demo screencast: [`documentation/img/vpp-demo.gif`](documentation/img/vpp-demo.gif) • VHS tape: [`documentation/demo/vpp-demo.tape`](documentation/demo/vpp-demo.tape).)*
+*(Demo screencast: [`documentation/img/vpp-demo.gif`](https://raw.githubusercontent.com/QT-Ashley/VulnParse-Pin/main/documentation/img/vpp-demo.gif) • VHS tape: [`documentation/demo/vpp-demo.tape`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/demo/vpp-demo.tape).)*
 
 ---
 
@@ -142,10 +142,10 @@ vpp diff --db .vpp.db --decisions decisions.yaml \
 ```
 
 Ready-to-copy templates & runnable recipes:
-- **GitHub Actions**: [`examples/ci/github-actions-trivy-vpp.yml`](examples/ci/github-actions-trivy-vpp.yml)
-- **GitLab CI**: [`examples/ci/gitlab-ci-trivy-vpp.yml`](examples/ci/gitlab-ci-trivy-vpp.yml)
-- **Configs, Workflows & Deployments**: [`examples/`](examples/README.md) (`assets.example.yaml`, `decisions.example.yaml`, MSSP / air-gapped / drift-check scripts, Dockerfile / Compose / Kubernetes / systemd)
-- **End-to-End Recipes**: [`documentation/docs/Workflow Examples.md`](documentation/docs/Workflow%20Examples.md)
+- **GitHub Actions**: [`examples/ci/github-actions-trivy-vpp.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/github-actions-trivy-vpp.yml)
+- **GitLab CI**: [`examples/ci/gitlab-ci-trivy-vpp.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/gitlab-ci-trivy-vpp.yml)
+- **Configs, Workflows & Deployments**: [`examples/`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/README.md) (`assets.example.yaml`, `decisions.example.yaml`, MSSP / air-gapped / drift-check scripts, Dockerfile / Compose / Kubernetes / systemd)
+- **End-to-End Recipes**: [`documentation/docs/Workflow Examples.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Workflow%20Examples.md)
 
 ---
 
@@ -163,13 +163,13 @@ VulnParse-Pin **does NOT** perform AST source-code call-graph reachability analy
 
 ## v2.0 DuckDB Scale Benchmarks
 
-VulnParse-Pin includes a reproducible multi-scanner scale benchmark harness in [`benchmarks/bench_scale.py`](benchmarks/bench_scale.py) covering mixed Nessus XML, Trivy SARIF 2.1.0, Nuclei JSONL, Semgrep SAST SARIF, Nmap XML, `assets.yaml`, and offline EPSS v5 / KEV / NVD / Exploit-DB snapshots across all four v2.0 stages (`iter_batches()` → `ingest_normalized_batches()` → `populate_enrichment_snapshots()` → `run_v2_duckdb_pipeline()` → `query_findings_page()` + `get_run_summary_counts()`).
+VulnParse-Pin includes a reproducible multi-scanner scale benchmark harness in [`benchmarks/bench_scale.py`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/benchmarks/bench_scale.py) covering mixed Nessus XML, Trivy SARIF 2.1.0, Nuclei JSONL, Semgrep SAST SARIF, Nmap XML, `assets.yaml`, and offline EPSS v5 / KEV / NVD / Exploit-DB snapshots across all four v2.0 stages (`iter_batches()` → `ingest_normalized_batches()` → `populate_enrichment_snapshots()` → `run_v2_duckdb_pipeline()` → `query_findings_page()` + `get_run_summary_counts()`).
 
 ```bash
 python benchmarks/bench_scale.py --findings 500000 --findings 700000 --json-out bench_v2_results.json
 ```
 
-> **Measured on `2026-11-24T14:34:55Z`:** Python `3.12.3`, `Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39` (`32` CPUs), `--profile bod-26-04`, `batch_size=10000`. See [`documentation/docs/Benchmarks.md`](documentation/docs/Benchmarks.md) for historical `v1.x` baselines.
+> **Measured on `2026-11-24T14:34:55Z`:** Python `3.12.3`, `Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39` (`32` CPUs), `--profile bod-26-04`, `batch_size=10000`. See [`documentation/docs/Benchmarks.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Benchmarks.md) for historical `v1.x` baselines.
 
 | Raw Findings | Unique Findings | Assets (Shadow) | Parse+Ingest (s) | Enrich (s) | Pipeline DAG (s) | UI+Summary (s) | Total (s) | Throughput (raw/s) | Peak RSS (MiB) | `.vpp.db` (MiB) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -198,6 +198,18 @@ source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install "vulnparse-pin[ui]"
 ```
 
+### Portable Container (`ghcr.io` & Local Source Build)
+
+```bash
+# Run multi-arch non-root OCI image (Linux amd64/arm64, --read-only compatible)
+docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges:true \
+  --tmpfs /tmp:rw,noexec,nosuid -v "$PWD:/work" -v "vpp-cache:/cache" \
+  ghcr.io/qt-ashley/vulnparse-pin:2.0.0 demo --no-ui --output-dir /work/vpp_demo_output
+
+# Or build directly from this repository checkout
+docker build -t vulnparse-pin:2.0.0 .
+```
+
 ### From Source (Development & Benchmarks)
 
 ```bash
@@ -208,49 +220,49 @@ pip install -e ".[dev,ui]"
 
 Both `vpp` and `vulnparse-pin` entrypoints (plus `python -m vulnparse_pin`) are installed. Legacy flags (`vpp -f scan.nessus`, `vpp --demo`, `vpp --verify-runmanifest ...`) remain supported via a transparent compatibility shim.
 
-See [`documentation/docs/Installation.md`](documentation/docs/Installation.md), [`documentation/docs/Deployment%20Options.md`](documentation/docs/Deployment%20Options.md), and [`documentation/docs/Getting%20Started%20In%205%20Minutes.md`](documentation/docs/Getting%20Started%20In%205%20Minutes.md) for full options (including `pipx`/`uv tool`, Docker/Compose, Kubernetes `CronJob`, `systemd`, and air-gapped wheelhouses).
+See [`documentation/docs/Installation.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Installation.md), [`documentation/docs/Deployment%20Options.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Deployment%20Options.md), and [`documentation/docs/Getting%20Started%20In%205%20Minutes.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Getting%20Started%20In%205%20Minutes.md) for full options (including `pipx`/`uv tool`, Docker/Compose, Kubernetes `CronJob`, `systemd`, and air-gapped wheelhouses).
 
 ---
 
 ## Feedback, Contributions & Roadmap
 
-- Contributor workflow and guidelines: [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- Security vulnerability reporting policy: [`SECURITY.md`](SECURITY.md)
-- Product roadmap (`v2.0.0` shipped & Phase 2 `v2.1+` plans): [`ROADMAP.md`](ROADMAP.md)
-- Release history & upgrade notes: [`CHANGELOG.md`](CHANGELOG.md)
+- Contributor workflow and guidelines: [`CONTRIBUTING.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/CONTRIBUTING.md)
+- Security vulnerability reporting policy: [`SECURITY.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/SECURITY.md)
+- Product roadmap (`v2.0.0` shipped & Phase 2 `v2.1+` plans): [`ROADMAP.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/ROADMAP.md)
+- Release history & upgrade notes: [`CHANGELOG.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/CHANGELOG.md)
 
 ---
 
 ## Documentation
 
-- [Docs Index](documentation/docs/index.md)
-- [Overview](documentation/docs/Overview.md)
-- [Getting Started In 5 Minutes](documentation/docs/Getting%20Started%20In%205%20Minutes.md)
-- [Usage Guide](documentation/docs/Usage.md)
-- [Workflow Examples](documentation/docs/Workflow%20Examples.md)
-- [Deployment Options](documentation/docs/Deployment%20Options.md)
-- [Runnable Examples](examples/README.md)
-- [Upgrade and Migration](documentation/docs/Upgrade%20and%20Migration.md)
-- [Output Interpretation](documentation/docs/Output%20Interpretation.md)
-- [Architecture](documentation/docs/Architecture.md)
-- [Pipeline System](documentation/docs/Pipeline%20System.md)
-- [Scoring and Prioritization Deep Dive](documentation/docs/Scoring%20and%20Prioritization%20Deep%20Dive.md)
-- [Attack Capability Inference (ACI)](documentation/docs/ACI%20Feature%20Explanation.md)
-- [RunManifest Overview](documentation/docs/RunManifest.md)
-- [Security Features](documentation/docs/Security%20Features.md)
-- [Benchmarks](documentation/docs/Benchmarks.md)
-- [Licensing](documentation/docs/Licensing.md)
+- [Docs Index](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/index.md)
+- [Overview](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Overview.md)
+- [Getting Started In 5 Minutes](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Getting%20Started%20In%205%20Minutes.md)
+- [Usage Guide](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Usage.md)
+- [Workflow Examples](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Workflow%20Examples.md)
+- [Deployment Options](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Deployment%20Options.md)
+- [Runnable Examples](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/README.md)
+- [Upgrade and Migration](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Upgrade%20and%20Migration.md)
+- [Output Interpretation](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Output%20Interpretation.md)
+- [Architecture](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Architecture.md)
+- [Pipeline System](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Pipeline%20System.md)
+- [Scoring and Prioritization Deep Dive](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Scoring%20and%20Prioritization%20Deep%20Dive.md)
+- [Attack Capability Inference (ACI)](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/ACI%20Feature%20Explanation.md)
+- [RunManifest Overview](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/RunManifest.md)
+- [Security Features](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Security%20Features.md)
+- [Benchmarks](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Benchmarks.md)
+- [Licensing](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Licensing.md)
 
 ---
 
 ## License
 
-Starting with **v2.0.0**, VulnParse-Pin is licensed under the **Apache License, Version 2.0** (`Apache-2.0`). See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) for complete terms and third-party attributions.
+Starting with **v2.0.0**, VulnParse-Pin is licensed under the **Apache License, Version 2.0** (`Apache-2.0`). See [`LICENSE`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/LICENSE) and [`NOTICE`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/NOTICE) for complete terms and third-party attributions.
 
 - `v2.0.0+`: `Apache-2.0` — permissive for internal security operations, MSSP/consulting engagements, CI/CD gates, commercial embedding, and hosted services.
 - `v1.0.0–v1.2.2`: `AGPL-3.0-or-later` — historical releases remain under their original license.
 
-For full licensing details and disclaimers, see [`documentation/docs/Licensing.md`](documentation/docs/Licensing.md).
+For full licensing details and disclaimers, see [`documentation/docs/Licensing.md`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Licensing.md).
 
 ## Disclaimers
 

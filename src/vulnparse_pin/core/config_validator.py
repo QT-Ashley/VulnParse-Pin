@@ -6,7 +6,10 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from importlib import resources
+import ipaddress
 import json
+import os
+import socket
 from typing import Any, Dict, TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -309,10 +312,96 @@ class ConfigValidator:
             if not isinstance(endpoint, dict):
                 raise RuntimeError("Webhook endpoints must contain only objects.")
             url = str(endpoint.get("url", "")).strip()
-            parts = urlsplit(url)
-            if parts.scheme.lower() != "https":
-                raise RuntimeError(f"Webhook endpoint must use https: {url}")
-            if not parts.netloc:
-                raise RuntimeError(f"Webhook endpoint must include a host: {url}")
-            if parts.username or parts.password:
-                raise RuntimeError(f"Webhook endpoint must not embed credentials: {url}")
+            try:
+                validate_webhook_https_url(url)
+            except ValueError as exc:
+                raise RuntimeError(f"Invalid webhook endpoint URL '{url}': {exc}") from exc
+
+
+_BLOCKED_WEBHOOK_HOST_SUFFIXES = (".local", ".localhost")
+_BLOCKED_WEBHOOK_EXACT_HOSTS = frozenset(
+    {
+        "localhost",
+        "metadata.google.internal",
+        "metadata.goog",
+        "metadata.aws.internal",
+        "instance-data.ec2.internal",
+        "metadata.azure.internal",
+        "metadata.internal",
+    }
+)
+
+
+def _allow_private_webhooks() -> bool:
+    return os.getenv("VP_WEBHOOK_ALLOW_PRIVATE", "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _is_disallowed_ip(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if (
+        ip_obj.is_loopback
+        or ip_obj.is_private
+        or ip_obj.is_link_local
+        or ip_obj.is_unspecified
+        or ip_obj.is_reserved
+        or ip_obj.is_multicast
+    ):
+        return True
+    if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
+        return _is_disallowed_ip(ip_obj.ipv4_mapped)
+    return False
+
+
+def validate_webhook_https_url(value: str) -> str:
+    """Validate that a webhook URL uses HTTPS, has no embedded creds, and avoids SSRF host targets."""
+    url = str(value or "").strip()
+    parts = urlsplit(url)
+    if parts.scheme.lower() != "https":
+        raise ValueError("Webhook endpoint must use https.")
+    if not parts.netloc:
+        raise ValueError("Webhook endpoint must include a host.")
+    if parts.username or parts.password:
+        raise ValueError("Webhook endpoint must not embed credentials.")
+    host = (parts.hostname or "").strip().rstrip(".").lower()
+    if not host:
+        raise ValueError("Webhook endpoint must include a host.")
+    if not _allow_private_webhooks():
+        if host in _BLOCKED_WEBHOOK_EXACT_HOSTS or host.endswith(_BLOCKED_WEBHOOK_HOST_SUFFIXES):
+            raise ValueError(f"Webhook endpoint host '{host}' is a disallowed local/internal hostname.")
+        bare_host = host.split("%", 1)[0]
+        try:
+            ip_obj = ipaddress.ip_address(bare_host)
+        except ValueError:
+            ip_obj = None
+            try:
+                ip_obj = ipaddress.IPv4Address(socket.inet_aton(bare_host))
+            except OSError:
+                ip_obj = None
+        if ip_obj is not None and _is_disallowed_ip(ip_obj):
+            raise ValueError(f"Webhook endpoint IP '{ip_obj}' is not a routable public address.")
+    return url
+
+
+def validate_webhook_resolved_dns(url: str) -> None:
+    """Resolve webhook hostname and reject loopback, private, link-local, or non-routable IPs."""
+    if _allow_private_webhooks():
+        return
+    parts = urlsplit(str(url or "").strip())
+    host = (parts.hostname or "").strip().rstrip(".").lower()
+    if not host:
+        raise ValueError("Webhook endpoint must include a host.")
+    port = parts.port or 443
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return
+    for info in infos:
+        sockaddr = info[4] if len(info) > 4 else None
+        if not sockaddr:
+            continue
+        raw_ip = str(sockaddr[0]).split("%", 1)[0]
+        try:
+            ip_obj = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            continue
+        if _is_disallowed_ip(ip_obj):
+            raise ValueError(f"Webhook endpoint host '{host}' resolved to non-routable IP '{ip_obj}'.")

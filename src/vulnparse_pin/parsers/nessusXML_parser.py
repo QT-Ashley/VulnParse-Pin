@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ipaddress
 from pathlib import Path
+import re
 from typing import Any, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
 from lxml import etree
 
@@ -27,6 +28,41 @@ from vulnparse_pin.core.classes.dataclass import ScanResult
 
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext
+
+
+_CREDENTIALED_19506_RE = re.compile(r"Credentialed checks\s*:\s*yes\b", re.IGNORECASE)
+_MAX_HOST_ITEM_BUFFER = 50_000
+
+_EXPLOIT_TAGS = frozenset(
+    {
+        "exploit_available",
+        "exploit_framework_metasploit",
+        "exploit_framework_canvas",
+        "exploit_framework_core",
+        "exploit_framework_d2_elliot",
+        "exploited_by_malware",
+        "exploited_by_nessus",
+    }
+)
+_TRUTHY_TOKENS = frozenset({"true", "yes", "1"})
+_FALSY_TOKENS = frozenset({"false", "no", "0"})
+
+
+def _normalize_cvss_vector(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.startswith("SENTINEL:"):
+        return None
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    if "#" in s:
+        prefix, rest = s.split("#", 1)
+        if prefix.upper().startswith("CVSS"):
+            s = rest.strip()
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    return s or None
 
 
 def _is_ip(value: str) -> bool:
@@ -152,10 +188,10 @@ class NessusXMLParser(BaseParser):
 
         host_name_attr: Optional[str] = None
         host_props: Dict[str, str] = {}
-        host_ctx: Optional[Dict[str, Any]] = None
-        host_props_done = False
+        host_cred_from_19506 = False
         pending_items: List[Dict[str, Any]] = []
         host_item_count = 0
+        host_overflow_streamed = False
 
         try:
             with self._open_read(path, self.ctx, mode="rb", label="Nessus XML") as fh:
@@ -174,35 +210,34 @@ class NessusXMLParser(BaseParser):
                         elif tag == "ReportHost":
                             host_name_attr = elem.get("name") or "SENTINEL:HostName_Unavailable"
                             host_props = {}
-                            host_ctx = None
-                            host_props_done = False
+                            host_cred_from_19506 = False
                             pending_items = []
                             host_item_count = 0
+                            host_overflow_streamed = False
                         continue
 
                     # event == "end"
                     if tag == "Policy":
                         prune_element(elem)
                     elif tag == "HostProperties":
-                        host_props = self._host_properties_map(elem)
-                        host_props_done = True
-                        host_ctx = self._build_host_ctx(host_name_attr or "", host_props)
+                        host_props.update(self._host_properties_map(elem))
                         if not scan_date:
                             scan_date = host_props.get("HOST_END") or host_props.get("HOST_START")
-                        if pending_items:
-                            for raw_item in pending_items:
-                                rec = self._finalize_record(raw_item, host_ctx)
-                                batch.append(rec)
-                                host_item_count += 1
-                                if len(batch) >= batch_size:
-                                    yield batch
-                                    batch = []
-                            pending_items.clear()
                         prune_element(elem)
                     elif tag == "ReportItem":
                         raw_item = self._extract_raw_item(elem)
                         prune_element(elem)
-                        if host_props_done and host_ctx is not None:
+                        if raw_item["plugin_id"] == "19506" and _CREDENTIALED_19506_RE.search(
+                            raw_item["plugin_output"]
+                        ):
+                            host_cred_from_19506 = True
+
+                        if host_overflow_streamed:
+                            host_ctx = self._build_host_ctx(
+                                host_name_attr or "",
+                                host_props,
+                                cred_override=host_cred_from_19506,
+                            )
                             rec = self._finalize_record(raw_item, host_ctx)
                             batch.append(rec)
                             host_item_count += 1
@@ -211,9 +246,27 @@ class NessusXMLParser(BaseParser):
                                 batch = []
                         else:
                             pending_items.append(raw_item)
+                            if len(pending_items) >= _MAX_HOST_ITEM_BUFFER:
+                                host_ctx = self._build_host_ctx(
+                                    host_name_attr or "",
+                                    host_props,
+                                    cred_override=host_cred_from_19506,
+                                )
+                                for buffered_item in pending_items:
+                                    rec = self._finalize_record(buffered_item, host_ctx)
+                                    batch.append(rec)
+                                    host_item_count += 1
+                                    if len(batch) >= batch_size:
+                                        yield batch
+                                        batch = []
+                                pending_items.clear()
+                                host_overflow_streamed = True
                     elif tag == "ReportHost":
-                        if host_ctx is None:
-                            host_ctx = self._build_host_ctx(host_name_attr or "", host_props)
+                        host_ctx = self._build_host_ctx(
+                            host_name_attr or "",
+                            host_props,
+                            cred_override=host_cred_from_19506,
+                        )
                         if pending_items:
                             for raw_item in pending_items:
                                 rec = self._finalize_record(raw_item, host_ctx)
@@ -237,7 +290,6 @@ class NessusXMLParser(BaseParser):
                                     "os": host_ctx["os"],
                                 }
                             )
-                        host_ctx = None
                         prune_element(elem)
         except (OSError, etree.XMLSyntaxError) as exc:
             raise ValueError(f"Failed to parse XML: {exc}") from exc
@@ -262,7 +314,13 @@ class NessusXMLParser(BaseParser):
     # ------------------------- Helpers ------------------------
 
     @classmethod
-    def _build_host_ctx(cls, host_name_attr: str, host_props: Dict[str, str]) -> Dict[str, Any]:
+    def _build_host_ctx(
+        cls,
+        host_name_attr: str,
+        host_props: Dict[str, str],
+        *,
+        cred_override: bool = False,
+    ) -> Dict[str, Any]:
         raw_ip = (host_props.get("host-ip") or "").strip()
         raw_fqdn = (
             host_props.get("host-fqdn")
@@ -296,7 +354,7 @@ class NessusXMLParser(BaseParser):
             or host_props.get("credentialed_scan")
             or ""
         ).strip().lower()
-        credentialed = cred_raw in {"yes", "true", "1"}
+        credentialed = cred_override or (cred_raw in _TRUTHY_TOKENS)
 
         open_ports: list[int] = []
         for k, v in host_props.items():
@@ -326,10 +384,14 @@ class NessusXMLParser(BaseParser):
         sol_text: Optional[str] = None
         out_text: Optional[str] = None
         rf_text: Optional[str] = None
-        exp_text: Optional[str] = None
+        exploit_vals: List[str] = []
+        v4_score_text: Optional[str] = None
+        v4_alt_score_text: Optional[str] = None
         v3_score_text: Optional[str] = None
         v3_alt_score_text: Optional[str] = None
         v2_score_text: Optional[str] = None
+        v4_vec_text: Optional[str] = None
+        v4_alt_vec_text: Optional[str] = None
         v3_vec_text: Optional[str] = None
         v3_alt_vec_text: Optional[str] = None
         v2_vec_text: Optional[str] = None
@@ -364,6 +426,18 @@ class NessusXMLParser(BaseParser):
                     s = ctext.strip()
                     if s:
                         cwe_texts.append(s)
+            elif ctag == "cvss4_base_score":
+                if v4_score_text is None:
+                    v4_score_text = ctext or ""
+            elif ctag == "cvssV4_base_score":
+                if v4_alt_score_text is None:
+                    v4_alt_score_text = ctext or ""
+            elif ctag == "cvss4_vector":
+                if v4_vec_text is None:
+                    v4_vec_text = ctext or ""
+            elif ctag == "cvssV4_vector":
+                if v4_alt_vec_text is None:
+                    v4_alt_vec_text = ctext or ""
             elif ctag == "cvss_base_score":
                 if v2_score_text is None:
                     v2_score_text = ctext or ""
@@ -391,9 +465,11 @@ class NessusXMLParser(BaseParser):
             elif ctag == "see_also":
                 if ctext:
                     see_also_texts.append(ctext)
-            elif ctag == "exploit_available":
-                if exp_text is None:
-                    exp_text = ctext or ""
+            elif ctag in _EXPLOIT_TAGS:
+                if ctext:
+                    val = ctext.strip().lower()
+                    if val:
+                        exploit_vals.append(val)
 
         title = (plugin_name_text or item.get("pluginName") or "SENTINEL:No_Title").strip()
         description = (desc_text or syn_text or "").strip()
@@ -413,28 +489,24 @@ class NessusXMLParser(BaseParser):
         cves = extract_cves_from_text(" ".join(cve_texts)) if cve_texts else []
         cwes = extract_cwes_from_text(" ".join(cwe_texts), description, plugin_output)
 
-        score: Optional[float] = None
-        v3_score_chosen = v3_score_text or v3_alt_score_text
-        if v3_score_chosen:
-            score = self._safe_float(v3_score_chosen)
-        elif v2_score_text:
-            score = self._safe_float(v2_score_text)
-        if score is not None and not (0.0 <= score <= 10.0):
-            score = None
-
-        cvss_vector: Optional[str] = None
-        v3_vec_chosen = (v3_vec_text or v3_alt_vec_text or "").strip()
-        v2_vec_chosen = (v2_vec_text or "").strip()
-        if v3_vec_chosen:
-            cvss_vector = v3_vec_chosen.split("#", 1)[1] if "#" in v3_vec_chosen else v3_vec_chosen
-        elif v2_vec_chosen:
-            cvss_vector = v2_vec_chosen.split("#", 1)[1] if "#" in v2_vec_chosen else v2_vec_chosen
-        if cvss_vector:
-            cvss_vector = cvss_vector.strip() or None
+        score = self._pick_valid_cvss_score(
+            v4_score_text,
+            v4_alt_score_text,
+            v3_score_text,
+            v3_alt_score_text,
+            v2_score_text,
+        )
+        cvss_vector = self._pick_normalized_cvss_vector(
+            v4_vec_text,
+            v4_alt_vec_text,
+            v3_vec_text,
+            v3_alt_vec_text,
+            v2_vec_text,
+        )
 
         references: List[str] = []
         if see_also_texts:
-            seen_refs: Set[str] = set()
+            seen_refs: set[str] = set()
             for rtext in see_also_texts:
                 for line in rtext.splitlines():
                     cleaned = line.strip()
@@ -443,11 +515,10 @@ class NessusXMLParser(BaseParser):
                         references.append(cleaned)
 
         ghsa_ids = extract_ghsas_from_text(description, " ".join(references))
-        exploit_raw = (exp_text or "").strip().lower()
         exploit_evidence: Optional[bool]
-        if exploit_raw == "true":
+        if any(v in _TRUTHY_TOKENS for v in exploit_vals):
             exploit_evidence = True
-        elif exploit_raw == "false":
+        elif any(v in _FALSY_TOKENS for v in exploit_vals):
             exploit_evidence = False
         else:
             exploit_evidence = None
@@ -607,28 +678,36 @@ class NessusXMLParser(BaseParser):
         cwe_texts = [c.text.strip() for c in item.findall("cwe") if c is not None and c.text]
         return extract_cwes_from_text(" ".join(cwe_texts), description, plugin_output)
 
+    def _pick_valid_cvss_score(self, *candidates: Optional[str]) -> Optional[float]:
+        for raw in candidates:
+            if not raw:
+                continue
+            val = self._safe_float(raw.strip())
+            if val is not None and 0.0 <= val <= 10.0:
+                return val
+        return None
+
+    @staticmethod
+    def _pick_normalized_cvss_vector(*candidates: Optional[str]) -> Optional[str]:
+        for raw in candidates:
+            norm = _normalize_cvss_vector(raw)
+            if norm:
+                return norm
+        return None
+
     def _extract_cvss(self, item) -> Tuple[Optional[float], Optional[str]]:
-        score: Optional[float] = None
-        v3_score_text = item.findtext("cvss3_base_score") or item.findtext("cvssV3_base_score")
-        v2_score_text = item.findtext("cvss_base_score")
-
-        if v3_score_text:
-            score = self._safe_float(v3_score_text)
-        elif v2_score_text:
-            score = self._safe_float(v2_score_text)
-
-        if score is not None and not (0.0 <= score <= 10.0):
-            score = None
-
-        vector: Optional[str] = None
-        v3_vector = (item.findtext("cvss3_vector") or item.findtext("cvssV3_vector") or "").strip()
-        v2_vector_raw = (item.findtext("cvss_vector") or "").strip()
-
-        if v3_vector:
-            vector = v3_vector.split("#", 1)[1] if "#" in v3_vector else v3_vector
-        elif v2_vector_raw:
-            vector = v2_vector_raw.split("#", 1)[1] if "#" in v2_vector_raw else v2_vector_raw
-
-        if vector:
-            vector = vector.strip() or None
+        score = self._pick_valid_cvss_score(
+            item.findtext("cvss4_base_score"),
+            item.findtext("cvssV4_base_score"),
+            item.findtext("cvss3_base_score"),
+            item.findtext("cvssV3_base_score"),
+            item.findtext("cvss_base_score"),
+        )
+        vector = self._pick_normalized_cvss_vector(
+            item.findtext("cvss4_vector"),
+            item.findtext("cvssV4_vector"),
+            item.findtext("cvss3_vector"),
+            item.findtext("cvssV3_vector"),
+            item.findtext("cvss_vector"),
+        )
         return score, vector

@@ -21,25 +21,51 @@ PROFILE="${PROFILE:-bod-26-04}"
 OUT_DIR="${OUT_DIR:-out/drift}"
 
 # Optional space-delimited scan files to ingest a fresh run before diffing.
-# Leave empty to diff existing runs in $DB_PATH against updated decisions/intel.
+# Leave empty to re-enrich and diff existing runs in $DB_PATH against updated decisions/intel.
 SCAN_FILES="${SCAN_FILES:-}"
 BASE_RUN_ID="${BASE_RUN_ID:-}"
 TARGET_RUN_ID="${TARGET_RUN_ID:-}"
+
+KEV_FEED="${KEV_FEED:-}"
+EPSS_FEED="${EPSS_FEED:-}"
+NVD_SOURCE="${NVD_SOURCE:-}"
+NVD_YEARS="${NVD_YEARS:-}"
+SKIP_INTEL_SYNC="${SKIP_INTEL_SYNC:-0}"
 
 VPP_WEBHOOK_URL="${VPP_WEBHOOK_URL:-}"
 VPP_WEBHOOK_OAL_FILTER="${VPP_WEBHOOK_OAL_FILTER:-P1}"
 
 mkdir -p "$OUT_DIR"
 
-echo "[1/3] Syncing CISA KEV, EPSS, and NVD feeds..."
-"$VPP_BIN" intel sync --feed kev
-"$VPP_BIN" intel sync --feed epss
-"$VPP_BIN" intel sync --feed nvd
+if [[ "$SKIP_INTEL_SYNC" == "1" ]]; then
+  echo "[1/3] Skipping threat-intel feed sync (SKIP_INTEL_SYNC=1)."
+else
+  echo "[1/3] Syncing CISA KEV, EPSS, and NVD feeds..."
+  kev_sync_args=(intel sync --feed kev)
+  if [[ -n "$KEV_FEED" ]]; then
+    kev_sync_args+=(--kev-feed "$KEV_FEED")
+  fi
+  "$VPP_BIN" "${kev_sync_args[@]}"
+
+  epss_sync_args=(intel sync --feed epss)
+  if [[ -n "$EPSS_FEED" ]]; then
+    epss_sync_args+=(--epss-feed "$EPSS_FEED")
+  fi
+  "$VPP_BIN" "${epss_sync_args[@]}"
+
+  nvd_sync_args=(intel sync --feed nvd)
+  if [[ -n "$NVD_SOURCE" ]]; then
+    nvd_sync_args+=(--nvd "$NVD_SOURCE")
+  fi
+  if [[ -n "$NVD_YEARS" ]]; then
+    nvd_sync_args+=(--years "$NVD_YEARS")
+  fi
+  "$VPP_BIN" "${nvd_sync_args[@]}"
+fi
 
 if [[ -n "$SCAN_FILES" ]]; then
   echo "[2/3] Running scheduled scan against updated threat intelligence..."
-  # shellcheck disable=SC2206
-  scan_inputs=($SCAN_FILES)
+  read -r -a scan_inputs <<< "$SCAN_FILES"
   scan_args=(
     scan "${scan_inputs[@]}"
     --decisions "$DECISIONS_FILE"
@@ -48,7 +74,9 @@ if [[ -n "$SCAN_FILES" ]]; then
     --output-dossier "${OUT_DIR}/dossier"
     --output-runmanifest "${OUT_DIR}/runmanifest.json"
   )
-  [[ -f "$ASSETS_FILE" ]] && scan_args+=(--assets "$ASSETS_FILE")
+  if [[ -f "$ASSETS_FILE" ]]; then
+    scan_args+=(--assets "$ASSETS_FILE")
+  fi
   if [[ -n "$VPP_WEBHOOK_URL" ]]; then
     if [[ -z "${VP_WEBHOOK_HMAC_KEY:-}" ]]; then
       echo "[WARN] VPP_WEBHOOK_URL set without VP_WEBHOOK_HMAC_KEY; webhook signing requires VP_WEBHOOK_HMAC_KEY." >&2
@@ -58,7 +86,7 @@ if [[ -n "$SCAN_FILES" ]]; then
   "$VPP_BIN" "${scan_args[@]}"
   "$VPP_BIN" verify "${OUT_DIR}/runmanifest.json"
 else
-  echo "[2/3] Skipping scan ingestion (SCAN_FILES not set; diffing runs inside $DB_PATH)."
+  echo "[2/3] Skipping scan ingestion (SCAN_FILES not set; will re-enrich stored run via --re-enrich)."
 fi
 
 echo "[3/3] Evaluating stale-assumption drift gate (--fail-on stale-assumption)..."
@@ -69,6 +97,11 @@ fi
 diff_args+=(
   --db "$DB_PATH"
   --decisions "$DECISIONS_FILE"
+)
+if [[ -z "$SCAN_FILES" ]]; then
+  diff_args+=(--re-enrich)
+fi
+diff_args+=(
   --fail-on stale-assumption
   --output-md "${OUT_DIR}/drift_report.md"
   --output-json "${OUT_DIR}/drift_report.json"

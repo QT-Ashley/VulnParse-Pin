@@ -15,6 +15,8 @@ This document tracks shipped milestones and upcoming work for VulnParse-Pin (`vp
 - [done] **Scan-over-Scan `DiffEngine` (`vpp diff`)** — Full outer join diffing across `.vpp.db` runs for new high-risk findings, threat-intel escalations, verified remediations, shadow-asset deltas, and stale-assumption deferral invalidations (`--fail-on p1|p2|kev|stale-assumption|none`, exit `2` on gate failure).
 - [done] **Decision Defense Dossiers, Client Executive Roadmaps & Subcommand CLI / Textual TUI** — Jinja2 self-contained HTML & Markdown Decision Defense Dossiers and Executive Roadmaps (`autoescape`, `md_escape`, zero external CDNs, custom `--template-dir`), streaming DuckDB CSV/JSON exporters, chunked `RunManifest` v2, subcommand CLI (`scan`, `demo`, `diff`, `ui`, `export`, `verify`, `defer`, `intel`) + legacy compat shim, 100% offline `vpp demo` pack, optional `vpp ui` (`vulnparse-pin[ui]`), CI templates (`examples/ci/`), and `benchmarks/bench_scale.py`.
 
+- [done] **Portable Multi-Arch OCI Container (`ghcr.io/qt-ashley/vulnparse-pin`)** — Multi-stage non-root `Dockerfile` (`uid=10001`, `--read-only` rootfs compatible, `[ui]` Textual support) published on releases to `ghcr.io/qt-ashley/vulnparse-pin` (`linux/amd64`, `linux/arm64`) with pre-push read-only container smoke checks, SBOMs, and GitHub artifact provenance attestations.
+
 ---
 
 ## Phase 2 (`v2.1+`) — Planned
@@ -22,7 +24,7 @@ This document tracks shipped milestones and upcoming work for VulnParse-Pin (`vp
 - [planned] **CMDB & Cloud Inventory Compilers** — Declarative compilers translating AWS, GCP, Azure, NetBox, and ServiceNow asset exports into validated `assets.yaml` rules and alias mappings.
 - [planned] **Extended Threat Intelligence Overlays** — VulnCheck KEV++ exploit timelines and ENISA EUVD regional advisory overlays integrated into `enrichment_snapshots`.
 - [planned] **OpenVEX & CycloneDX VEX Ingestion** — Native VEX status parsing (`not_affected`, `affected`, `fixed`, `under_investigation`) with justification provenance fed into `Triage@2.0` and Decision Defense Dossiers.
-- [planned] **Air-Gapped Wheelhouse & Cosign-Signed OCI Images** — Reproducible offline wheelhouse archives and Cosign-signed container images (`ghcr.io/qt-ashley/vulnparse-pin`) for restricted enclaves.
+- [planned] **Air-Gapped Wheelhouse Bundles & Cosign Container Signatures** — Pre-packaged offline wheelhouse release tarballs and optional keyless Cosign OCI signatures layered alongside existing GitHub attestations for restricted enclaves.
 - [planned] **`vpp bundle` Offline Evidence & Intel Bundles** — Cryptographically signed, portable archive bundles packaging `.vpp.db`, feed snapshots, and `RunManifest` verification chains for air-gapped handoff.
 - [planned] **GRC & Federal Compliance Export Profiles** — Native eMASS and FedRAMP POA&M export templates alongside existing Decision Defense Dossiers and Executive Roadmaps.
 - [planned] **Multi-Run Trend Analytics, Ticketing & SIEM Adapters** — Historical SLA burn-down metrics across `.vpp.db` runs, Jira/ServiceNow issue sync, and Splunk HEC / OpenSearch / Slack / Teams / PagerDuty adapters.

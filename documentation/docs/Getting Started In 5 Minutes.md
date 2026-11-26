@@ -54,6 +54,13 @@ vpp demo --no-ui
 - `vpp_demo_output/executive_roadmap.html`: Executive Client Roadmap
 - `vpp_demo_output/runmanifest.json`: Cryptographically digest-sealed `RunManifest` with hash-chained decision ledger
 
+> [!NOTE]
+> Single-pass `vpp demo` and `vpp scan --output-dossier ... --output-runmanifest ...` write `dossier.html` before `RunManifest` computes `output_hashes` (preventing a circular SHA-256 self-hash), so inline dossiers display `Pending post-export RunManifest seal (see runmanifest.json)`. To embed the sealed `sha256:...` digest directly inside `dossier.html`, re-export from `.vpp.db` / `.vpp-demo.db` after the scan:
+>
+> ```bash
+> vpp export --db .vpp.db --format dossier-html -o out/dossier.html
+> ```
+
 ## 3) Run Your First Scan (`vpp scan`)
 
 Point `vpp scan` at one or more scanner reports (Nessus `.nessus`/`.xml`/`.csv`, OpenVAS `.xml`, Qualys `.xml`/`.csv`, SARIF 2.1.0 `.sarif`/`.json`, Nuclei `.jsonl`) plus optional Nmap context, asset inventory (`assets.yaml`), and triage decisions (`decisions.yaml`):
@@ -92,17 +99,20 @@ Key TUI shortcuts (`vpp ui`):
 
 | Key | Action |
 | --- | --- |
-| `1` / `2` / `3` / `4` | Filter findings to priority tier `P1` / `P2` / `P3` / `P4` |
-| `0` | Clear all active filters |
-| `t` | Cycle scoring track (`cve_threat` / `exposure_weakness` / all) |
-| `k` | Toggle CISA KEV filter |
-| `u` | Toggle unmatched shadow assets filter |
+| `1` / `2` / `3` / `4` | Filter findings to priority tier `P1` / `P2` / `P3` / `P4` (auto-switches back to **Findings** if on **Diff**) |
+| `0` | Clear all active filters (auto-switches back to **Findings** if on **Diff**) |
+| `t` | Cycle scoring track (`cve_threat` / `exposure_weakness` / all; auto-switches to **Findings**) |
+| `k` | Toggle CISA KEV filter (auto-switches to **Findings**) |
+| `u` | Toggle unmatched shadow assets filter (auto-switches to **Findings**) |
 | `/` | Focus search box (`Esc` returns to findings table) |
+| `i` | Toggle focus between findings table and inspector pane (`Up`/`Down`/`PageDown` to scroll; `Esc` returns to table) |
 | `[` / `]` | Previous / next page |
+| `r` | Cycle across runs stored in `.vpp.db` |
 | `d` | Switch to **Diff & Stale Assumptions** tab |
 | `e` | Export Decision Defense Dossier for the selected finding |
 | `E` | Export full-run Decision Defense Dossier |
-| `f` | Open deferral / acceptance / mitigation modal (`decisions.yaml`) |
+| `f` | Open deferral / acceptance / mitigation modal (`Enter` moves Rationale -> Owner or submits) |
+| `?` | Open keybinding help modal (`Esc`, `?`, or `Enter` closes) |
 | `q` | Quit |
 
 ## 5) Diff Runs and Verify Evidence (`vpp diff` & `vpp verify`)

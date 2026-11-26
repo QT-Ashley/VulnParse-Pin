@@ -26,6 +26,23 @@ if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext
 
 
+def _normalize_cvss_vector(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.startswith("SENTINEL:"):
+        return None
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    if "#" in s:
+        prefix, rest = s.split("#", 1)
+        if prefix.upper().startswith("CVSS"):
+            s = rest.strip()
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    return s or None
+
+
 def _is_ip(value: Optional[str]) -> bool:
     if not value:
         return False
@@ -243,7 +260,10 @@ class NucleiJSONLParser(BaseParser):
         cvss_score = self._safe_float(classification.get("cvss-score"))
         if cvss_score is not None and not (0.0 <= cvss_score <= 10.0):
             cvss_score = None
-        cvss_vector = str(classification.get("cvss-metrics") or "").strip() or None
+        raw_metrics = classification.get("cvss-metrics")
+        if isinstance(raw_metrics, list):
+            raw_metrics = next((str(m) for m in raw_metrics if m is not None and str(m).strip()), None)
+        cvss_vector = _normalize_cvss_vector(str(raw_metrics) if raw_metrics is not None else None)
         if cvss_vector and cvss_score is None:
             computed = compute_cvss_base_score(cvss_vector)
             if computed is not None:

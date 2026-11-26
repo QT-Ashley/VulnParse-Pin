@@ -48,17 +48,20 @@ if [[ -f "$NMAP_FILE" ]]; then
 fi
 
 echo "[1/5] Running multi-scanner assessment (${#scan_inputs[@]} input(s), profile=$PROFILE)..."
-"$VPP_BIN" scan "${scan_inputs[@]}" \
-  "${nmap_args[@]}" \
-  --assets "$ASSETS_FILE" \
-  --decisions "$DECISIONS_FILE" \
-  --profile "$PROFILE" \
-  --run-id "$BASELINE_RUN_ID" \
-  --db "$ENGAGEMENT_DB" \
-  --output-dossier "${OUT_DIR}/dossier" \
-  --output-runmanifest "${OUT_DIR}/runmanifest.json" \
-  --runmanifest-mode expanded \
+baseline_scan_args=(
+  scan "${scan_inputs[@]}"
+  ${nmap_args[@]+"${nmap_args[@]}"}
+  --assets "$ASSETS_FILE"
+  --decisions "$DECISIONS_FILE"
+  --profile "$PROFILE"
+  --run-id "$BASELINE_RUN_ID"
+  --db "$ENGAGEMENT_DB"
+  --output-dossier "${OUT_DIR}/dossier"
+  --output-runmanifest "${OUT_DIR}/runmanifest.json"
+  --runmanifest-mode expanded
   --show-ingestion-summary
+)
+"$VPP_BIN" "${baseline_scan_args[@]}"
 
 echo "[2/5] Exporting Client Executive Remediation Roadmaps (HTML + Markdown)..."
 "$VPP_BIN" export \
@@ -85,16 +88,19 @@ done
 
 if [[ ${#retest_inputs[@]} -gt 0 ]]; then
   echo "[4/5] Running re-test scan against baseline '$BASELINE_RUN_ID'..."
-  "$VPP_BIN" scan "${retest_inputs[@]}" \
-    "${nmap_args[@]}" \
-    --assets "$ASSETS_FILE" \
-    --decisions "$DECISIONS_FILE" \
-    --profile "$PROFILE" \
-    --run-id "$RETEST_RUN_ID" \
-    --baseline-run-id "$BASELINE_RUN_ID" \
-    --db "$ENGAGEMENT_DB" \
-    --output-dossier "${OUT_DIR}/retest_dossier" \
+  retest_scan_args=(
+    scan "${retest_inputs[@]}"
+    ${nmap_args[@]+"${nmap_args[@]}"}
+    --assets "$ASSETS_FILE"
+    --decisions "$DECISIONS_FILE"
+    --profile "$PROFILE"
+    --run-id "$RETEST_RUN_ID"
+    --baseline-run-id "$BASELINE_RUN_ID"
+    --db "$ENGAGEMENT_DB"
+    --output-dossier "${OUT_DIR}/retest_dossier"
     --output-runmanifest "${OUT_DIR}/retest_runmanifest.json"
+  )
+  "$VPP_BIN" "${retest_scan_args[@]}"
 
   "$VPP_BIN" verify "${OUT_DIR}/retest_runmanifest.json"
 

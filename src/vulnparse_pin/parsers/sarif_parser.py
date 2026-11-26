@@ -268,6 +268,23 @@ def _slugify(name: str) -> str:
     return slug or "sarif"
 
 
+def _normalize_cvss_vector(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.startswith("SENTINEL:"):
+        return None
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    if "#" in s:
+        prefix, rest = s.split("#", 1)
+        if prefix.upper().startswith("CVSS"):
+            s = rest.strip()
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    return s or None
+
+
 def _looks_like_container_ref(uri: Optional[str]) -> bool:
     if not uri:
         return False
@@ -1053,18 +1070,37 @@ class SarifParser(BaseParser):
 
         for props in (res_props, rule_props):
             if score is None:
-                for key in ("security-severity", "cvss_score", "cvssScore", "cvss3_score", "cvssV3Score"):
+                for key in (
+                    "cvss4_score",
+                    "cvssV4Score",
+                    "security-severity",
+                    "cvss3_score",
+                    "cvssV3Score",
+                    "cvss_score",
+                    "cvssScore",
+                ):
                     val = props.get(key)
                     parsed = self._safe_float(val)
                     if parsed is not None and 0.0 <= parsed <= 10.0:
                         score = parsed
                         break
             if vector is None:
-                for key in ("cvss_vector", "cvssVector", "cvss3_vector", "cvssV3Vector", "cvss_v3"):
+                for key in (
+                    "cvss4_vector",
+                    "cvssV4Vector",
+                    "cvss_v4",
+                    "cvss3_vector",
+                    "cvssV3Vector",
+                    "cvss_v3",
+                    "cvss_vector",
+                    "cvssVector",
+                ):
                     val = props.get(key)
-                    if isinstance(val, str) and "CVSS:" in val.upper():
-                        vector = val.strip()
-                        break
+                    if isinstance(val, str):
+                        norm = _normalize_cvss_vector(val)
+                        if norm and norm.upper().startswith(("CVSS:", "AV:")):
+                            vector = norm
+                            break
 
             # Trivy SARIF embeds properties.cvss = {"nvd": {"V3Score": ..., "V3Vector": ...}}
             cvss_obj = props.get("cvss")
@@ -1072,13 +1108,19 @@ class SarifParser(BaseParser):
                 for source_entry in cvss_obj.values():
                     if isinstance(source_entry, dict):
                         if score is None:
-                            s = self._safe_float(source_entry.get("V3Score") or source_entry.get("V2Score"))
-                            if s is not None and 0.0 <= s <= 10.0:
-                                score = s
+                            for skey in ("V40Score", "V4Score", "V3Score", "V2Score"):
+                                s = self._safe_float(source_entry.get(skey))
+                                if s is not None and 0.0 <= s <= 10.0:
+                                    score = s
+                                    break
                         if vector is None:
-                            v = source_entry.get("V3Vector") or source_entry.get("V2Vector")
-                            if isinstance(v, str) and v.strip():
-                                vector = v.strip()
+                            for vkey in ("V40Vector", "V4Vector", "V3Vector", "V2Vector"):
+                                v = source_entry.get(vkey)
+                                if isinstance(v, str):
+                                    norm = _normalize_cvss_vector(v)
+                                    if norm:
+                                        vector = norm
+                                        break
             elif cvss_obj is not None and score is None:
                 parsed = self._safe_float(cvss_obj)
                 if parsed is not None and 0.0 <= parsed <= 10.0:

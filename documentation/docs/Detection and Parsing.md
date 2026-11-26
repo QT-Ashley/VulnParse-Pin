@@ -70,6 +70,22 @@ VulnParse-Pin v2.0.0 does **not** use `defusedxml`. All XML parsers (`nessus-xml
   - Raises `csv.field_size_limit` to **32 MiB** (`_MAX_CSV_FIELD_BYTES = min(32 * 1024 * 1024, sys.maxsize)`).
   - Sniffs delimiters across `,`, `;`, `\t`, `|`, builds a single-pass header index map, skips malformed rows that violate column contracts, and emits ledger events when rows are dropped.
 
+## Vendor Export Nuances
+
+- **Nessus `.nessus` XML (`nessus-xml`):**
+  - **Plugin `19506` credentialed detection:** Infers `credentialed = True` (`detection_mode = "credentialed_host"`, `signal_reliability = 1.0`) when Plugin `19506` (*Nessus Scan Information*) `<plugin_output>` matches `Credentialed checks\s*:\s*yes` (case-insensitive)—even when `<HostProperties>` omits `Credentialed_Scan` or appears at the bottom of `<ReportHost>`, and regardless of whether Plugin `19506` (`severity="0"`) appears before or after high-severity `<ReportItem>` elements in the same `<ReportHost>` (bounded per-host buffering paired with immediate `prune_element()` preserves O(1) DOM memory).
+  - **Nessus 10.7+ CVSS v4.0:** Parses `<cvss4_base_score>` and `<cvss4_vector>` (`CVSS:4.0/...`) with strict precedence `CVSS v4.0 > CVSS v3.x > CVSS v2.0`, normalizing vectors by stripping `CVSS2#` / `CVSS3#` prefixes and enclosing `(...)`.
+  - **Exploit framework tags:** Recognizes `<exploit_framework_metasploit>`, `<exploit_framework_canvas>`, `<exploit_framework_core>`, `<exploit_framework_d2_elliot>`, `<exploited_by_malware>`, and `<exploited_by_nessus>` (`true`/`yes`/`1`) alongside `<exploit_available>`.
+- **Nessus CSV (`nessus-csv`):**
+  - **Per-row CVSS precedence (`CVSS v4.0 > CVSS v3.x > CVSS v2.0`):** Orders candidate score and vector columns by CVSS version priority (`CVSS v4.0 Base Score` > `CVSS v3.0/v3.1 Base Score` > `CVSS v2.0 Base Score`) and resolves per row so empty v4/v3 cells fall back cleanly to populated v2 while populated higher versions take precedence. Strips `CVSS2#`, `CVSS3#`, and enclosing `(...)`.
+  - **Tenable.sc & host aliases:** Recognizes Tenable.sc `Plugin Text` as plugin output alongside `Plugin Output`, and maps `DNS`, `DNS Name`, `NetBIOS`, and `NetBIOS Name` host/asset columns.
+- **Qualys VMDR XML (`qualys-xml`) & Qualys CSV (`qualys-csv`):**
+  - **Three Qualys XML schemas:** Supports Scan Report XML (`<SCAN>` / `<SCAN_REPORT>`), Asset Data Report XML (`<ASSET_DATA_REPORT>` → `<HOST_LIST><HOST>` → `<VULN_INFO_LIST><VULN_INFO>` with optional `<GLOSSARY><VULN_DETAILS_LIST><VULN_DETAILS id="...">` lookups), and VM Detection API XML (`<HOST_LIST_VM_DETECTION_OUTPUT>` → `<RESPONSE><HOST_LIST><HOST>` → `<DETECTION_LIST><DETECTION>`), preferring `CVSS3.1` / `CVSS3` over v2 `CVSS` tags and stripping `CVSS2#`/`CVSS3#`/`(...)`.
+  - **Qualys CSV report preambles:** Scans up to the first 25 non-empty CSV rows in both `detect_file` and `_stream_batches` to skip Qualys VMDR report metadata preamble lines until locating the real header row (`qid` + host/IP/DNS + title/severity/type/vuln status), applies per-row `CVSS3.1 Base > CVSS3 Base > CVSS Base` precedence, and recognizes plural `Results` as plugin output.
+- **Nmap port-only XML vs. `--nmap` exposure context:**
+  - Passing an Nmap XML file as a **primary positional input** (`vpp scan nmap.xml`) invokes `NmapXMLParser` (`nmap-xml`, `detection_mode = "network_probe"`), emitting `Informational` open-port findings for port-only scans and `High` findings only when NSE scripts report CVEs or `"vulnerable"`.
+  - Passing an Nmap XML file via **`--nmap nmap.xml`** alongside primary scanners (`vpp scan nessus.xml --nmap nmap.xml`) invokes `NmapAdapterPass` (`NmapAdapter@1.0`) to reconcile open ports onto matching `.vpp.db` assets, surface `unmatched_shadow` hosts, and inform TopN port tiebreaking (`port_tiebreak_enabled`) / `scoring_port_bonus` without creating informational port findings. See [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md).
+
 ## Ingestion quality metadata & batch gates
 
 Every parser emits normalized records (`NormalizedFindingRecord`) via `iter_batches()` carrying:

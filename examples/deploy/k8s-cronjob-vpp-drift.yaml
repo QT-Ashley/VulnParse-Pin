@@ -1,8 +1,7 @@
 # Kubernetes Hardened CronJob for Daily Threat-Intel Sync + Stale-Assumption Drift Detection
 #
 # Prerequisites:
-#   1. Build and push your local image from examples/deploy/Dockerfile to your private registry
-#      (official GHCR Cosign-signed images are planned for Phase 2 in ROADMAP.md).
+#   1. Use ghcr.io/qt-ashley/vulnparse-pin:2.0.0 (or mirror/build from the root Dockerfile to a private enclave registry).
 #   2. Seed /work/.vpp.db and /work/decisions.yaml on the PVC (or mount decisions.yaml via ConfigMap).
 #   3. Replace placeholder Secret values below with real random HMAC keys before applying.
 ---
@@ -51,8 +50,8 @@ spec:
               type: RuntimeDefault
           containers:
             - name: vpp-drift
-              # Locally built from examples/deploy/Dockerfile and pushed to your registry
-              image: registry.example.org/security/vulnparse-pin:2.0.0
+              # Multi-arch attested OCI image (mirror to private registry for air-gapped clusters)
+              image: ghcr.io/qt-ashley/vulnparse-pin:2.0.0
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/bash
@@ -64,10 +63,15 @@ spec:
                   vpp intel sync --feed kev
                   vpp intel sync --feed epss
                   vpp intel sync --feed nvd
+                  re_enrich_args=()
+                  if [ -z "${SCAN_FILES:-}" ]; then
+                    re_enrich_args=(--re-enrich)
+                  fi
                   set +e
                   vpp diff \
                     --db /work/.vpp.db \
                     --decisions /work/decisions.yaml \
+                    "${re_enrich_args[@]}" \
                     --fail-on stale-assumption \
                     --output-md /work/out/drift_report.md \
                     --output-json /work/out/drift_report.json

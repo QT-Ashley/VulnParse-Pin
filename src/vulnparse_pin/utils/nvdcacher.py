@@ -571,6 +571,19 @@ class NVDFeedCache:
 
         if years is not None:
             feeds = self._filter_feeds_by_years(feeds, years, include_modified=include_modified)
+            policy = nvd_policy_from_config(config)
+            existing_keys = {str(f.get("key", "")) for f in feeds}
+            for year_val in sorted(years):
+                year_key = f"nvd.year.{year_val}"
+                if year_key not in existing_keys:
+                    feeds.append(
+                        {
+                            "key": year_key,
+                            "fname": f"{year_val}.json.gz",
+                            "ttl_hours": policy["ttl_yearly"],
+                        }
+                    )
+                    existing_keys.add(year_key)
             if not feeds:
                 self.ctx.logger.info("Enabled, but no feeds selected by plan; skipping...", extra={"vp_label": "NVD Feed Loader"})
                 return

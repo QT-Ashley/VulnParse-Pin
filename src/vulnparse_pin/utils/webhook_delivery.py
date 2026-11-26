@@ -16,6 +16,10 @@ from typing import Any, Dict, Optional
 import requests
 
 from vulnparse_pin.core.classes.decision_reasons import DecisionReasonCodes
+from vulnparse_pin.core.config_validator import (
+    validate_webhook_https_url,
+    validate_webhook_resolved_dns,
+)
 from vulnparse_pin.utils.markdown_report import _operational_action_lane_for_finding, _resolve_triage_policy_from_ctx
 from vulnparse_pin.utils.runmanifest import _canonical_json
 
@@ -305,22 +309,38 @@ def _build_compact_payload(
             externally_facing=externally_facing,
             explicit_sla=explicit_sla,
         )
-        filtered_top_findings.append(
-            {
-                "finding_id": finding_id,
-                "asset_id": asset_id,
-                "title": str(getattr(finding_obj, "title", "") or ""),
-                "score": float(finding_ref.get("score", 0.0) or 0.0),
-                "risk_band": str(finding_ref.get("risk_band", "") or ""),
-                "lane": lane_name,
-                "priority_tier": priority_tier,
-                "sla_bucket": sla_bucket,
-                "port": finding_ref.get("port"),
-                "protocol": finding_ref.get("proto"),
-                "exploit_available": exploit_available,
-                "cisa_kev": cisa_kev,
-            }
-        )
+        item: dict[str, Any] = {
+            "finding_id": finding_id,
+            "asset_id": asset_id,
+            "title": str(getattr(finding_obj, "title", "") or ""),
+            "score": float(finding_ref.get("score", 0.0) or 0.0),
+            "risk_band": str(finding_ref.get("risk_band", "") or ""),
+            "lane": lane_name,
+            "priority_tier": priority_tier,
+            "sla_bucket": sla_bucket,
+            "port": finding_ref.get("port"),
+            "protocol": finding_ref.get("proto"),
+            "exploit_available": exploit_available,
+            "cisa_kev": cisa_kev,
+        }
+        _sentinel = object()
+        for field_name in (
+            "oal",
+            "ssvc_action",
+            "sla_label",
+            "operational_score",
+            "in_kev",
+            "epss_score",
+            "decision_status",
+            "invalidated_reasons",
+        ):
+            if field_name in finding_ref:
+                item[field_name] = finding_ref[field_name]
+            elif finding_obj is not None:
+                obj_val = getattr(finding_obj, field_name, _sentinel)
+                if obj_val is not _sentinel and (field_name != "epss_score" or obj_val is not None):
+                    item[field_name] = obj_val
+        filtered_top_findings.append(item)
 
     top_assets: list[dict[str, Any]] = []
     for ranked in ranked_assets[:10]:
@@ -491,6 +511,7 @@ def emit_configured_webhooks(
             )
 
         try:
+            validate_webhook_https_url(str(getattr(endpoint, "url", "") or ""))
             if body_size > int(getattr(webhook_cfg, "max_payload_bytes", 262144)):
                 raise RuntimeError("Webhook payload exceeds configured max_payload_bytes.")
             secret = _resolve_signing_secret(
@@ -511,6 +532,7 @@ def emit_configured_webhooks(
             response = None
             for attempt in range(max_retries + 1):
                 try:
+                    validate_webhook_resolved_dns(str(endpoint.url))
                     response = requests.post(
                         endpoint.url,
                         data=body_bytes,

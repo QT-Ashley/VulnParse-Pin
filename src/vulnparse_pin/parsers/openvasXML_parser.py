@@ -37,6 +37,23 @@ _GVM_ROOT_TAGS = frozenset(
 )
 
 
+def _normalize_cvss_vector(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.startswith("SENTINEL:"):
+        return None
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    if "#" in s:
+        prefix, rest = s.split("#", 1)
+        if prefix.upper().startswith("CVSS"):
+            s = rest.strip()
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    return s or None
+
+
 def _is_ip(value: str) -> bool:
     if not value:
         return False
@@ -174,7 +191,7 @@ class OpenVASXMLParser(BaseParser):
                         ct = (elem.text or "").strip()
                         if ct:
                             scan_date = ct
-                    elif tag == "ports" and not inside_result:
+                    elif tag in {"ports", "tls_certificates", "host"} and not inside_result:
                         prune_element(elem)
                     elif tag == "result":
                         inside_result = False
@@ -205,18 +222,17 @@ class OpenVASXMLParser(BaseParser):
 
     def _extract_result_record(self, result: etree._Element) -> Optional[NormalizedFindingRecord]:
         host_elem = result.find("host")
-        raw_host = (host_elem.text or "").strip() if host_elem is not None else ""
-        if not raw_host:
-            self.ctx.logger.warning(
-                "Dropping Openvas result with no host entry — malformed or incomplete XML <result> block."
-            )
-            return None
-
         inner_hostname = (
             (host_elem.findtext("hostname") or "").strip()
             if host_elem is not None
             else ""
         )
+        raw_host = ((host_elem.text or "").strip() if host_elem is not None else "") or inner_hostname
+        if not raw_host:
+            self.ctx.logger.warning(
+                "Dropping Openvas result with no host entry — malformed or incomplete XML <result> block."
+            )
+            return None
         if _is_ip(raw_host):
             ip_address: Optional[str] = raw_host
             hostname: Optional[str] = inner_hostname or raw_host
@@ -425,33 +441,55 @@ class OpenVASXMLParser(BaseParser):
         return refs
 
     def _extract_cvss(self, nvt_elem, result_elem) -> Tuple[Optional[float], Optional[str]]:
-        score_candidates = [
+        v4_scores: List[Optional[str]] = [
+            nvt_elem.findtext("cvss4_base") if nvt_elem is not None else None,
+            result_elem.findtext("cvss4_base"),
+        ]
+        v3_scores: List[Optional[str]] = [
             nvt_elem.findtext("cvss3_base") if nvt_elem is not None else None,
-            nvt_elem.findtext("cvss_base") if nvt_elem is not None else None,
             result_elem.findtext("cvss3_base"),
+        ]
+        v2_scores: List[Optional[str]] = [
+            nvt_elem.findtext("cvss_base") if nvt_elem is not None else None,
             result_elem.findtext("cvss_base"),
             nvt_elem.findtext("cvss_base_score") if nvt_elem is not None else None,
             result_elem.findtext("cvss_base_score"),
         ]
-        score = next((self._safe_float(s) for s in score_candidates if s), None)
 
-        vector_candidates = [
+        v4_vectors: List[Optional[str]] = [
+            nvt_elem.findtext("cvss4_vector") if nvt_elem is not None else None,
+            result_elem.findtext("cvss4_vector"),
+        ]
+        v3_vectors: List[Optional[str]] = [
             nvt_elem.findtext("cvss3_vector") if nvt_elem is not None else None,
+            result_elem.findtext("cvss3_vector"),
+        ]
+        v2_vectors: List[Optional[str]] = [
             nvt_elem.findtext("cvss_base_vector") if nvt_elem is not None else None,
             nvt_elem.findtext("cvss_vector") if nvt_elem is not None else None,
-            result_elem.findtext("cvss3_vector"),
             result_elem.findtext("cvss_vector"),
         ]
 
         if nvt_elem is not None:
             for sev_node in nvt_elem.findall(".//severities/severity"):
+                stype = (sev_node.get("type") or "").strip().lower()
                 val = (sev_node.findtext("value") or "").strip()
-                if val:
-                    vector_candidates.append(val)
-                if score is None:
-                    sc = self._safe_float(sev_node.findtext("score") or sev_node.get("score"))
-                    if sc is not None:
-                        score = sc
+                sc = sev_node.findtext("score") or sev_node.get("score")
+                if "v4" in stype or "4.0" in stype or val.upper().startswith("CVSS:4."):
+                    if sc:
+                        v4_scores.append(sc)
+                    if val:
+                        v4_vectors.append(val)
+                elif "v3" in stype or "3." in stype or val.upper().startswith("CVSS:3."):
+                    if sc:
+                        v3_scores.append(sc)
+                    if val:
+                        v3_vectors.append(val)
+                else:
+                    if sc:
+                        v2_scores.append(sc)
+                    if val:
+                        v2_vectors.append(val)
 
         tag_texts = []
         if nvt_elem is not None:
@@ -461,16 +499,38 @@ class OpenVASXMLParser(BaseParser):
         for tags in tag_texts:
             if not tags:
                 continue
-            vec = (
-                self._extract_from_tags(tags, "cvss3_vector=")
-                or self._extract_from_tags(tags, "cvss_base_vector=")
-            )
-            if vec:
-                vector_candidates.append(vec)
+            v4_vec = self._extract_from_tags(tags, "cvss4_vector=")
+            if v4_vec:
+                v4_vectors.append(v4_vec)
+            v3_vec = self._extract_from_tags(tags, "cvss3_vector=")
+            if v3_vec:
+                v3_vectors.append(v3_vec)
+            base_vec = self._extract_from_tags(tags, "cvss_base_vector=")
+            if base_vec:
+                norm_bv = _normalize_cvss_vector(base_vec) or ""
+                if norm_bv.upper().startswith("CVSS:4."):
+                    v4_vectors.append(norm_bv)
+                elif norm_bv.upper().startswith("CVSS:3."):
+                    v3_vectors.append(norm_bv)
+                else:
+                    v2_vectors.append(base_vec)
 
-        vector = next((self._safe_text(v) for v in vector_candidates if v), None)
-        if score is not None and not (0.0 <= score <= 10.0):
-            score = None
+        score: Optional[float] = None
+        for raw_s in (*v4_scores, *v3_scores, *v2_scores):
+            if not raw_s:
+                continue
+            val = self._safe_float(raw_s)
+            if val is not None and 0.0 <= val <= 10.0:
+                score = val
+                break
+
+        vector: Optional[str] = None
+        for raw_v in (*v4_vectors, *v3_vectors, *v2_vectors):
+            norm = _normalize_cvss_vector(self._safe_text(raw_v) if raw_v else None)
+            if norm:
+                vector = norm
+                break
+
         return score, vector
 
     @staticmethod

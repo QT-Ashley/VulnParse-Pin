@@ -7,7 +7,7 @@ VulnParse-Pin (`vpp`) v2.0.0 is licensed under **Apache-2.0** with zero copyleft
 | Option | Best For | Persistence | Non-Root / Hardening | Offline / Air-Gap | Template |
 | --- | --- | --- | --- | --- | --- |
 | **Isolated CLI (`pipx` / `uv tool`)** | Analyst workstations, MSSP laptops, `vpp ui` | Local `.vpp.db` + XDG or `./data` | `PermFileHandler` (`0o600`/`0o700`, symlink reject) | Supported via wheelhouse + `--offline` | [Installation](Installation.md) |
-| **Self-Build Container / Compose** | Reproducible runners, isolated multi-user hosts | Host bind `/work` + volume `/cache` | `uid=10001`, `--read-only`, `cap_drop: ALL` | Supported via `--no-index --find-links` build | [`Dockerfile`](../../examples/deploy/Dockerfile), [`docker-compose.yml`](../../examples/deploy/docker-compose.yml) |
+| **Container / Compose (`ghcr.io` or Local Build)** | Reproducible runners, isolated multi-user hosts | Host bind `/work` + volume `/cache` | `uid=10001`, `--read-only`, `cap_drop: ALL` | Supported via wheelhouse `--build-arg PIP_NO_INDEX=1` | [Root `Dockerfile`](../../Dockerfile), [`examples/deploy/Dockerfile`](../../examples/deploy/Dockerfile), [`docker-compose.yml`](../../examples/deploy/docker-compose.yml) |
 | **CI/CD Runners** | PR priority gates, stale-assumption checks | CI cache for `.vpp.db` + artifact upload | Ephemeral runner + exit codes `0`/`1`/`2` | Supported with cached wheelhouse & feeds | [`github-actions`](../../examples/ci/github-actions-trivy-vpp.yml), [`gitlab-ci`](../../examples/ci/gitlab-ci-trivy-vpp.yml) |
 | **Kubernetes `CronJob`** | Daily KEV/EPSS drift checks across clusters | `PersistentVolumeClaim` + `Secret` | `runAsNonRoot`, `readOnlyRootFilesystem`, `RuntimeDefault` | Supported via pre-seeded PVC & private registry | [`k8s-cronjob-vpp-drift.yaml`](../../examples/deploy/k8s-cronjob-vpp-drift.yaml) |
 | **`systemd` Service & Timer** | Linux bastion / VM scheduled drift alerts | `/var/lib/vulnparse-pin` + `/var/cache/vulnparse-pin` | `ProtectSystem=strict`, `NoNewPrivileges=yes`, `UMask=0077` | Supported via `--offline` + synced cache | [`vpp-drift.service`](../../examples/deploy/systemd/vpp-drift.service), [`vpp-drift.timer`](../../examples/deploy/systemd/vpp-drift.timer) |
@@ -68,7 +68,7 @@ By default (`src/vulnparse_pin/app/bootstrap.py` & `src/vulnparse_pin/io/pfhandl
 - Written files use **`0o600`** (`--file-mode`) and created directories use **`0o700`** (`--dir-mode`) on POSIX systems.
 - **Symlinks are forbidden** on both read (`--forbid-symlinks-read`, default `True`; opt out with `--allow-symlinks-read`) and write (`--forbid-symlinks-write`, default `True`).
 - **Write root confinement** (`--enforce-root-write`, default `True`) confines outputs to authorized workspace/application roots.
-- **Read root confinement** (`--enforce-root-read`, default `False`) can be enabled in high-assurance enclaves so inputs must reside within authorized roots (in `--portable` mode, `$PWD` is an authorized root).
+- **Read root confinement** (`--enforce-root-read`, default `False`) confines reads to `PermFileHandler.allowed_roots` (`paths.base_dir` + config/cache/log/output directories). **Important:** Without `--portable`, `paths.base_dir` is the OS user data directory (such as `~/.local/share/VulnParse-Pin/`), so `--enforce-root-read` rejects scan inputs under `$PWD`; combine `--enforce-root-read` with `--portable` (`-P`) whenever scanning or verifying files under `$PWD`.
 - **DuckDB `.vpp.db`** enforces `0o600` POSIX creation mode and rejects symlinks on `.vpp.db` and `.vpp.db.wal` sidecars.
 
 ### Strictly Read-Only `vpp verify`
@@ -85,21 +85,24 @@ vpp verify out/runmanifest.json --portable --enforce-root-read
 
 ---
 
-## 3. Container & Docker Compose Self-Build
+## 3. Portable Container (`ghcr.io` & Docker Compose)
 
-> **Important:** Official GHCR Cosign-signed OCI images (`ghcr.io/qt-ashley/vulnparse-pin`) are planned for **Phase 2** in [`ROADMAP.md`](../../ROADMAP.md). For `v2.0.0`, build the hardened container image locally from PyPI or your internal wheelhouse using [`examples/deploy/Dockerfile`](../../examples/deploy/Dockerfile).
+Tagged releases publish attested multi-arch (`linux/amd64`, `linux/arm64`) OCI images to `ghcr.io/qt-ashley/vulnparse-pin` via [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
 
-### Local Self-Build
+### Pull Official GHCR Image or Build from Source
 
 ```bash
-# Full image with Textual TUI
-docker build -t vulnparse-pin:2.0.0 -f examples/deploy/Dockerfile .
+# 1. Pull the multi-arch GHCR image
+docker pull ghcr.io/qt-ashley/vulnparse-pin:2.0.0
 
-# Minimal headless image for CI/CronJobs
-docker build \
-  --build-arg VPP_PACKAGE="vulnparse-pin" \
-  -t vulnparse-pin:2.0.0-headless \
-  -f examples/deploy/Dockerfile .
+# 2. Or build directly from this repository checkout (root Dockerfile)
+docker build -t vulnparse-pin:2.0.0 .
+
+# Minimal headless image without Textual TUI extras
+docker build --build-arg EXTRAS="" -t vulnparse-pin:2.0.0-headless .
+
+# Or build standalone from PyPI / offline wheelhouse without cloning repo source
+docker build -t vulnparse-pin:2.0.0-pypi -f examples/deploy/Dockerfile .
 ```
 
 The image runs as non-root `vpp` (`uid=10001`, `gid=10001`), sets `HOME=/work` and `XDG_*` under `/cache`, and operates cleanly with `--read-only` rootfs:
@@ -120,7 +123,7 @@ docker run --rm \
 [`examples/deploy/docker-compose.yml`](../../examples/deploy/docker-compose.yml) defines three hardened non-root services sharing `/work` and `vpp-cache`:
 
 - `vpp-scan`: Runs `vpp scan` with `--profile bod-26-04`, generating `.vpp.db`, `out/dossier`, and `out/runmanifest.json`.
-- `vpp-drift`: Syncs `kev` and `epss` feeds and runs `vpp diff --fail-on stale-assumption`.
+- `vpp-drift`: Syncs `kev` and `epss` feeds and runs `vpp diff --re-enrich --fail-on stale-assumption` (no re-scan required).
 - `vpp-ui` (`profiles: ["ui"]`): Interactive `vpp ui` TTY session over `/work/.vpp.db`.
 
 ```bash
@@ -161,7 +164,7 @@ Both workflows restore `.vpp.db` from runner cache, scan Trivy SARIF with `--ass
 - `PersistentVolumeClaim` (`vpp-workspace-pvc`) persisting `.vpp.db`, `decisions.yaml`, outputs, and `/cache`.
 - `CronJob` (`vpp-kev-drift-check`) with `runAsNonRoot: true`, `runAsUser: 10001`, `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, `capabilities: {drop: ["ALL"]}`, `seccompProfile: {type: RuntimeDefault}`, and an `emptyDir` mounted at `/tmp`.
 
-Build and push your local image from `examples/deploy/Dockerfile` to your private registry, update the `image:` field and `Secret` values, seed `.vpp.db` + `decisions.yaml` onto the PVC, and apply:
+Using `ghcr.io/qt-ashley/vulnparse-pin:2.0.0` (or mirroring/pushing a local build from `Dockerfile` to a private enclave registry), update the `Secret` values, seed `.vpp.db` + `decisions.yaml` onto the PVC, and apply:
 
 ```bash
 kubectl apply -f examples/deploy/k8s-cronjob-vpp-drift.yaml
@@ -243,7 +246,11 @@ Inside the enclave, extract `vpp-intel-bundle.tar.gz` into `./data/`, export the
 
 ## 8. Signed Webhook Receiver Verification
 
-When webhook delivery is configured in `config.yaml` (`webhook.enabled: true`) or overridden via `--webhook-endpoint` / `--webhook-oal-filter`, `src/vulnparse_pin/utils/webhook_delivery.py` emits canonical JSON payloads (`vpp.topn.summary`) over HTTPS (`allow_redirects=False`, `max_payload_bytes: 262144`, spooled to `webhook_spool/` on failure when `allow_spool: true`).
+When webhook delivery is configured in `config.yaml` (`webhook.enabled: true`) or overridden via `--webhook-endpoint` / `--webhook-oal-filter`, `src/vulnparse_pin/utils/webhook_delivery.py` emits canonical JSON payloads (`vpp.topn.summary`) over HTTPS (`allow_redirects=False`, `max_payload_bytes: 262144`, spooled to `webhook_spool/` on failure when `allow_spool: true`). In v2 scans:
+
+- **Fail-closed signing secret:** `VP_WEBHOOK_HMAC_KEY` (or configured `signing_key_env`) is required; missing/invalid keys or misconfigured endpoints fail closed rather than silently succeeding.
+- **Active & invalidated findings only:** Validly `deferred`, `accepted`, and `mitigated` findings are excluded; active prioritized findings and `DEFERRED_INVALIDATED` findings are dispatched with `priority_tier`, `oal`, `ssvc_action`, `sla_label`, `operational_score`, `in_kev`, `epss_score`, `decision_status`, and `invalidated_reasons`.
+- **Ledger audit trail:** Every delivery attempt appends a hash-chained `WEBHOOK_DELIVERY` event (recording counts only, never secret material) to `ledger_events`.
 
 ### Request Headers
 

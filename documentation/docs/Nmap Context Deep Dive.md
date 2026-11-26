@@ -71,6 +71,9 @@ vpp scan scan.nessus --nmap nmap_results.xml -o results.json
 
 Legacy aliases `--nmap-ctx` and `-nmap` remain supported. The file must have a `.xml` extension.
 
+> [!NOTE]
+> **`--nmap nmap.xml` vs. positional `vpp scan nmap.xml`:** Passing an Nmap file via `--nmap` attaches port/exposure context (`NmapAdapterPass`) onto primary scanner findings without emitting extra informational port findings. Passing an Nmap file as a positional primary scan input (`vpp scan nmap.xml`) invokes `NmapXMLParser` (`nmap-xml`), which emits `Informational` open-port Track B exposure findings for port-only XML and `High` findings only for NSE `<script>` / `<hostscript>` CVE or `"vulnerable"` outputs.
+
 In `config.yaml`:
 
 ```yaml

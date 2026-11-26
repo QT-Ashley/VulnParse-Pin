@@ -16,10 +16,12 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import stat
 import sys
 import tempfile
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 from uuid import uuid4
 
@@ -30,6 +32,8 @@ from vulnparse_pin.app.output import (
     export_v2_outputs,
     invoke_duckdb_csv_export,
     invoke_duckdb_json_export,
+    record_deferral_db_update,
+    validate_webhook_runtime_config,
     write_text_via_pfh,
 )
 from vulnparse_pin.app.runtime_helpers import (
@@ -38,6 +42,7 @@ from vulnparse_pin.app.runtime_helpers import (
     build_feed_cache_policy,
     build_run_log,
 )
+from vulnparse_pin.cli.args import parse_nvd_years_spec
 from vulnparse_pin.cli.errors import VppError
 from vulnparse_pin.io.pfhandler import FilePathError, FilePermissionError, PermFileHandler
 from vulnparse_pin.core.apppaths import AppPaths, ensure_user_configs
@@ -47,7 +52,13 @@ from vulnparse_pin.core.classes.execution_manifest import LedgerService
 from vulnparse_pin.core.config_projector import ConfigProjector
 from vulnparse_pin.core.config_source import ConfigSource
 from vulnparse_pin.core.config_validator import ConfigValidator
-from vulnparse_pin.core.diff_engine import DiffEngine, evaluate_fail_gate
+from vulnparse_pin.core.diff_engine import (
+    DiffEngine,
+    _evaluate_assumed_state_predicates,
+    clone_run_for_re_enrichment,
+    evaluate_fail_gate,
+    resolve_re_enrich_run_ids,
+)
 from vulnparse_pin.core.passes import run_v2_duckdb_pipeline
 from vulnparse_pin.core.passes.Triage.triage_pass import TriageDecisionPass
 from vulnparse_pin.core.schema_detector import SchemaDetector
@@ -61,6 +72,7 @@ from vulnparse_pin.storage.repositories import (
     insert_ledger_events,
     list_runs,
 )
+from vulnparse_pin.utils.cvss_utils import compute_cvss_base_score, resolve_effective_cvss_fields
 from vulnparse_pin.utils.feed_cache import FeedCacheManager
 from vulnparse_pin.utils.logger import LoggerWrapper
 from vulnparse_pin.utils.nvdcacher import NVDFeedCache, nvd_policy_from_config
@@ -348,6 +360,11 @@ def _load_duckdb_sources(
                     force_refresh=False,
                     allow_regen=bool(getattr(args, "allow_regen", False)),
                 )
+            elif cache_edb.parent.exists() and any(cache_edb.parent.glob(f"{cache_edb.name}.tampered.*")):
+                raise VppError(
+                    f"Refusing to continue: quarantined tampered Exploit-DB cache detected in {cache_edb.parent}. Re-sync a verified feed.",
+                    exit_code=1,
+                )
             elif getattr(args, "exploit_source", "online") == "offline" and not offline_mode:
                 raise VppError("Offline Exploit-DB source requires --exploit-db PATH.", exit_code=2)
         else:
@@ -433,6 +450,11 @@ def _load_duckdb_sources(
                     allow_regen=bool(getattr(args, "allow_regen", False)),
                     target_cves=target_cves or None,
                 )
+            elif kev_cache_path.parent.exists() and any(kev_cache_path.parent.glob(f"{kev_cache_path.name}.tampered.*")):
+                raise VppError(
+                    f"Refusing to continue: quarantined tampered KEV cache detected in {kev_cache_path.parent}. Re-sync a verified feed.",
+                    exit_code=1,
+                )
             elif not offline_mode:
                 raise VppError(f"Missing offline KEV cache: {kev_cache_path}", exit_code=1)
         else:
@@ -472,6 +494,11 @@ def _load_duckdb_sources(
                     force_refresh=False,
                     allow_regen=bool(getattr(args, "allow_regen", False)),
                     target_cves=target_cves or None,
+                )
+            elif epss_cache_path.parent.exists() and any(epss_cache_path.parent.glob(f"{epss_cache_path.name}.tampered.*")):
+                raise VppError(
+                    f"Refusing to continue: quarantined tampered EPSS cache detected in {epss_cache_path.parent}. Re-sync a verified feed.",
+                    exit_code=1,
                 )
             elif not offline_mode:
                 raise VppError(f"Missing offline EPSS cache: {epss_cache_path}", exit_code=1)
@@ -620,6 +647,32 @@ def _print_v2_summary(
     print("=" * 64 + "\n")
 
 
+def _verify_sqlite_caches_fail_closed(
+    paths: AppPaths,
+    *,
+    skip_dbs: Optional[Set[str]] = None,
+) -> None:
+    """Verify existing threat-intel SQLite caches read-only and fail closed before runtime init."""
+    skipped = set(skip_dbs or ())
+    for sq_name in (
+        "nvd_cache.sqlite3",
+        "kev_cache.sqlite3",
+        "epss_cache.sqlite3",
+        "ghsa_cache.sqlite3",
+        "osv_cache.sqlite3",
+    ):
+        if sq_name in skipped:
+            continue
+        sq_path = paths.cache_dir / sq_name
+        if os.path.lexists(str(sq_path)):
+            health = _verify_sqlite_sig_ro(sq_path, Path(f"{sq_path}.sig.json"))
+            if health != "valid":
+                raise VppError(
+                    f"Threat-intel SQLite cache integrity check failed for '{sq_name}': {health}",
+                    exit_code=1,
+                )
+
+
 def run_scan_command(args: Any) -> int:
     # Enforce unsafe CSV guard immediately before bootstrapping directories/logs
     if getattr(args, "no_csv_sanitize", False) and not getattr(args, "confirm_unsafe_csv", False):
@@ -628,12 +681,28 @@ def run_scan_command(args: Any) -> int:
             exit_code=2,
         )
 
+    if (
+        not bool(getattr(args, "debug_path_policy", False))
+        and not bool(getattr(args, "allow_regen", False))
+        and not bool(getattr(args, "refresh_cache", False))
+    ):
+        pre_paths = AppPaths.resolve(portable=getattr(args, "portable", None))
+        skip_dbs: Set[str] = set()
+        if bool(getattr(args, "no_nvd", False)):
+            skip_dbs.add("nvd_cache.sqlite3")
+        if bool(getattr(args, "no_kev", False)):
+            skip_dbs.add("kev_cache.sqlite3")
+        if bool(getattr(args, "no_epss", False)):
+            skip_dbs.add("epss_cache.sqlite3")
+        _verify_sqlite_caches_fail_closed(pre_paths, skip_dbs=skip_dbs)
+
     runtime = initialize_runtime(args)
     if runtime.debug_path_policy_only:
         return 0
 
     ctx = runtime.ctx
     pfh = runtime.pfh
+    validate_webhook_runtime_config(ctx)
 
     db_path = authorize_output_path(pfh, args.db, label="DuckDB Workspace")
     try:
@@ -1080,19 +1149,238 @@ def run_demo_command(args: Any) -> int:
     return 0
 
 
+def _make_offline_re_enrich_args(args: Any) -> Any:
+    """Build an offline-enforced args namespace for local cache re-enrichment."""
+    ns_dict = dict(vars(args)) if hasattr(args, "__dict__") else {}
+    ns_dict["offline"] = True
+    ns_dict["allow_regen"] = False
+    ns_dict["refresh_cache"] = False
+    ns_dict["kev_source"] = "offline"
+    ns_dict["epss_source"] = "offline"
+    if not ns_dict.get("exploit_db"):
+        ns_dict["exploit_source"] = "offline"
+    return SimpleNamespace(**ns_dict)
+
+
+def _copy_db_to_temp_for_re_enrich(pfh: Any, db_path: Path, tmp_dir: Path) -> Path:
+    """Copy a DuckDB workspace (and WAL if present) into tmp_dir via PFH read validation."""
+    temp_db = tmp_dir / db_path.name
+    with pfh.open_for_read(db_path, mode="rb", label="DuckDB Workspace", log=False) as src_fh:
+        with open(temp_db, "wb") as dst_fh:
+            shutil.copyfileobj(src_fh, dst_fh, length=1024 * 1024)
+    wal_path = Path(f"{db_path}.wal")
+    if os.path.lexists(str(wal_path)):
+        _check_no_symlinks_or_loops(wal_path, label="DuckDB WAL sidecar")
+        temp_wal = tmp_dir / wal_path.name
+        with pfh.open_for_read(wal_path, mode="rb", label="DuckDB WAL sidecar", log=False) as src_wal:
+            with open(temp_wal, "wb") as dst_wal:
+                shutil.copyfileobj(src_wal, dst_wal, length=1024 * 1024)
+    return temp_db
+
+
+def _re_evaluate_stored_triage_assumptions(
+    db: VppDatabase,
+    source_run_id: str,
+    target_run_id: str,
+) -> None:
+    """When no decisions.yaml was supplied to --re-enrich, re-evaluate stored DB decision assumptions."""
+    rows = db.execute(
+        """
+        SELECT
+            src_td.finding_id,
+            src_td.decision_status,
+            src_td.decision_id,
+            src_td.assumed_state_json,
+            src_td.rationale_summary,
+            a.internet_facing,
+            e.in_kev,
+            e.epss_score,
+            e.epss_percentile,
+            e.cvss_score,
+            e.cvss_provenance,
+            e.cvss_vector,
+            fc_agg.fc_in_kev,
+            fc_agg.fc_epss_score,
+            fc_agg.fc_epss_percentile,
+            fc_agg.fc_cvss_score,
+            f.scanner_cvss_score,
+            f.scanner_cvss_vector,
+            s.score_trace_json
+        FROM triage_decisions src_td
+        JOIN findings f
+          ON f.run_id = ? AND f.finding_id = src_td.finding_id
+        LEFT JOIN assets a
+          ON a.run_id = f.run_id AND a.asset_id = f.asset_id
+        LEFT JOIN scores s
+          ON s.run_id = f.run_id AND s.finding_id = f.finding_id
+        LEFT JOIN enrichment_snapshots e
+          ON e.run_id = f.run_id
+         AND UPPER(e.cve_id) = COALESCE(
+             UPPER(NULLIF(json_extract_string(s.score_trace_json, '$.primary_cve'), '')),
+             UPPER(f.primary_cve)
+         )
+        LEFT JOIN (
+            SELECT
+                fc.finding_id,
+                BOOL_OR(COALESCE(es.in_kev, FALSE)) AS fc_in_kev,
+                MAX(es.epss_score) AS fc_epss_score,
+                MAX(es.epss_percentile) AS fc_epss_percentile,
+                MAX(es.cvss_score) AS fc_cvss_score
+            FROM finding_cves fc
+            JOIN enrichment_snapshots es
+              ON es.run_id = fc.run_id AND UPPER(es.cve_id) = UPPER(fc.cve_id)
+            WHERE fc.run_id = ?
+            GROUP BY fc.finding_id
+        ) fc_agg
+          ON fc_agg.finding_id = f.finding_id
+        WHERE src_td.run_id = ?
+          AND LOWER(COALESCE(src_td.decision_status, '')) IN (
+              'deferred_valid', 'accepted_valid', 'mitigated', 'deferred', 'accepted',
+              'deferred_invalidated', 'accepted_invalidated', 'mitigated_invalidated'
+          )
+        """,
+        [target_run_id, target_run_id, source_run_id],
+    ).fetchall()
+    if not rows:
+        return
+
+    now_dt = datetime.now(timezone.utc)
+    for (
+        fid,
+        src_status,
+        src_dec_id,
+        assumed_raw,
+        rationale_summary,
+        t_facing,
+        t_in_kev,
+        t_epss,
+        t_epss_pct,
+        snap_cvss,
+        snap_prov,
+        snap_vec,
+        fc_in_kev,
+        fc_epss,
+        fc_epss_pct,
+        fc_cvss,
+        scan_cvss,
+        scan_vec,
+        score_trace_raw,
+    ) in rows:
+        try:
+            payload = json.loads(assumed_raw) if assumed_raw else {}
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        inner = payload.get("assumed_state") if isinstance(payload.get("assumed_state"), dict) else payload
+        eval_assumed = dict(inner) if isinstance(inner, dict) else {}
+        if "expires_at" not in eval_assumed and payload.get("expires_at"):
+            eval_assumed["expires_at"] = payload.get("expires_at")
+
+        try:
+            score_trace = json.loads(score_trace_raw) if score_trace_raw else {}
+        except Exception:
+            score_trace = {}
+        if not isinstance(score_trace, dict):
+            score_trace = {}
+
+        eff_in_kev = bool(t_in_kev) or bool(fc_in_kev) or bool(score_trace.get("in_kev"))
+        epss_vals = [float(v) for v in (t_epss, fc_epss) if v is not None]
+        eff_epss = max(epss_vals) if epss_vals else None
+        pct_vals = [float(v) for v in (t_epss_pct, fc_epss_pct) if v is not None]
+        eff_epss_pct = max(pct_vals) if pct_vals else None
+        snap_cvss_vals = [float(v) for v in (snap_cvss, fc_cvss) if v is not None]
+        agg_snap_cvss = max(snap_cvss_vals) if snap_cvss_vals else None
+
+        eff_cvss, _, _, _ = resolve_effective_cvss_fields(
+            snap_cvss=agg_snap_cvss,
+            snap_prov=snap_prov,
+            snap_vec=snap_vec,
+            scanner_cvss=scan_cvss,
+            scanner_vec=scan_vec,
+            score_trace=score_trace,
+        )
+        if eff_cvss is None and scan_vec:
+            eff_cvss = compute_cvss_base_score(scan_vec)
+
+        violated, reasons = _evaluate_assumed_state_predicates(
+            eval_assumed,
+            target_in_kev=eff_in_kev,
+            target_epss=eff_epss,
+            target_epss_pct=eff_epss_pct,
+            target_facing=bool(t_facing) if t_facing is not None else None,
+            target_cvss=float(eff_cvss) if eff_cvss is not None else None,
+            now_dt=now_dt,
+        )
+        base_stat = str(src_status or "deferred").strip().lower()
+        for suffix in ("_valid", "_invalidated"):
+            if base_stat.endswith(suffix):
+                base_stat = base_stat[: -len(suffix)]
+                break
+        if violated:
+            new_status = f"{base_stat}_invalidated"
+            new_rationale = "; ".join(reasons) if reasons else str(rationale_summary or "")
+            payload["violated_predicates"] = list(violated)
+            payload["reasons"] = list(reasons)
+        else:
+            new_status = "mitigated" if base_stat == "mitigated" else f"{base_stat}_valid"
+            new_rationale = str(rationale_summary or "")
+            payload.pop("violated_predicates", None)
+            payload.pop("reasons", None)
+        payload["decision_status"] = new_status
+
+        db.execute(
+            """
+            UPDATE triage_decisions
+            SET decision_status = ?,
+                decision_id = ?,
+                assumed_state_json = ?,
+                rationale_summary = ?
+            WHERE run_id = ? AND finding_id = ?
+            """,
+            [
+                new_status,
+                src_dec_id,
+                json.dumps(payload, sort_keys=True, ensure_ascii=True),
+                new_rationale,
+                target_run_id,
+                fid,
+            ],
+        )
+
+
 def run_diff_command(args: Any) -> int:
     args._quiet_banner = True
+    re_enrich = bool(getattr(args, "re_enrich", False))
+
+    if re_enrich:
+        pre_paths = AppPaths.resolve(portable=getattr(args, "portable", None))
+        _verify_sqlite_caches_fail_closed(pre_paths)
+
     runtime = initialize_runtime(args, quiet_banner=True)
     ctx = runtime.ctx
     pfh = runtime.pfh
 
+    if re_enrich:
+        for feed_key in ("kev", "epss", "exploit_db"):
+            data_path, _, _ = runtime.feed_cache.resolve(feed_key)
+            if os.path.lexists(str(data_path)):
+                try:
+                    runtime.feed_cache.ensure_feed_checksum(feed_key, allow_regen=False)
+                except Exception as exc:
+                    raise VppError(
+                        f"Threat-intel feed cache integrity check failed for '{feed_key}': {exc}",
+                        exit_code=1,
+                    ) from exc
+
     base_arg = getattr(args, "base", None)
     target_arg = getattr(args, "target", None)
-    decisions_reg = (
-        DecisionsRegistry.from_file(args.decisions, pfh=pfh)
-        if getattr(args, "decisions", None)
-        else None
-    )
+    decisions_sha: Optional[str] = None
+    decisions_reg = None
+    if getattr(args, "decisions", None):
+        dec_file = pfh.ensure_readable_file(args.decisions, label="Decisions Config")
+        decisions_reg = DecisionsRegistry.from_file(dec_file, pfh=pfh)
+        decisions_sha = _stream_file_sha256(dec_file)
 
     is_file_pair = (
         base_arg is not None
@@ -1102,6 +1390,7 @@ def run_diff_command(args: Any) -> int:
     )
 
     if is_file_pair:
+        diff_profile = getattr(args, "profile", None) or "default"
         asset_matcher = (
             AssetContextMatcher.from_file(args.assets, pfh=pfh)
             if getattr(args, "assets", None)
@@ -1118,7 +1407,7 @@ def run_diff_command(args: Any) -> int:
                     rid,
                     created_at_utc=ts.isoformat().replace("+00:00", "Z"),
                     vpp_version=__version__,
-                    profile=args.profile,
+                    profile=diff_profile,
                     input_files=[str(fpath)],
                     overwrite=True,
                 )
@@ -1127,8 +1416,61 @@ def run_diff_command(args: Any) -> int:
                 cves, purls = _collect_run_cves_and_purls(db, rid)
                 populate_enrichment_snapshots(db, rid, ctx, sources, target_cves=cves, target_purls=purls)
                 v2_ctx = _build_v2_ctx(ctx, db=db, run_id=rid, asset_matcher=asset_matcher, decisions_registry=decisions_reg)
-                run_v2_duckdb_pipeline(v2_ctx, bundle=runtime.config_bundle, profile=args.profile, decisions_registry=decisions_reg, now_utc=ts)
+                run_v2_duckdb_pipeline(v2_ctx, bundle=runtime.config_bundle, profile=diff_profile, decisions_registry=decisions_reg, now_utc=ts)
             report = DiffEngine(db, decisions_registry=decisions_reg).compare(base_id, target_id, persist=False)
+    elif re_enrich:
+        db_path = _authorize_existing_db_path(pfh, args.db, read_only=True)
+        with tempfile.TemporaryDirectory(prefix="vpp-re-enrich-") as tmp_str:
+            temp_db_path = _copy_db_to_temp_for_re_enrich(pfh, db_path, Path(tmp_str))
+            with VppDatabase(temp_db_path) as db:
+                try:
+                    base_id, target_source_id = resolve_re_enrich_run_ids(db, base_arg, target_arg)
+                except ValueError as exc:
+                    raise VppError(str(exc), exit_code=1) from exc
+
+                stored_row = db.execute(
+                    "SELECT profile FROM runs WHERE run_id = ?",
+                    [target_source_id],
+                ).fetchone()
+                stored_profile = str(stored_row[0]) if (stored_row and stored_row[0]) else None
+                effective_profile = getattr(args, "profile", None) or stored_profile or "default"
+
+                re_enriched_id = f"{target_source_id}__re_enriched_{uuid4().hex[:8]}"
+                clone_run_for_re_enrichment(
+                    db,
+                    target_source_id,
+                    re_enriched_id,
+                    baseline_run_id=base_id,
+                    decisions_sha256=decisions_sha,
+                    profile=effective_profile,
+                )
+
+                offline_args = _make_offline_re_enrich_args(args)
+                try:
+                    sources = _load_duckdb_sources(ctx, db, re_enriched_id, offline_args, runtime)
+                except VppError:
+                    raise
+                except Exception as exc:
+                    raise VppError(
+                        f"Failed to load local threat-intel caches for --re-enrich: {exc}",
+                        exit_code=1,
+                    ) from exc
+
+                cves, purls = _collect_run_cves_and_purls(db, re_enriched_id)
+                populate_enrichment_snapshots(db, re_enriched_id, ctx, sources, target_cves=cves, target_purls=purls)
+                v2_ctx = _build_v2_ctx(ctx, db=db, run_id=re_enriched_id, decisions_registry=decisions_reg)
+                run_v2_duckdb_pipeline(
+                    v2_ctx,
+                    bundle=runtime.config_bundle,
+                    profile=effective_profile,
+                    decisions_registry=decisions_reg,
+                )
+                if decisions_reg is None:
+                    _re_evaluate_stored_triage_assumptions(db, target_source_id, re_enriched_id)
+
+                report = DiffEngine(db, decisions_registry=decisions_reg).compare(
+                    base_id, re_enriched_id, persist=False
+                )
     else:
         db_path = _authorize_existing_db_path(pfh, args.db, read_only=False)
         with VppDatabase(db_path) as db:
@@ -1491,6 +1833,7 @@ def run_defer_command(args: Any) -> int:
                     profile=latest.get("profile") or "default",
                     decisions_registry=reg,
                 ).run(v2_ctx)
+                record_deferral_db_update(db, latest["run_id"], decisions_target, v2_ctx, saved)
                 print(f"[OK] Refreshed triage decisions for run '{latest['run_id']}' in {db_path}")
     return 0
 
@@ -1641,16 +1984,20 @@ def _check_feed_health(fc: FeedCacheManager, key: str) -> Dict[str, Any]:
         }
     meta = fc.load_meta(key) or {}
     fresh = fc.is_fresh(key)
+    had_sha_before = bool(sha_path and os.path.lexists(str(sha_path)))
     health = "valid"
     try:
-        fc.ensure_feed_checksum(key, allow_regen=False)
+        if hasattr(fc, "verify_feed_checksum_ro"):
+            fc.verify_feed_checksum_ro(key)
+        else:
+            fc.ensure_feed_checksum(key, allow_regen=False)
     except PermissionError:
         health = "world-writable"
     except Exception as exc:
         if "symlink" in str(exc).lower():
             health = "symlink"
         else:
-            health = "tampered" if (sha_path and os.path.lexists(str(sha_path))) else "missing-checksum"
+            health = "tampered" if had_sha_before else "missing-checksum"
     return {
         "present": True,
         "fresh": fresh,
@@ -1660,17 +2007,50 @@ def _check_feed_health(fc: FeedCacheManager, key: str) -> Dict[str, Any]:
     }
 
 
+def _parse_nvd_years(raw_years: Optional[str]) -> Optional[Set[int]]:
+    """Parse --years (single year, range, or comma list) into a validated set of ints."""
+    if raw_years is None:
+        return None
+    try:
+        return parse_nvd_years_spec(raw_years)
+    except ValueError as exc:
+        raise VppError(str(exc), exit_code=2) from exc
+
+
+_INTEL_FEED_SQLITE_MAP: Dict[str, str] = {
+    "nvd": "nvd_cache.sqlite3",
+    "epss": "epss_cache.sqlite3",
+    "kev": "kev_cache.sqlite3",
+    "ghsa": "ghsa_cache.sqlite3",
+    "osv": "osv_cache.sqlite3",
+}
+
+
 def run_intel_command(args: Any) -> int:
     args._quiet_banner = True
     action = str(getattr(args, "action", "status") or "status").lower()
+    feed_sel = str(getattr(args, "feed", "all") or "all").lower()
     if action == "status":
         args.no_nvd = True
+    elif (
+        action == "sync"
+        and not bool(getattr(args, "allow_regen", False))
+        and not bool(getattr(args, "refresh", False))
+    ):
+        pre_paths = AppPaths.resolve(portable=getattr(args, "portable", None))
+        if feed_sel == "all":
+            skip_dbs: Set[str] = set()
+        else:
+            selected_db = _INTEL_FEED_SQLITE_MAP.get(feed_sel)
+            skip_dbs = {
+                db_name for db_name in _INTEL_FEED_SQLITE_MAP.values() if db_name != selected_db
+            }
+        _verify_sqlite_caches_fail_closed(pre_paths, skip_dbs=skip_dbs)
     runtime = initialize_runtime(args, quiet_banner=True)
     ctx = runtime.ctx
     paths = runtime.paths
     fc = runtime.feed_cache
     pfh = runtime.pfh
-    feed_sel = str(getattr(args, "feed", "all") or "all").lower()
 
     if action == "status":
         report: Dict[str, Any] = {}
@@ -1734,6 +2114,8 @@ def run_intel_command(args: Any) -> int:
 
     force = bool(getattr(args, "refresh", False))
     allow_regen = bool(getattr(args, "allow_regen", False))
+    raw_years = getattr(args, "years", None)
+    parsed_years = _parse_nvd_years(raw_years) if raw_years is not None else None
     synced: List[str] = []
 
     if feed_sel in ("all", "kev"):
@@ -1756,13 +2138,17 @@ def run_intel_command(args: Any) -> int:
         if nvd_override:
             _load_local_nvd_into_cache(ctx, runtime.nvd_cache, Path(nvd_override))
         else:
-            now_y = datetime.now(timezone.utc).year
+            years_to_sync = (
+                parsed_years
+                if parsed_years is not None
+                else set(range(runtime.nvdpol_start_y, runtime.nvdpol_end_y + 1))
+            )
             runtime.nvd_cache.refresh(
                 config=runtime.cfg_yaml,
                 feed_cache=fc,
                 refresh_cache=force,
                 offline=False,
-                years={now_y},
+                years=years_to_sync,
                 include_modified=True,
             )
         synced.append("nvd")

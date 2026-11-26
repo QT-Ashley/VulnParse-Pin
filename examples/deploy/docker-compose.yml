@@ -1,19 +1,17 @@
 # Hardened Non-Root Docker Compose Stack for VulnParse-Pin v2.0.0
 #
-# Build locally from examples/deploy/Dockerfile first:
+# Build locally from the repository-root Dockerfile (or set image: ghcr.io/qt-ashley/vulnparse-pin:2.0.0):
 #   docker compose -f examples/deploy/docker-compose.yml build
 #
 # Usage:
 #   docker compose -f examples/deploy/docker-compose.yml run --rm vpp-scan
 #   docker compose -f examples/deploy/docker-compose.yml run --rm vpp-drift
 #   docker compose -f examples/deploy/docker-compose.yml --profile ui run --rm vpp-ui
-#
-# Note: Official GHCR Cosign-signed OCI images are planned for Phase 2 in ROADMAP.md.
 
 x-vpp-common: &vpp-common
   build:
     context: ../..
-    dockerfile: examples/deploy/Dockerfile
+    dockerfile: Dockerfile
   image: vulnparse-pin:local
   user: "10001:10001"
   read_only: true
@@ -62,11 +60,17 @@ services:
     entrypoint: ["/bin/bash", "-euo", "pipefail", "-c"]
     command:
       - |
+        mkdir -p /work/out
         vpp intel sync --feed kev
         vpp intel sync --feed epss
+        re_enrich_args=()
+        if [ -z "${SCAN_FILES:-}" ]; then
+          re_enrich_args=(--re-enrich)
+        fi
         vpp diff \
           --db /work/.vpp.db \
           --decisions /work/decisions.yaml \
+          "${re_enrich_args[@]}" \
           --fail-on stale-assumption \
           --output-md /work/out/drift_report.md \
           --output-json /work/out/drift_report.json
@@ -83,6 +87,9 @@ services:
       XDG_CACHE_HOME: /cache/xdg
       TMPDIR: /tmp
       TERM: xterm-256color
+      VP_FEED_CACHE_HMAC_KEY: "${VP_FEED_CACHE_HMAC_KEY:-}"
+      VP_SQLITE_HMAC_KEY: "${VP_SQLITE_HMAC_KEY:-}"
+      VP_WEBHOOK_HMAC_KEY: "${VP_WEBHOOK_HMAC_KEY:-}"
     command:
       - ui
       - --db

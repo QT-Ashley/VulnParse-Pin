@@ -48,17 +48,75 @@ _SEVERITY_ALIASES = (
     "severity level",
     "threat",
 )
-_CVSS_SCORE_ALIASES = (
-    "cvss",
+_CVSS_V4_SCORE_ALIASES = (
+    "cvss v4.0 base score",
+    "cvss4.0 base score",
+    "cvss4 base score",
+    "cvss v4 base score",
+    "cvss_v4_base_score",
+    "cvss4_base_score",
+)
+_CVSS_V3_SCORE_ALIASES = (
+    "cvss v3.1 base score",
+    "cvss v3.0 base score",
+    "cvssv3 base score",
+    "cvss3 base score",
+    "cvss v3 base score",
+    "cvss_v3_base_score",
+    "cvss3_base_score",
+)
+_CVSS_V2_SCORE_ALIASES = (
+    "cvss v2.0 base score",
+    "cvss v2 base score",
     "cvss base score",
     "cvss_base_score",
     "cvss score",
-    "cvssv3 base score",
-    "cvss v3.0 base score",
+    "cvss",
 )
-_CVSS_VECTOR_ALIASES = ("cvss vector", "cvss_vector", "cvss3 vector", "cvss v3.0 vector")
+_CVSS_SCORE_ALIASES = (
+    *_CVSS_V4_SCORE_ALIASES,
+    *_CVSS_V3_SCORE_ALIASES,
+    *_CVSS_V2_SCORE_ALIASES,
+)
+_CVSS_V4_VECTOR_ALIASES = (
+    "cvss v4.0 vector",
+    "cvss4.0 vector",
+    "cvss4 vector",
+    "cvss v4 vector",
+    "cvss_v4_vector",
+    "cvss4_vector",
+)
+_CVSS_V3_VECTOR_ALIASES = (
+    "cvss v3.1 vector",
+    "cvss v3.0 vector",
+    "cvssv3 vector",
+    "cvss3 vector",
+    "cvss v3 vector",
+    "cvss_v3_vector",
+    "cvss3_vector",
+)
+_CVSS_V2_VECTOR_ALIASES = (
+    "cvss v2.0 vector",
+    "cvss v2 vector",
+    "cvss vector",
+    "cvss_vector",
+)
+_CVSS_VECTOR_ALIASES = (
+    *_CVSS_V4_VECTOR_ALIASES,
+    *_CVSS_V3_VECTOR_ALIASES,
+    *_CVSS_V2_VECTOR_ALIASES,
+)
 _IP_ALIASES = ("ip", "ip address", "host ip")
-_HOST_ALIASES = ("hostname", "host name", "dns name", "fqdn", "host")
+_HOST_ALIASES = (
+    "hostname",
+    "host name",
+    "dns name",
+    "dns",
+    "fqdn",
+    "netbios name",
+    "netbios",
+    "host",
+)
 _ASSET_ALIASES = (
     "host",
     "hostname",
@@ -67,7 +125,10 @@ _ASSET_ALIASES = (
     "ip address",
     "host ip",
     "dns name",
+    "dns",
     "fqdn",
+    "netbios name",
+    "netbios",
 )
 _CVE_ALIASES = ("cve", "cves", "cve_id", "cve id")
 _CWE_ALIASES = ("cwe", "cwes", "cwe_id", "cwe id")
@@ -75,10 +136,28 @@ _PROTO_ALIASES = ("protocol", "proto", "transport")
 _PORT_ALIASES = ("port", "affected_port", "plugin port", "service port")
 _DESC_ALIASES = ("description", "synopsis")
 _SOL_ALIASES = ("solution", "remediation", "fix")
-_OUT_ALIASES = ("plugin output", "plugin_output", "evidence")
+_OUT_ALIASES = ("plugin output", "plugin_output", "plugin text", "evidence")
 _REF_ALIASES = ("see also", "see_also", "references", "xref")
 _CRED_ALIASES = ("credentialed", "credentialed scan", "credentialed checks", "authenticated")
 _MAX_CSV_FIELD_BYTES = min(32 * 1024 * 1024, sys.maxsize)
+_CREDENTIALED_RE = re.compile(r"Credentialed checks\s*:\s*yes\b", re.IGNORECASE)
+
+
+def _normalize_cvss_vector(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.startswith("SENTINEL:"):
+        return None
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    if "#" in s:
+        prefix, rest = s.split("#", 1)
+        if prefix.upper().startswith("CVSS"):
+            s = rest.strip()
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    return s or None
 
 
 def _is_ip(value: str) -> bool:
@@ -132,7 +211,10 @@ class NessusCSVParser(BaseParser):
             try:
                 dialect = csv.Sniffer().sniff(sample[:4096], delimiters=",;\t|")
             except csv.Error:
-                dialect = csv.excel
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+                except csv.Error:
+                    dialect = csv.excel
             first_row = next(csv.reader(io.StringIO(sample), dialect), None)
         except OSError:
             return 0.0, [("parse", "failed")]
@@ -146,24 +228,31 @@ class NessusCSVParser(BaseParser):
         if len(header) < 3:
             return 0.0, [("header", "too_few_columns")]
 
+        header_norm = {cls._normalize_key(h) for h in header}
+        plugin_norm = {cls._normalize_key(a) for a in _PLUGIN_ID_ALIASES}
+        title_norm = {cls._normalize_key(a) for a in _TITLE_ALIASES}
+        sev_score_norm = {cls._normalize_key(a) for a in (*_SEVERITY_ALIASES, *_CVSS_SCORE_ALIASES)}
+        asset_norm = {cls._normalize_key(a) for a in _ASSET_ALIASES}
+        cve_norm = {cls._normalize_key(a) for a in _CVE_ALIASES}
+
         score = 0.0
-        if any(h in _PLUGIN_ID_ALIASES for h in header):
+        if header_norm & plugin_norm:
             score += 0.35
             evidence.append(("header", "plugin_id"))
-        if any(h in _TITLE_ALIASES for h in header):
+        if header_norm & title_norm:
             score += 0.20
             evidence.append(("header", "title"))
-        if any(h in _SEVERITY_ALIASES or h in _CVSS_SCORE_ALIASES for h in header):
+        if header_norm & sev_score_norm:
             score += 0.20
             evidence.append(("header", "severity_or_score"))
-        if any(h in _ASSET_ALIASES for h in header):
+        if header_norm & asset_norm:
             score += 0.15
             evidence.append(("header", "asset_identifier"))
-        if any(h in _CVE_ALIASES for h in header):
+        if header_norm & cve_norm:
             score += 0.10
             evidence.append(("header", "cve"))
 
-        if not any(h in _PLUGIN_ID_ALIASES or h in _TITLE_ALIASES for h in header):
+        if not (header_norm & (plugin_norm | title_norm)):
             score = max(0.0, score - 0.25)
             evidence.append(("header", "missing_vuln_identity"))
 
@@ -182,14 +271,17 @@ class NessusCSVParser(BaseParser):
 
         csv.field_size_limit(_MAX_CSV_FIELD_BYTES)
         with self._open_read(path, self.ctx, mode="r", encoding="utf-8-sig", label="Nessus CSV") as handle:
-            sample = handle.read(4096)
+            sample = handle.read(16384)
             if not sample.strip():
                 raise ValueError("Nessus CSV parsing failed: empty file.")
             sample_clean = sample.lstrip("\ufeff")
             try:
-                dialect = csv.Sniffer().sniff(sample_clean, delimiters=",;\t|")
+                dialect = csv.Sniffer().sniff(sample_clean[:4096], delimiters=",;\t|")
             except csv.Error:
-                dialect = csv.excel
+                try:
+                    dialect = csv.Sniffer().sniff(sample_clean, delimiters=",;\t|")
+                except csv.Error:
+                    dialect = csv.excel
             handle.seek(0)
             reader = csv.reader(handle, dialect=dialect)
 
@@ -243,7 +335,11 @@ class NessusCSVParser(BaseParser):
 
                     title = self._pick_indexed(row, title_idx)
                     severity_raw = self._pick_indexed(row, sev_idx)
-                    cvss_score = self._safe_float(self._pick_indexed(row, cvss_idx))
+                    cvss_score, has_out_of_range_cvss = self._pick_cvss_score(row, cvss_idx)
+
+                    if has_out_of_range_cvss and cvss_score is None:
+                        dropped_rows += 1
+                        continue
 
                     if not severity_raw and cvss_score is not None:
                         severity = self._severity_from_cvss(cvss_score)
@@ -256,10 +352,6 @@ class NessusCSVParser(BaseParser):
                         dropped_rows += 1
                         continue
 
-                    if cvss_score is not None and not (0.0 <= cvss_score <= 10.0):
-                        dropped_rows += 1
-                        continue
-
                     cve_text = self._pick_indexed(row, cve_idx) or ""
                     cves = extract_cves_from_text(cve_text)
 
@@ -267,7 +359,7 @@ class NessusCSVParser(BaseParser):
                     description = self._pick_indexed(row, desc_idx) or ""
                     solution = self._pick_indexed(row, sol_idx) or ""
                     plugin_output = self._pick_indexed(row, out_idx) or ""
-                    cvss_vector = self._pick_indexed(row, vec_idx)
+                    cvss_vector = self._pick_cvss_vector(row, vec_idx)
                     protocol = (self._pick_indexed(row, proto_idx) or "tcp").strip().lower()
                     affected_port = self._safe_int(self._pick_indexed(row, port_idx))
                     if affected_port is not None and not (0 <= affected_port <= 65535):
@@ -281,8 +373,8 @@ class NessusCSVParser(BaseParser):
                     ghsa_ids = extract_ghsas_from_text(description, ref_text)
 
                     cred_val = (self._pick_indexed(row, cred_idx) or "").strip().lower()
-                    credentialed = cred_val in {"yes", "true", "1"} or (
-                        "credentialed checks : yes" in plugin_output.lower()
+                    credentialed = cred_val in {"yes", "true", "1"} or bool(
+                        _CREDENTIALED_RE.search(plugin_output)
                     )
                     detection_mode = "credentialed_host" if credentialed else "uncredentialed_banner"
 
@@ -438,6 +530,33 @@ class NessusCSVParser(BaseParser):
                 val = row[idx].strip()
                 if val:
                     return val
+        return None
+
+    def _pick_cvss_score(
+        self, row: List[str], indices: Tuple[int, ...]
+    ) -> Tuple[Optional[float], bool]:
+        row_len = len(row)
+        saw_out_of_range = False
+        for idx in indices:
+            if idx < row_len:
+                raw = row[idx].strip()
+                if not raw:
+                    continue
+                val = self._safe_float(raw)
+                if val is not None:
+                    if 0.0 <= val <= 10.0:
+                        return val, False
+                    saw_out_of_range = True
+        return None, saw_out_of_range
+
+    @staticmethod
+    def _pick_cvss_vector(row: List[str], indices: Tuple[int, ...]) -> Optional[str]:
+        row_len = len(row)
+        for idx in indices:
+            if idx < row_len:
+                norm = _normalize_cvss_vector(row[idx])
+                if norm:
+                    return norm
         return None
 
     @staticmethod

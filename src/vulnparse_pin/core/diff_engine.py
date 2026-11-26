@@ -1046,6 +1046,179 @@ def resolve_run_ids(
     raise ValueError("Unable to resolve a distinct target_run_id.")
 
 
+def resolve_re_enrich_run_ids(
+    db: Any,
+    base_run_id: Optional[str] = None,
+    target_run_id: Optional[str] = None,
+) -> Tuple[str, str]:
+    """
+    Resolve `(base_run_id, target_source_run_id)` for `--re-enrich` across both
+    1-run and multi-run DuckDB workspaces without mutating historical runs.
+    """
+    conn = _get_conn(db)
+    rows = conn.execute(
+        """
+        SELECT run_id, created_at_utc, baseline_run_id
+        FROM runs
+        ORDER BY created_at_utc DESC, run_id DESC
+        """
+    ).fetchall()
+    if not rows:
+        raise ValueError("No runs recorded in DuckDB workspace.")
+
+    run_ids = {str(r[0]) for r in rows}
+    if base_run_id is not None and str(base_run_id) not in run_ids:
+        raise ValueError(f"Base run_id '{base_run_id}' does not exist in runs.")
+    if target_run_id is not None and str(target_run_id) not in run_ids:
+        raise ValueError(f"Target run_id '{target_run_id}' does not exist in runs.")
+
+    if base_run_id is not None and target_run_id is not None:
+        return str(base_run_id), str(target_run_id)
+
+    if len(rows) == 1:
+        only_id = str(rows[0][0])
+        return only_id, only_id
+
+    return resolve_run_ids(conn, base_run_id=base_run_id, target_run_id=target_run_id)
+
+
+def clone_run_for_re_enrichment(
+    db: Any,
+    source_run_id: str,
+    new_run_id: str,
+    *,
+    baseline_run_id: Optional[str] = None,
+    decisions_sha256: Optional[str] = None,
+    profile: Optional[str] = None,
+) -> str:
+    """
+    Clone a stored run's metadata, assets, aliases, findings, evidence, and CVEs
+    into an ephemeral target run ID so enrichment and scoring/triage passes can
+    be re-evaluated cleanly without mutating the source run.
+    """
+    conn = _get_conn(db)
+    row = conn.execute(
+        """
+        SELECT vpp_version, profile, config_sha256, assets_sha256,
+               decisions_sha256, input_files_json
+        FROM runs
+        WHERE run_id = ?
+        """,
+        [str(source_run_id)],
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Target run_id '{source_run_id}' does not exist in runs.")
+
+    vpp_version, stored_profile, cfg_sha, assets_sha, stored_dec_sha, input_files_json = row
+    eff_profile = profile or stored_profile or "default"
+    eff_dec_sha = decisions_sha256 or stored_dec_sha
+
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        conn.execute(
+            """
+            INSERT INTO runs (
+                run_id, created_at_utc, vpp_version, profile,
+                config_sha256, assets_sha256, decisions_sha256,
+                intel_metadata_json, manifest_digest, input_files_json, baseline_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+            """,
+            [
+                str(new_run_id),
+                _utc_now_z(),
+                vpp_version,
+                eff_profile,
+                cfg_sha,
+                assets_sha,
+                eff_dec_sha,
+                input_files_json,
+                baseline_run_id,
+            ],
+        )
+        conn.execute(
+            """
+            INSERT INTO assets (
+                run_id, asset_id, canonical_key, hostname, ip_address, target_uri,
+                image_or_repo, os, declared_criticality, derived_criticality,
+                internet_facing, owner, env_tags_json, inventory_status,
+                matched_rule_id, open_ports_json
+            )
+            SELECT
+                ?, asset_id, canonical_key, hostname, ip_address, target_uri,
+                image_or_repo, os, declared_criticality, derived_criticality,
+                internet_facing, owner, env_tags_json, inventory_status,
+                matched_rule_id, open_ports_json
+            FROM assets
+            WHERE run_id = ?
+            """,
+            [str(new_run_id), str(source_run_id)],
+        )
+        conn.execute(
+            """
+            INSERT INTO asset_aliases (run_id, asset_id, alias_type, alias_value)
+            SELECT ?, asset_id, alias_type, alias_value
+            FROM asset_aliases
+            WHERE run_id = ?
+            """,
+            [str(new_run_id), str(source_run_id)],
+        )
+        conn.execute(
+            """
+            INSERT INTO findings (
+                run_id, finding_id, asset_id, scoring_track, primary_cve, cves_json,
+                cwes_json, ghsa_ids_json, title, description, solution, plugin_output,
+                affected_port, protocol, service_name, location_uri, line_number,
+                package_purl, scanner_severity, scanner_cvss_score, scanner_cvss_vector,
+                detection_mode, signal_reliability, ingestion_confidence, fidelity_tier,
+                source_format, references_json, tags_json, exploit_evidence,
+                is_deduplicated, source_count
+            )
+            SELECT
+                ?, finding_id, asset_id, scoring_track, primary_cve, cves_json,
+                cwes_json, ghsa_ids_json, title, description, solution, plugin_output,
+                affected_port, protocol, service_name, location_uri, line_number,
+                package_purl, scanner_severity, scanner_cvss_score, scanner_cvss_vector,
+                detection_mode, signal_reliability, ingestion_confidence, fidelity_tier,
+                source_format, references_json, tags_json, exploit_evidence,
+                is_deduplicated, source_count
+            FROM findings
+            WHERE run_id = ?
+            """,
+            [str(new_run_id), str(source_run_id)],
+        )
+        conn.execute(
+            """
+            INSERT INTO finding_evidence (
+                run_id, finding_id, evidence_idx, source_format, scanner_sig,
+                raw_severity, raw_cvss, raw_location, evidence_excerpt
+            )
+            SELECT
+                ?, finding_id, evidence_idx, source_format, scanner_sig,
+                raw_severity, raw_cvss, raw_location, evidence_excerpt
+            FROM finding_evidence
+            WHERE run_id = ?
+            """,
+            [str(new_run_id), str(source_run_id)],
+        )
+        conn.execute(
+            """
+            INSERT INTO finding_cves (run_id, finding_id, cve_id)
+            SELECT ?, finding_id, cve_id
+            FROM finding_cves
+            WHERE run_id = ?
+            """,
+            [str(new_run_id), str(source_run_id)],
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    return str(new_run_id)
+
+
 def compare_run_metadata(db: Any, base_run_id: str, target_run_id: str) -> RunMetadataDelta:
     """Compare config/assets/decisions hashes and threat-intel metadata between two runs."""
     conn = _get_conn(db)

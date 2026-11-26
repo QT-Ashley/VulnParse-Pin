@@ -53,7 +53,7 @@ sbom = ["cyclonedx-bom>=7.3.0"]
 Homepage = "https://github.com/QT-Ashley/VulnParse-Pin"
 Repository = "https://github.com/QT-Ashley/VulnParse-Pin"
 Issues = "https://github.com/QT-Ashley/VulnParse-Pin/issues"
-Documentation = "https://github.com/QT-Ashley/VulnParse-Pin/blob/main/README.md"
+Documentation = "https://qt-ashley.github.io/VulnParse-Pin/"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -30,6 +30,23 @@ if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext
 
 
+def _normalize_cvss_vector(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.startswith("SENTINEL:"):
+        return None
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    if "#" in s:
+        prefix, rest = s.split("#", 1)
+        if prefix.upper().startswith("CVSS"):
+            s = rest.strip()
+    if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+        s = s[1:-1].strip()
+    return s or None
+
+
 def _is_ip(value: str) -> bool:
     if not value:
         return False
@@ -315,6 +332,9 @@ class NmapXMLParser(BaseParser):
             script_parts: List[str] = []
             script_ids: List[str] = []
             cvss_score: Optional[float] = None
+            cvss_score_rank = 0
+            cvss_vector: Optional[str] = None
+            cvss_vec_rank = 0
             refs: List[str] = []
             for sc in scripts:
                 sid = (sc.get("id") or "").strip()
@@ -326,10 +346,18 @@ class NmapXMLParser(BaseParser):
                 for elem in sc.iter():
                     k = (elem.get("key") or "").strip().lower()
                     val = (elem.text or "").strip()
-                    if k in {"cvss", "cvss_v3", "cvss3"} and cvss_score is None:
+                    if k in {"cvss4", "cvss_v4", "cvss3", "cvss_v3", "cvss"}:
+                        rank = 3 if "4" in k else (2 if "3" in k else 1)
                         parsed_cvss = self._safe_float(val)
-                        if parsed_cvss is not None and 0.0 <= parsed_cvss <= 10.0:
+                        if parsed_cvss is not None and 0.0 <= parsed_cvss <= 10.0 and rank > cvss_score_rank:
                             cvss_score = parsed_cvss
+                            cvss_score_rank = rank
+                    elif k in {"cvss4_vector", "cvss_v4_vector", "cvss3_vector", "cvss_v3_vector", "cvss_vector"}:
+                        rank = 3 if "4" in k else (2 if "3" in k else 1)
+                        norm_vec = _normalize_cvss_vector(val)
+                        if norm_vec and rank > cvss_vec_rank:
+                            cvss_vector = norm_vec
+                            cvss_vec_rank = rank
                     elif k == "references" or (val.startswith(("http://", "https://")) and val not in refs):
                         if val.startswith(("http://", "https://")) and val not in refs:
                             refs.append(val)
@@ -367,7 +395,7 @@ class NmapXMLParser(BaseParser):
             missing_fields: List[str] = []
             if not cves:
                 missing_fields.append("cves")
-            if cvss_score is None:
+            if cvss_score is None and not cvss_vector:
                 missing_fields.append("cvss_vector")
             if not banner and not script_blob:
                 missing_fields.append("plugin_output")
@@ -405,7 +433,7 @@ class NmapXMLParser(BaseParser):
                     "line_number": None,
                     "package_purl": None,
                     "scanner_cvss_score": cvss_score,
-                    "scanner_cvss_vector": None,
+                    "scanner_cvss_vector": cvss_vector,
                     "detection_mode": "network_probe",
                     "fidelity_tier": fidelity_tier,
                     "ingestion_confidence": ingestion_confidence,
@@ -425,8 +453,38 @@ class NmapXMLParser(BaseParser):
             cves = extract_cves_from_text(sid, sout)
             if not cves and "vulnerable" not in sout.lower():
                 continue
+            h_cvss_score: Optional[float] = None
+            h_cvss_score_rank = 0
+            h_cvss_vector: Optional[str] = None
+            h_cvss_vec_rank = 0
+            h_refs: List[str] = []
+            for elem in hscript.iter():
+                k = (elem.get("key") or "").strip().lower()
+                val = (elem.text or "").strip()
+                if k in {"cvss4", "cvss_v4", "cvss3", "cvss_v3", "cvss"}:
+                    rank = 3 if "4" in k else (2 if "3" in k else 1)
+                    parsed_cvss = self._safe_float(val)
+                    if parsed_cvss is not None and 0.0 <= parsed_cvss <= 10.0 and rank > h_cvss_score_rank:
+                        h_cvss_score = parsed_cvss
+                        h_cvss_score_rank = rank
+                elif k in {"cvss4_vector", "cvss_v4_vector", "cvss3_vector", "cvss_v3_vector", "cvss_vector"}:
+                    rank = 3 if "4" in k else (2 if "3" in k else 1)
+                    norm_vec = _normalize_cvss_vector(val)
+                    if norm_vec and rank > h_cvss_vec_rank:
+                        h_cvss_vector = norm_vec
+                        h_cvss_vec_rank = rank
+                elif k == "references" or (val.startswith(("http://", "https://")) and val not in h_refs):
+                    if val.startswith(("http://", "https://")) and val not in h_refs:
+                        h_refs.append(val)
             cwes = extract_cwes_from_text(sout)
             ghsa_ids = extract_ghsas_from_text(sout)
+            h_missing = [] if h_cvss_vector else ["cvss_vector"]
+            h_missing.append("affected_port")
+            h_sev = (
+                normalize_severity(None, h_cvss_score)
+                if h_cvss_score is not None
+                else ("High" if cves or "vulnerable" in sout.lower() else "Informational")
+            )
             records.append(
                 {
                     "ip_address": ip_address,
@@ -441,7 +499,7 @@ class NmapXMLParser(BaseParser):
                     "description": sout or f"Host script {sid} reported findings.",
                     "solution": "Review NSE finding details and apply appropriate vendor mitigations.",
                     "plugin_output": sout,
-                    "severity": "High" if cves or "vulnerable" in sout.lower() else "Informational",
+                    "severity": h_sev,
                     "cves": cves,
                     "cwes": cwes,
                     "ghsa_ids": ghsa_ids,
@@ -451,14 +509,14 @@ class NmapXMLParser(BaseParser):
                     "location_uri": None,
                     "line_number": None,
                     "package_purl": None,
-                    "scanner_cvss_score": None,
-                    "scanner_cvss_vector": None,
+                    "scanner_cvss_score": h_cvss_score,
+                    "scanner_cvss_vector": h_cvss_vector,
                     "detection_mode": "network_probe",
                     "fidelity_tier": "medium",
                     "ingestion_confidence": 0.80,
-                    "missing_fields": ["cvss_vector", "affected_port"],
+                    "missing_fields": h_missing,
                     "degraded_input": False,
-                    "references": [],
+                    "references": h_refs,
                     "tags": [sid],
                     "exploit_evidence": None,
                     "raw_evidence_excerpt": safe_excerpt(sout),

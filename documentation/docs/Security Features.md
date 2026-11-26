@@ -40,7 +40,7 @@ VulnParse-Pin v2.0.0 (`Apache-2.0`) enforces fail-closed security controls acros
 
 ## Reporting, CSV Export, Config & Webhook Hardening
 
-- **Jinja2 `autoescape` & `md_escape`:** `src/vulnparse_pin/reporting/renderer.py` configures Jinja2 `autoescape=select_autoescape(["html", "xml", "j2"])` for HTML Dossiers/Roadmaps and applies `md_escape` across Markdown Dossiers, Roadmaps, PR diff comments, and legacy `markdown_report.py`. Generated HTML contains zero external CDN scripts or stylesheets.
+- **Jinja2 `autoescape` & `md_escape`:** `src/vulnparse_pin/reporting/renderer.py` configures Jinja2 `autoescape=select_autoescape(["html", "xml", "html.j2", "xml.j2", "htm", "htm.j2"])` for HTML Dossiers/Roadmaps and applies `md_escape` across Markdown Dossiers, Roadmaps, PR diff comments, and legacy `markdown_report.py`. Generated HTML contains zero external CDN scripts or stylesheets.
 - **CSV formula-injection sanitization:** `csv_exporter.py` neutralizes dangerous prefixes (`=`, `+`, `-`, `@`, `\t`, `\r`) and strips control characters by default. Disabling via `--no-csv-sanitize` requires explicit `--confirm-unsafe-csv` (otherwise exits with code `2`).
 - **Safe YAML & schema validation:** `config_source.py` and `assets_context.py` load YAML with `ruamel.yaml.YAML(typ="safe", pure=True)` and validate against JSON Schema Draft 2020-12 (`config.schema.json`, `assets.schema.json`, `decisions.schema.json`).
 - **Signed HTTPS webhooks:** `webhook_delivery.py` enforces `https://` without embedded credentials, `allow_redirects=False`, bounded payload sizes (`262144` bytes), and HMAC-SHA256 signatures via `VP_WEBHOOK_HMAC_KEY`.

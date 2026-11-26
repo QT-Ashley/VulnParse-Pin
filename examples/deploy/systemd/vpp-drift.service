@@ -23,6 +23,8 @@ Type=oneshot
 User=vpp
 Group=vpp
 WorkingDirectory=/var/lib/vulnparse-pin
+# Leave SCAN_FILES empty by default so scheduled-kev-drift-check.sh passes --re-enrich to `vpp diff`.
+Environment="SCAN_FILES="
 EnvironmentFile=/etc/vulnparse-pin/vpp.env
 ExecStart=/usr/local/bin/scheduled-kev-drift-check.sh
 

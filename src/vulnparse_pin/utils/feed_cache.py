@@ -529,6 +529,10 @@ class FeedCacheManager:
                 return False
             return False
 
+    def verify_feed_checksum_ro(self, key: str) -> bool:
+        """Verify feed checksum and integrity sidecar read-only without quarantining files."""
+        return self._verify_checksum_common(key, allow_regen=False, quarantine=False)
+
     def ensure_feed_checksum(self, key: str, *, allow_regen: bool) -> bool:
         """
         Ensure checksum + meta exist and are consistent with the feed.
@@ -540,7 +544,10 @@ class FeedCacheManager:
             FeedChecksumError (subclass of RuntimeError) when allow_regen=False and
             checksum or integrity sidecar is missing or tampered.
         """
-        spec = self._spec(key)
+        return self._verify_checksum_common(key, allow_regen=allow_regen, quarantine=True)
+
+    def _verify_checksum_common(self, key: str, *, allow_regen: bool, quarantine: bool) -> bool:
+        spec_label = f"NVD Feed ({key})" if key.startswith("nvd.") else self._spec(key).label
         data_path, sha_path, _ = self.resolve(key)
 
         if not data_path.exists():
@@ -561,13 +568,15 @@ class FeedCacheManager:
             if not hmac.compare_digest(expected, actual):
                 if not allow_regen:
                     self.logger.print_error(f"Checksum mismatch for {data_path.name}", label = "Cache Manager")
-                    self._quarantine_tampered_paths(
-                        data_path,
-                        sha_path,
-                        self._feed_integrity_path(data_path),
-                    )
+                    if quarantine:
+                        self._quarantine_tampered_paths(
+                            data_path,
+                            sha_path,
+                            self._feed_integrity_path(data_path),
+                        )
                     raise FeedChecksumError(
-                        f"Checksum mismatch for {data_path.name}; tampered cache quarantined. "
+                        f"Checksum mismatch for {data_path.name}; tampered cache"
+                        f"{' quarantined' if quarantine else ''}. "
                         f"Re-download with --refresh-cache or configure allow_regen=True."
                     )
                 # Allow_regen = True: non-interactive offline / recovery mode
@@ -585,13 +594,15 @@ class FeedCacheManager:
             # Checksum matches; verify HMAC/SHA-256 integrity sidecar
             integrity_ok = self._verify_feed_integrity(key, data_path, actual, allow_regen=allow_regen)
             if not integrity_ok and not allow_regen:
-                self._quarantine_tampered_paths(
-                    data_path,
-                    sha_path,
-                    self._feed_integrity_path(data_path),
-                )
+                if quarantine:
+                    self._quarantine_tampered_paths(
+                        data_path,
+                        sha_path,
+                        self._feed_integrity_path(data_path),
+                    )
                 raise FeedChecksumError(
-                    f"Integrity sidecar mismatch for {data_path.name}; quarantined cache. "
+                    f"Integrity sidecar mismatch for {data_path.name}"
+                    f"{'; quarantined cache' if quarantine else ''}. "
                     f"Refusing to trust cache without tamper-safe metadata."
                 )
             if not integrity_ok:
@@ -600,7 +611,7 @@ class FeedCacheManager:
                     label="Cache Manager"
                 )
                 return False
-            self.logger.print_success(f"Checksum valid for {spec.label}: {data_path.name}", label = "Cache Manager")
+            self.logger.print_success(f"Checksum valid for {spec_label}: {data_path.name}", label = "Cache Manager")
             return True
 
         # No .sha256 file present
@@ -957,6 +968,20 @@ class FeedCacheManager:
     NVD_TIMEOUT_SEC = 15
     NVD_UA = UA
 
+    def _verify_cached_nvd_feed(
+        self,
+        key: str,
+        data_path: Path,
+        sha_path: Optional[Path],
+        meta_path: Optional[Path] = None,
+    ) -> None:
+        self._assert_not_world_writable(data_path, label=f"NVD Feed Cache ({key})")
+        has_sha = sha_path is not None and sha_path.exists()
+        has_integrity = self._feed_integrity_path(data_path).exists()
+        has_meta = meta_path is not None and meta_path.exists()
+        if has_sha or has_integrity or has_meta or self._feed_integrity_secret() is not None:
+            self.ensure_feed_checksum(key, allow_regen=False)
+
     def resolve_nvd_feed(
         self,
         *,
@@ -986,7 +1011,7 @@ class FeedCacheManager:
 
         if offline:
             if data_path.exists():
-                self._assert_not_world_writable(data_path, label=f"NVD Feed Cache ({key})")
+                self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                 return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
             raise FileNotFoundError(f"Offline mode: missing cached NVD feed for {key}")
 
@@ -996,8 +1021,9 @@ class FeedCacheManager:
                 self._assert_not_world_writable(data_path, label=f"NVD Feed Cache ({key})")
                 mtime = datetime.fromtimestamp(data_path.stat().st_mtime, tz=timezone.utc)
                 if datetime.now(timezone.utc) - mtime <= timedelta(hours=max(ttl_hours, 0)):
+                    self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                     return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
-            except PermissionError:
+            except (PermissionError, FeedChecksumError):
                 raise
             except Exception:
                 pass
@@ -1025,7 +1051,7 @@ class FeedCacheManager:
             raise
         except Exception as e:
             if data_path.exists():
-                self._assert_not_world_writable(data_path, label=f"NVD Feed Cache ({key})")
+                self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                 self.logger.print_warning(f"Meta fetched failed for {fname}. Using local. Trace={e}", label = "FeedCacheManager-NVD")
                 return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
             raise
@@ -1041,8 +1067,9 @@ class FeedCacheManager:
                     local_meta = json.load(f)
                 local_remote_last = self._iso_to_dt(local_meta.get("remote_lastModifiedDate"))
                 if local_remote_last and remote_last <= local_remote_last:
+                    self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                     return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
-            except PermissionError:
+            except (PermissionError, FeedChecksumError):
                 raise
             except Exception:
                 pass

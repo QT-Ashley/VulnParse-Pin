@@ -38,10 +38,13 @@ Primary implementation files:
 | --- | --- | --- | --- |
 | `forbid_symlinks_read` | `True` | `--allow-symlinks-read` | Rejects symlinks and symlink ancestors on read |
 | `forbid_symlinks_write` | `True` | (fail-closed) | Rejects symlinks and symlink ancestors on write |
-| `enforce_roots_on_read` | `False` | `--enforce-root-read` (`-err`) | Confines reads to `allowed_roots` + explicit workspace roots |
+| `enforce_roots_on_read` | `False` | `--enforce-root-read` (`-err`) | Confines reads to `allowed_roots` (`paths.base_dir`, `config_dir`, `cache_dir`, `log_dir`, `output_dir`) |
 | `enforce_roots_on_write` | `True` | (enforced) | Confines writes to authorized output paths & `allowed_roots` |
 | `file_mode` (POSIX) | `0o600` | `--file-mode` (`-fm`) | Owner-only read/write permissions on created files |
 | `dir_mode` (POSIX) | `0o700` | `--dir-mode` (`-dm`) | Owner-only permissions on created directories |
+
+> [!IMPORTANT]
+> **`--enforce-root-read` with vs. without `--portable`:** `build_pfh()` anchors `root_dir` to `paths.base_dir`. When `--portable` (`-P`) is **not** set, `paths.base_dir` is the OS user data directory (e.g., `~/.local/share/VulnParse-Pin/`), so `--enforce-root-read` fails closed (`FilePathError`) on scan or manifest files under `$PWD`. When `--portable` **is** set, `paths.base_dir` is `$PWD`, allowing reads under `$PWD` while still blocking reads outside `$PWD` and `./data/`.
 
 Diagnostic mode:
 

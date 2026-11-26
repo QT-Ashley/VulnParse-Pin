@@ -53,6 +53,18 @@ The ledger records ingestion quality gates (CSV drops, malformed skips, strict-i
 - `compact` (default): high-impact decision events with minimal overhead.
 - `expanded`: richer per-finding/per-asset decision detail and SLA bucket breakdowns.
 
+## Pre-Seal vs. Post-Export Dossier Seal
+
+During single-pass `vpp scan --output-dossier ... --output-runmanifest ...`, `vpp scan --output-all ...`, or `vpp demo`, `dossier.html` (and `dossier.md` / `executive_roadmap.html`) is written **before** `build_runmanifest_from_db()` computes `output_hashes` and seals `verification.manifest_digest` (preventing a circular SHA-256 self-hash). Consequently, inline dossiers generated during the scan pass display:
+
+`Pending post-export RunManifest seal (see runmanifest.json)`
+
+After the scan completes and stores `runs.manifest_digest` in `.vpp.db`, run `vpp export` to embed the sealed `sha256:...` digest directly inside the dossier:
+
+```bash
+vpp export --db .vpp.db --format dossier-html -o dossier.html
+```
+
 ## Core Commands
 
 Generate a RunManifest during `vpp scan`:
