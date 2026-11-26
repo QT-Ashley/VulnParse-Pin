@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -sV -p 22,80,443,3389,8080,8443" start="1762000000" startstr="Sat Nov 01 12:00:00 2026" version="7.95">
+  <host starttime="1762000001" endtime="1762000005">
+    <status state="up" reason="syn-ack"/>
+    <address addr="203.0.113.10" addrtype="ipv4"/>
+    <hostnames><hostname name="edge-api.acme.test" type="PTR"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/><service name="http" product="nginx" version="1.25.3"/></port>
+      <port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="https" product="nginx" version="1.25.3"/></port>
+      <port protocol="tcp" portid="8443"><state state="open" reason="syn-ack"/><service name="https-alt" product="Apache Tomcat" version="9.0.85"/></port>
+    </ports>
+  </host>
+  <host starttime="1762000006" endtime="1762000010">
+    <status state="up" reason="syn-ack"/>
+    <address addr="10.20.1.50" addrtype="ipv4"/>
+    <hostnames><hostname name="internal-legacy.acme.test" type="PTR"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh" product="OpenSSH" version="8.9p1"/></port>
+      <port protocol="tcp" portid="8080"><state state="open" reason="syn-ack"/><service name="http-proxy" product="Jetty"/></port>
+    </ports>
+  </host>
+  <host starttime="1762000011" endtime="1762000015">
+    <status state="up" reason="syn-ack"/>
+    <address addr="198.51.100.77" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="https" product="ScreenConnect"/></port>
+      <port protocol="tcp" portid="3389"><state state="open" reason="syn-ack"/><service name="ms-wbt-server"/></port>
+    </ports>
+  </host>
+  <host starttime="1762000016" endtime="1762000020">
+    <status state="up" reason="syn-ack"/>
+    <address addr="198.51.100.88" addrtype="ipv4"/>
+    <hostnames><hostname name="shadow-staging.acme.test" type="PTR"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh" product="OpenSSH"/></port>
+      <port protocol="tcp" portid="8080"><state state="open" reason="syn-ack"/><service name="http-alt"/></port>
+    </ports>
+  </host>
+</nmaprun>

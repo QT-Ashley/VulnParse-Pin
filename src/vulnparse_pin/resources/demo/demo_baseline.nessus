@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NessusClientData_v2>
+  <Policy>
+    <policyName>ACME Baseline Scan Policy</policyName>
+  </Policy>
+  <Report name="ACME Baseline Scan">
+    <ReportHost name="203.0.113.10">
+      <HostProperties>
+        <tag name="host-ip">203.0.113.10</tag>
+        <tag name="host-fqdn">edge-api.acme.test</tag>
+        <tag name="operating-system">Linux Kernel 6.1</tag>
+        <tag name="Credentialed_checks">yes</tag>
+      </HostProperties>
+      <ReportItem port="22" svc_name="ssh" protocol="tcp" severity="3" pluginID="900102" pluginName="XZ Utils Malicious Code Backdoor (CVE-2024-3094)" pluginFamily="General">
+        <description>Vulnerable xz / liblzma package detected on edge-api host.</description>
+        <solution>Rebuild base image with clean xz package.</solution>
+        <plugin_output>Installed liblzma version 5.6.0 matched vulnerable range.</plugin_output>
+        <cve>CVE-2024-3094</cve>
+        <cvss3_base_score>7.5</cvss3_base_score>
+        <cvss3_vector>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N</cvss3_vector>
+      </ReportItem>
+    </ReportHost>
+    <ReportHost name="10.20.1.50">
+      <HostProperties>
+        <tag name="host-ip">10.20.1.50</tag>
+        <tag name="host-fqdn">internal-legacy.acme.test</tag>
+        <tag name="operating-system">Ubuntu 22.04 LTS</tag>
+        <tag name="Credentialed_checks">yes</tag>
+      </HostProperties>
+      <ReportItem port="8080" svc_name="http-alt" protocol="tcp" severity="4" pluginID="900201" pluginName="curl SOCKS5 Heap Buffer Overflow (CVE-2023-38545)" pluginFamily="Ubuntu Local Security Checks">
+        <description>curl libcurl SOCKS5 hostname heap-based buffer overflow.</description>
+        <solution>Upgrade curl to patched release.</solution>
+        <plugin_output>Installed package libcurl4 8.2.1; outbound SOCKS5 proxy disabled by host firewall.</plugin_output>
+        <cve>CVE-2023-38545</cve>
+        <cvss3_base_score>9.8</cvss3_base_score>
+        <cvss3_vector>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H</cvss3_vector>
+      </ReportItem>
+      <ReportItem port="0" svc_name="general" protocol="tcp" severity="3" pluginID="900202" pluginName="libwebp Heap Buffer Overflow (CVE-2023-4863)" pluginFamily="Ubuntu Local Security Checks">
+        <description>Heap buffer overflow in libwebp Huffman coding.</description>
+        <solution>Upgrade libwebp7 package.</solution>
+        <plugin_output>Installed libwebp7 1.2.2 prior to patch.</plugin_output>
+        <cve>CVE-2023-4863</cve>
+        <cvss3_base_score>8.8</cvss3_base_score>
+        <cvss3_vector>CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H</cvss3_vector>
+      </ReportItem>
+    </ReportHost>
+  </Report>
+</NessusClientData_v2>

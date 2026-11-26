@@ -1,24 +1,19 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from __future__ import annotations
+import contextlib
 from typing import TYPE_CHECKING, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import gzip
 from pathlib import Path
-import sys
 import json
 import hashlib
 import hmac
 import os
-from urllib.parse import urlsplit
+import stat
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from vulnparse_pin import UA
@@ -27,6 +22,168 @@ if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext
     from vulnparse_pin.core.classes.dataclass import FeedCachePolicy
     from vulnparse_pin.core.classes.dataclass import FeedSpec
+
+MAX_REMOTE_FEED_BYTES = 200 * 1024 * 1024
+MAX_DECOMPRESSED_FEED_BYTES = 2 * 1024 * 1024 * 1024
+MAX_NVD_META_BYTES = 1024 * 1024
+
+
+class FeedChecksumError(RuntimeError):
+    """Raised when feed checksum or integrity validation fails closed."""
+
+
+class _BoundedReadStream:
+    """Stream wrapper enforcing an upper bound on compressed network bytes read."""
+
+    def __init__(self, raw_stream: Any, max_bytes: Optional[int], label: str) -> None:
+        self._raw = raw_stream
+        self._max_bytes = max_bytes
+        self._label = label
+        self._bytes_read = 0
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._raw.read(size)
+        if data:
+            self._bytes_read += len(data)
+            if self._max_bytes is not None and self._bytes_read > self._max_bytes:
+                raise RuntimeError(
+                    f"{self._label} response exceeds configured size limit. "
+                    f"Read={self._bytes_read} bytes, limit={self._max_bytes} bytes."
+                )
+        return data
+
+
+def _validate_https_url(url: str, *, label: str) -> str:
+    """Validate that a remote feed URL uses HTTPS and includes a network host."""
+    cur_url = str(url or "").strip()
+    parts = urlsplit(cur_url)
+    if parts.scheme.lower() != "https" or not parts.netloc:
+        raise RuntimeError(f"{label} request requires HTTPS URL: {cur_url}")
+    return cur_url
+
+
+@contextlib.contextmanager
+def _open_https_stream(
+    url: str,
+    *,
+    timeout: int,
+    headers: Optional[Dict[str, str]],
+    label: str,
+    requests_get: Any = None,
+    max_redirects: int = 5,
+):
+    """
+    Open an HTTPS streaming response with allow_redirects=False and strict
+    per-hop HTTPS validation across redirect hops.
+    """
+    getter = requests.get if requests_get is None else requests_get
+    cur_url = _validate_https_url(url, label=label)
+    for _ in range(max_redirects + 1):
+        _validate_https_url(cur_url, label=label)
+        req_cm = getter(
+            cur_url,
+            allow_redirects=False,
+            stream=True,
+            timeout=timeout,
+            headers=headers,
+        )
+        cm = req_cm if hasattr(req_cm, "__enter__") else contextlib.closing(req_cm)
+        with cm as resp:
+            status_code = getattr(resp, "status_code", None)
+            if status_code in (301, 302, 303, 307, 308):
+                resp_headers = getattr(resp, "headers", None) or {}
+                loc = resp_headers.get("Location") or resp_headers.get("location")
+                if not loc:
+                    raise RuntimeError(f"{label} redirect missing Location header.")
+                next_url = urljoin(cur_url, str(loc).strip())
+                parts = urlsplit(next_url)
+                if parts.scheme.lower() != "https" or not parts.netloc:
+                    raise RuntimeError(f"{label} request redirected to non-HTTPS URL: {next_url}")
+                cur_url = next_url
+                continue
+
+            resp.raise_for_status()
+            final_url = str(getattr(resp, "url", "") or "")
+            if final_url:
+                final_parts = urlsplit(final_url)
+                if final_parts.scheme.lower() != "https" or not final_parts.netloc:
+                    raise RuntimeError(f"{label} request redirected to non-HTTPS URL: {final_url}")
+
+            yield resp
+            return
+
+    raise RuntimeError(f"{label} exceeded maximum HTTPS redirects ({max_redirects}).")
+
+
+def stream_https_get_bytes(
+    url: str,
+    *,
+    max_bytes: int,
+    timeout: int,
+    headers: Optional[Dict[str, str]],
+    label: str,
+    requests_get: Any = None,
+    max_redirects: int = 5,
+    chunk_size: int = 1024 * 1024,
+) -> bytes:
+    """
+    Fetch an HTTPS URL using allow_redirects=False (per-hop HTTPS validation)
+    and stream=True with bounded byte reads.
+    """
+    with _open_https_stream(
+        url,
+        timeout=timeout,
+        headers=headers,
+        label=label,
+        requests_get=requests_get,
+        max_redirects=max_redirects,
+    ) as resp:
+        resp_headers = getattr(resp, "headers", None) or {}
+        raw_len = resp_headers.get("Content-Length")
+        if raw_len:
+            try:
+                content_len = int(raw_len)
+            except (TypeError, ValueError):
+                content_len = None
+            if content_len is not None and content_len > max_bytes:
+                raise RuntimeError(
+                    f"{label} response exceeds configured size limit. "
+                    f"Content-Length={content_len} bytes, limit={max_bytes} bytes."
+                )
+
+        chunks: list[bytes] = []
+        total_read = 0
+        iter_content = getattr(resp, "iter_content", None)
+        if callable(iter_content):
+            for chunk in iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
+                total_read += len(chunk)
+                if total_read > max_bytes:
+                    raise RuntimeError(
+                        f"{label} response exceeds configured size limit. "
+                        f"Read={total_read} bytes, limit={max_bytes} bytes."
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks)
+
+        raw_stream = getattr(resp, "raw", None)
+        if raw_stream is not None and callable(getattr(raw_stream, "read", None)):
+            bounded = _BoundedReadStream(raw_stream, max_bytes, label)
+            while True:
+                chunk = bounded.read(chunk_size)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            return b"".join(chunks)
+
+        raw_bytes = getattr(resp, "content", b"") or b""
+        if len(raw_bytes) > max_bytes:
+            raise RuntimeError(
+                f"{label} response exceeds configured size limit. "
+                f"Received={len(raw_bytes)} bytes, limit={max_bytes} bytes."
+            )
+        return raw_bytes
 
 @dataclass
 class FeedCacheManager:
@@ -139,6 +296,7 @@ class FeedCacheManager:
         meta_path = self.pfh.ensure_writable_file(meta_path, label = f"{key} Meta", create_parents = True, overwrite = True)
         with self.pfh.open_for_write(meta_path, mode = "w", label = f"{key} Meta") as w:
             w.write(json.dumps(meta, indent=2))
+        self._harden_file_mode(meta_path)
 
         self.logger.print_success(f"Metadata written: {self.pfh.format_for_log(meta_path)}", label = "Cache Manager")
 
@@ -162,6 +320,7 @@ class FeedCacheManager:
 
         with self.pfh.open_for_write(meta_path, mode = "w", label = f"{key} Meta") as w:
             w.write(json.dumps(meta, indent=2))
+        self._harden_file_mode(meta_path)
 
         self.logger.print_success(f"Metadata update written: {self.pfh.format_for_log(meta_path)}", label = "Cache Manager")
 
@@ -214,7 +373,7 @@ class FeedCacheManager:
         try:
             dt = datetime.fromisoformat(last_raw.replace("Z", "+00:00"))
         except Exception as e:
-            self.logger.debug('Invalid last_updated timestamp in meta for "%s", Timestamp: "%s", Error Trace: "%s".', key, e)
+            self.logger.debug('Invalid last_updated timestamp in meta for "%s", Timestamp: "%s", Error Trace: "%s".', key, last_raw, e)
             return False
 
         now = datetime.now(timezone.utc)
@@ -228,9 +387,44 @@ class FeedCacheManager:
         self.logger.debug("'%s' cache age=%sh, ttl=%sh", key, f"{age_hours:.2f}", ttl)
         return age_hours <= float(ttl)
 
+    # ----------------- Permission & Quarantine Helpers -----------------
+    @staticmethod
+    def _harden_file_mode(path: Optional[Path]) -> None:
+        if path is None or os.name == "nt":
+            return
+        try:
+            if path.exists():
+                os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _assert_not_world_writable(path: Optional[Path], *, label: str = "Cache file") -> None:
+        if path is None or os.name == "nt" or not path.exists():
+            return
+        try:
+            st = os.stat(path)
+        except OSError as exc:
+            raise PermissionError(f"{label} permission check failed: {exc}") from exc
+        if bool(st.st_mode & stat.S_IWOTH):
+            raise PermissionError(f"{label} is world-writable; refusing to continue: {path.name}")
+
+    @staticmethod
+    def _quarantine_tampered_paths(*paths: Optional[Path]) -> None:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        for path in paths:
+            if path is None:
+                continue
+            try:
+                if path.exists():
+                    os.replace(path, Path(f"{path}.tampered.{ts}"))
+            except OSError:
+                pass
+
     # ----------------- Checksum Logic -----------------
     def compute_checksum(self, key: str) -> str:
         data_path, _, _ = self.resolve(key)
+        self._assert_not_world_writable(data_path, label=f"{key} Cache")
         h = hashlib.sha256()
         with self.pfh.open_for_read(data_path, mode = 'rb', label = f"{key} Cache") as f:
             for chunk in iter(lambda: f.read(8192), b""):
@@ -272,19 +466,24 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(integrity_path, mode="w", label=f"{key} Integrity Sidecar") as w:
             w.write(json.dumps(payload, indent=2))
+        self._harden_file_mode(integrity_path)
 
     def _verify_feed_integrity(self, key: str, data_path: Path, digest: str, *, allow_regen: bool) -> bool:
         integrity_path = self._feed_integrity_path(data_path)
 
         if not integrity_path.exists():
-            self._write_feed_integrity(key, data_path, digest)
+            if allow_regen:
+                self._write_feed_integrity(key, data_path, digest)
             return False
 
         try:
+            self._assert_not_world_writable(integrity_path, label=f"{key} Integrity Sidecar")
             with self.pfh.open_for_read(integrity_path, mode="r", label=f"{key} Integrity Sidecar") as r:
                 payload = json.load(r)
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid integrity payload")
 
-            mode = str(payload.get("mode", "sha256"))
+            mode = str(payload.get("mode", "")).strip()
             expected_digest = str(payload.get("digest", ""))
             expected_signature = str(payload.get("signature", ""))
 
@@ -294,16 +493,27 @@ class FeedCacheManager:
                     return False
                 return False
 
+            secret = self._feed_integrity_secret()
+            if secret is not None and mode != "hmac-sha256":
+                if allow_regen:
+                    self._write_feed_integrity(key, data_path, digest)
+                    return False
+                return False
+
             if mode == "hmac-sha256":
-                secret = self._feed_integrity_secret()
                 if secret is None:
                     if allow_regen:
                         self._write_feed_integrity(key, data_path, digest)
                         return False
                     return False
                 computed_sig = hmac.new(secret, digest.encode("utf-8"), hashlib.sha256).hexdigest()
-            else:
+            elif mode == "sha256":
                 computed_sig = digest
+            else:
+                if allow_regen:
+                    self._write_feed_integrity(key, data_path, digest)
+                    return False
+                return False
 
             if not hmac.compare_digest(expected_signature, computed_sig):
                 if allow_regen:
@@ -311,11 +521,17 @@ class FeedCacheManager:
                     return False
                 return False
             return True
+        except PermissionError:
+            raise
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             if allow_regen:
                 self._write_feed_integrity(key, data_path, digest)
                 return False
             return False
+
+    def verify_feed_checksum_ro(self, key: str) -> bool:
+        """Verify feed checksum and integrity sidecar read-only without quarantining files."""
+        return self._verify_checksum_common(key, allow_regen=False, quarantine=False)
 
     def ensure_feed_checksum(self, key: str, *, allow_regen: bool) -> bool:
         """
@@ -323,60 +539,70 @@ class FeedCacheManager:
 
         Returns:
             True -> checksum verified and valid
-            False -> checksum/state regenerated in best-effort mode
+            False -> checksum/state regenerated when allow_regen=True
         Raises:
-            RunTimeError on hard mismatch when allow_regen=False
-        Returns True if checksum was verified against an existing .sha256,
-        False if it has to generate local state (best-effort).
-        Raises error on hard mismatch.
+            FeedChecksumError (subclass of RuntimeError) when allow_regen=False and
+            checksum or integrity sidecar is missing or tampered.
         """
-        spec = self._spec(key)
+        return self._verify_checksum_common(key, allow_regen=allow_regen, quarantine=True)
+
+    def _verify_checksum_common(self, key: str, *, allow_regen: bool, quarantine: bool) -> bool:
+        spec_label = f"NVD Feed ({key})" if key.startswith("nvd.") else self._spec(key).label
         data_path, sha_path, _ = self.resolve(key)
 
         if not data_path.exists():
             raise FileNotFoundError(f"Feed '{key}' not found: {self.pfh.format_for_log(data_path)}")
 
-        # If checksum file exists, Validate the checksum
-        if sha_path.exists():
+        self._assert_not_world_writable(data_path, label=f"{key} Cache")
+        if sha_path is not None and sha_path.exists():
+            self._assert_not_world_writable(sha_path, label=f"{key} SHA256")
+
+        # If checksum file exists, validate the checksum
+        if sha_path is not None and sha_path.exists():
             with self.pfh.open_for_read(sha_path, mode = "r", label = f"{key} SHA256") as r:
-                expected = r.read().strip().split()[0]
+                raw_sha = r.read().strip().split()
+            expected = raw_sha[0] if raw_sha else ""
             actual = self.compute_checksum(key)
 
             # Diff Check
-            if expected != actual:
+            if not hmac.compare_digest(expected, actual):
                 if not allow_regen:
                     self.logger.print_error(f"Checksum mismatch for {data_path.name}", label = "Cache Manager")
-                    # Refuse to use cache on mismatch.
-                    raise RuntimeError(
-                        f"Checksum mismatch for {data_path.name}. "
-                        f"Re-download with --refresh-cache or replace the cache."
+                    if quarantine:
+                        self._quarantine_tampered_paths(
+                            data_path,
+                            sha_path,
+                            self._feed_integrity_path(data_path),
+                        )
+                    raise FeedChecksumError(
+                        f"Checksum mismatch for {data_path.name}; tampered cache"
+                        f"{' quarantined' if quarantine else ''}. "
+                        f"Re-download with --refresh-cache or configure allow_regen=True."
                     )
-                # Allow_regen = True: offline / recovery mode
-                self.logger.print_warning(f"Checksum mismatch for {data_path.name}. "
-                                          f"Regnerating checksum from re-downloaded file contents. "
-                                          f"Integrity vs upstream mirror CANNOT be verified — best-effort cache.", label = "Cache Manager")
-                # Regen Checksum for missing .sha256
+                # Allow_regen = True: non-interactive offline / recovery mode
+                self.logger.print_warning(
+                    f"Checksum mismatch for {data_path.name}. "
+                    f"Regenerating checksum from file contents (allow_regen=True). "
+                    f"Integrity vs upstream mirror CANNOT be verified — best-effort cache.",
+                    label = "Cache Manager",
+                )
                 self._create_cs(key, actual)
                 self._write_feed_integrity(key, data_path, actual)
                 self.update_cache_meta(key)
-
-                # Get User Consent
-                while True:
-                    cprompt = input(f"Continue using this('{key}') cache with a regenerated checksum? (Yes or No): ").strip().lower()
-                    if cprompt in ("yes", "y"):
-                        break
-                    elif cprompt in ("no", "n"):
-                        self.logger.print_info("[Enrich-Cache] User chose to abort due to checksum mismatch.", label = "Cache Manager-WARN")
-                        sys.exit(0)
-                    else:
-                        self.logger.print_info("[Enrich-Cache] Please answer 'yes' or 'no'.", label = "Cache Manager-WARN")
                 return False
 
-            # Checksum matches
+            # Checksum matches; verify HMAC/SHA-256 integrity sidecar
             integrity_ok = self._verify_feed_integrity(key, data_path, actual, allow_regen=allow_regen)
             if not integrity_ok and not allow_regen:
-                raise RuntimeError(
-                    f"Integrity sidecar mismatch for {data_path.name}. "
+                if quarantine:
+                    self._quarantine_tampered_paths(
+                        data_path,
+                        sha_path,
+                        self._feed_integrity_path(data_path),
+                    )
+                raise FeedChecksumError(
+                    f"Integrity sidecar mismatch for {data_path.name}"
+                    f"{'; quarantined cache' if quarantine else ''}. "
                     f"Refusing to trust cache without tamper-safe metadata."
                 )
             if not integrity_ok:
@@ -385,39 +611,29 @@ class FeedCacheManager:
                     label="Cache Manager"
                 )
                 return False
-            self.logger.print_success(f"Checksum valid for {spec.label}: {data_path.name}", label = "Cache Manager")
+            self.logger.print_success(f"Checksum valid for {spec_label}: {data_path.name}", label = "Cache Manager")
             return True
 
         # No .sha256 file present
         if not allow_regen:
-            raise RuntimeError(
-            f"Missing checksum for {data_path.name}. "
-            f"Refusing to trust cache without integrity metadata. "
-            f"Use --refresh-cache to re-download a verified feed."
-        )
+            raise FeedChecksumError(
+                f"Missing checksum for {data_path.name}. "
+                f"Refusing to trust cache without integrity metadata. "
+                f"Use --refresh-cache to re-download a verified feed or set allow_regen=True."
+            )
 
-        # Missing checksum but Regen checksum + minimal meta allowed
+        # Missing checksum with explicit allow_regen=True
         actual = self.compute_checksum(key)
         self._create_cs(key, actual)
         self._write_feed_integrity(key, data_path, actual)
         self.update_cache_meta(key)
 
-        # Warn user of Locally generated checksum .sha256. Prompt to continue
-        self.logger.print_warning(f"No checksum file found for {data_path.name}. "
-                                  f"Generated LOCAL checksum {actual}. "
-                                  f"Integrity vs upstream mirror CANNOT be verified — using best-effort offline cache.", label = "Cache Manager")
-        # If no, exit. If yes, continue.
-        while True:
-            cprompt = input("Would you like to continue? (Yes or No): ").strip().lower()
-
-            if cprompt in ("yes", "y"):
-                break
-            elif cprompt in ("no", "n"):
-                self.logger.print_info(f"User input: {cprompt}. Exiting...", label = "Cache Mangager-WARN")
-                sys.exit(0)
-            else:
-                self.logger.print_info("Please answer 'yes' or 'no'. ", label = "Cache Manager-WARN")
-
+        self.logger.print_warning(
+            f"No checksum file found for {data_path.name}. "
+            f"Generated LOCAL checksum {actual} (allow_regen=True). "
+            f"Integrity vs upstream mirror CANNOT be verified — using best-effort offline cache.",
+            label = "Cache Manager",
+        )
         return False
 
     def _create_cs(self, key: str, digest: str) -> None:
@@ -428,6 +644,7 @@ class FeedCacheManager:
         sha_path = self.pfh.ensure_writable_file(sha_path, label = f"{key} SHA256", create_parents = True, overwrite = True)
         with self.pfh.open_for_write(sha_path, mode = "w", label = f"{key} SHA256") as w:
             w.write(f"{digest} {data_path.name}\n")
+        self._harden_file_mode(sha_path)
 
     # ----------------- Decision Helpers -----------------
     def should_use_cached(self, key: str, *, force_refresh: bool) -> bool:
@@ -528,6 +745,7 @@ class FeedCacheManager:
             overwrite = overwrite
         )
         tmp_path.replace(data_path)
+        self._harden_file_mode(data_path)
 
         # Write sha256
         digest = hashlib.sha256(data).hexdigest()
@@ -539,6 +757,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(sha_path, mode = "w", label = f"{spec.label} SHA256") as w:
             w.write(f"{digest} {data_path.name}\n")
+        self._harden_file_mode(sha_path)
         self._write_feed_integrity(key, data_path, digest)
 
         # Write/update meta
@@ -566,6 +785,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(meta_path, mode = "w", label = f"{spec.label} Meta") as w:
             w.write(json.dumps(meta, indent=2))
+        self._harden_file_mode(meta_path)
 
         self.logger.print_success(f"Cached {spec.label} at {self.pfh.format_for_log(data_path)}", label = "CacheManager")
         return data_path
@@ -582,8 +802,8 @@ class FeedCacheManager:
         headers: Optional[Dict[str, str]] = None,
         extra_meta: Optional[Dict[str, Any]] = None,
         chunk_size: int = 1024 * 1024,
-        max_decompressed_bytes: int = 2 * 1024 * 1024 * 1024,
-        max_response_bytes: Optional[int] = None,
+        max_decompressed_bytes: int = MAX_DECOMPRESSED_FEED_BYTES,
+        max_response_bytes: Optional[int] = MAX_REMOTE_FEED_BYTES,
         enforce_https_redirect: bool = False,
     ) -> Path:
         """
@@ -614,16 +834,16 @@ class FeedCacheManager:
         h = hashlib.sha256()
         total_bytes = 0
 
-        # Stream download
-        with requests.get(source_url, stream = True, timeout = timeout, headers = headers) as resp:
-            resp.raise_for_status()
-            if enforce_https_redirect:
-                if urlsplit(str(getattr(resp, "url", source_url) or source_url)).scheme.lower() != "https":
-                    raise RuntimeError(
-                        f"{spec.label} download redirected to a non-HTTPS target, which is forbidden."
-                    )
+        # Stream download with allow_redirects=False and per-hop HTTPS validation
+        with _open_https_stream(
+            source_url,
+            timeout=timeout,
+            headers=headers,
+            label=spec.label,
+        ) as resp:
+            resp_headers = getattr(resp, "headers", None) or {}
             if max_response_bytes is not None:
-                content_length = resp.headers.get("Content-Length")
+                content_length = resp_headers.get("Content-Length")
                 if content_length:
                     try:
                         length = int(content_length)
@@ -635,24 +855,52 @@ class FeedCacheManager:
                             f"Reported={length} bytes, limit={max_response_bytes} bytes."
                         )
 
-            resp.raw.decode_content = False
+            raw_stream = getattr(resp, "raw", None)
+            if raw_stream is not None and callable(getattr(raw_stream, "read", None)):
+                raw_stream.decode_content = False
+                gz_source: Any = _BoundedReadStream(raw_stream, max_response_bytes, spec.label)
+            else:
+                import io as _io
+
+                chunks: list[bytes] = []
+                total_compressed = 0
+                iter_content = getattr(resp, "iter_content", None)
+                if callable(iter_content):
+                    for chunk in iter_content(chunk_size=chunk_size):
+                        if not chunk:
+                            continue
+                        total_compressed += len(chunk)
+                        if max_response_bytes is not None and total_compressed > max_response_bytes:
+                            raise RuntimeError(
+                                f"{spec.label} response exceeds configured size limit. "
+                                f"Read={total_compressed} bytes, limit={max_response_bytes} bytes."
+                            )
+                        chunks.append(chunk)
+                    gz_source = _io.BytesIO(b"".join(chunks))
+                else:
+                    raw_bytes = getattr(resp, "content", b"") or b""
+                    if max_response_bytes is not None and len(raw_bytes) > max_response_bytes:
+                        raise RuntimeError(
+                            f"{spec.label} response exceeds configured size limit. "
+                            f"Received={len(raw_bytes)} bytes, limit={max_response_bytes} bytes."
+                        )
+                    gz_source = _io.BytesIO(raw_bytes)
 
             # Gunzip stream
-            gz = gzip.GzipFile(fileobj = resp.raw, mode = "rb")
-
-            with self.pfh.open_for_write(tmp_path, mode = "wb", label = f"{spec.label} Temp Cache File") as w:
-                while True:
-                    chunk = gz.read(chunk_size)
-                    if not chunk:
-                        break
-                    if total_bytes + len(chunk) > max_decompressed_bytes:
-                        raise RuntimeError(
-                            f"Decompressed feed exceeds safety limit for {spec.label}. "
-                            f"Limit={max_decompressed_bytes} bytes"
-                        )
-                    w.write(chunk)
-                    h.update(chunk)
-                    total_bytes += len(chunk)
+            with gzip.GzipFile(fileobj=gz_source, mode="rb") as gz:
+                with self.pfh.open_for_write(tmp_path, mode="wb", label=f"{spec.label} Temp Cache File") as w:
+                    while True:
+                        chunk = gz.read(chunk_size)
+                        if not chunk:
+                            break
+                        if total_bytes + len(chunk) > max_decompressed_bytes:
+                            raise RuntimeError(
+                                f"Decompressed feed exceeds safety limit for {spec.label}. "
+                                f"Limit={max_decompressed_bytes} bytes"
+                            )
+                        w.write(chunk)
+                        h.update(chunk)
+                        total_bytes += len(chunk)
 
         # Promote tmp -> final file
         data_path = self.pfh.ensure_writable_file(
@@ -662,6 +910,7 @@ class FeedCacheManager:
             overwrite = True
         )
         tmp_path.replace(data_path)
+        self._harden_file_mode(data_path)
 
         # Write sha file
         digest = h.hexdigest()
@@ -673,6 +922,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(sha_path, mode = "w", label = f"{spec.label} SHA256") as w:
             w.write(f"{digest} {data_path.name}\n")
+        self._harden_file_mode(sha_path)
         self._write_feed_integrity(key, data_path, digest)
 
         # Write meta file
@@ -703,6 +953,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(meta_path, mode = "w", label = f"{spec.label} Meta") as w:
             w.write(json.dumps(meta, indent=2))
+        self._harden_file_mode(meta_path)
 
         self.logger.print_success(
             f"Cached {spec.label} (decompressed) at {self.pfh.format_for_log(data_path)}",
@@ -716,6 +967,20 @@ class FeedCacheManager:
     NVD_BASE_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-"
     NVD_TIMEOUT_SEC = 15
     NVD_UA = UA
+
+    def _verify_cached_nvd_feed(
+        self,
+        key: str,
+        data_path: Path,
+        sha_path: Optional[Path],
+        meta_path: Optional[Path] = None,
+    ) -> None:
+        self._assert_not_world_writable(data_path, label=f"NVD Feed Cache ({key})")
+        has_sha = sha_path is not None and sha_path.exists()
+        has_integrity = self._feed_integrity_path(data_path).exists()
+        has_meta = meta_path is not None and meta_path.exists()
+        if has_sha or has_integrity or has_meta or self._feed_integrity_secret() is not None:
+            self.ensure_feed_checksum(key, allow_regen=False)
 
     def resolve_nvd_feed(
         self,
@@ -746,15 +1011,20 @@ class FeedCacheManager:
 
         if offline:
             if data_path.exists():
+                self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                 return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
             raise FileNotFoundError(f"Offline mode: missing cached NVD feed for {key}")
 
         # Soft TTL: if fresh, skip remote meta
         if not refresh_cache and data_path.exists():
             try:
+                self._assert_not_world_writable(data_path, label=f"NVD Feed Cache ({key})")
                 mtime = datetime.fromtimestamp(data_path.stat().st_mtime, tz=timezone.utc)
                 if datetime.now(timezone.utc) - mtime <= timedelta(hours=max(ttl_hours, 0)):
+                    self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                     return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
+            except (PermissionError, FeedChecksumError):
+                raise
             except Exception:
                 pass
 
@@ -767,13 +1037,21 @@ class FeedCacheManager:
             "Accept-Encoding": "identity",
         }
 
-        # Fetch remote data now
+        # Fetch remote metadata with allow_redirects=False, per-hop HTTPS validation, and 1 MiB cap
         try:
-            r = requests.get(meta_url, timeout=self.NVD_TIMEOUT_SEC, headers=headers)
-            r.raise_for_status()
-            remote_meta = self._parse_nvd_remote_meta(r.text)
+            meta_bytes = stream_https_get_bytes(
+                meta_url,
+                max_bytes=MAX_NVD_META_BYTES,
+                timeout=self.NVD_TIMEOUT_SEC,
+                headers=headers,
+                label=f"NVD Meta ({fname})",
+            )
+            remote_meta = self._parse_nvd_remote_meta(meta_bytes.decode("utf-8", errors="replace"))
+        except RuntimeError:
+            raise
         except Exception as e:
             if data_path.exists():
+                self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                 self.logger.print_warning(f"Meta fetched failed for {fname}. Using local. Trace={e}", label = "FeedCacheManager-NVD")
                 return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
             raise
@@ -784,39 +1062,98 @@ class FeedCacheManager:
         # If local meta exists but remote isn't newer, keep local meta
         if not refresh_cache and data_path.exists() and meta_path.exists() and remote_last:
             try:
+                self._assert_not_world_writable(data_path, label=f"NVD Feed Cache ({key})")
                 with self.pfh.open_for_read(meta_path, mode = "r", label = "NVD Feed Meta Sidecar") as f:
                     local_meta = json.load(f)
                 local_remote_last = self._iso_to_dt(local_meta.get("remote_lastModifiedDate"))
                 if local_remote_last and remote_last <= local_remote_last:
+                    self._verify_cached_nvd_feed(key, data_path, sha_path, meta_path)
                     return self.pfh.ensure_readable_file(data_path, label = f"NVD Feed Cache ({key})")
+            except (PermissionError, FeedChecksumError):
+                raise
             except Exception:
                 pass
 
-        # Download feed
+        # Download feed with allow_redirects=False, per-hop HTTPS redirect validation, 200 MB response limit, and 2 GiB gunzip limit
         self.logger.info(f"Downloading {fname}")
-        with requests.get(feed_url, timeout=self.NVD_TIMEOUT_SEC, headers=headers, stream=True) as r:
-            r.raise_for_status()
-            r.raw.decode_content = False
-            content = r.raw.read()
+        with _open_https_stream(
+            feed_url,
+            timeout=self.NVD_TIMEOUT_SEC,
+            headers=headers,
+            label=f"NVD Feed ({fname})",
+        ) as r:
+            r_headers = getattr(r, "headers", None) or {}
+            content_length = r_headers.get("Content-Length")
+            if content_length:
+                try:
+                    if int(content_length) > MAX_REMOTE_FEED_BYTES:
+                        raise RuntimeError(
+                            f"NVD feed response exceeds size limit ({content_length} > {MAX_REMOTE_FEED_BYTES} bytes)."
+                        )
+                except (TypeError, ValueError):
+                    pass
+
+            chunks = []
+            total_compressed = 0
+            raw_stream = getattr(r, "raw", None)
+            if raw_stream is not None and callable(getattr(raw_stream, "read", None)):
+                raw_stream.decode_content = False
+                bounded_raw = _BoundedReadStream(raw_stream, MAX_REMOTE_FEED_BYTES, f"NVD Feed ({fname})")
+                while True:
+                    chunk = bounded_raw.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            elif callable(getattr(r, "iter_content", None)):
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    total_compressed += len(chunk)
+                    if total_compressed > MAX_REMOTE_FEED_BYTES:
+                        raise RuntimeError(
+                            f"NVD feed download exceeds safety limit ({total_compressed} > {MAX_REMOTE_FEED_BYTES} bytes)."
+                        )
+                    chunks.append(chunk)
+            else:
+                raw_bytes = getattr(r, "content", b"") or b""
+                if len(raw_bytes) > MAX_REMOTE_FEED_BYTES:
+                    raise RuntimeError(
+                        f"NVD feed download exceeds safety limit ({len(raw_bytes)} > {MAX_REMOTE_FEED_BYTES} bytes)."
+                    )
+                chunks.append(raw_bytes)
+            content = b"".join(chunks)
             gz_bytes = content
 
-            # Sanity check that boy
+            # Sanity check gzip magic
             if gz_bytes[:2] != b"\x1f\x8b":
                 raise ValueError(f"Expected gzip bytes for {fname}, got magic={gz_bytes[:2].hex()}")
 
-            # Decompress for validation - NVD meta sha is for uncompressed file.
+            # Decompress incrementally with 2 GiB cap - NVD meta sha is for uncompressed file.
             try:
-                decompressed = gzip.decompress(gz_bytes)
+                import io as _io
+                decomp_hash = hashlib.sha256()
+                decomp_total = 0
+                with gzip.GzipFile(fileobj=_io.BytesIO(gz_bytes), mode="rb") as gz_in:
+                    while True:
+                        decomp_chunk = gz_in.read(1024 * 1024)
+                        if not decomp_chunk:
+                            break
+                        decomp_total += len(decomp_chunk)
+                        if decomp_total > MAX_DECOMPRESSED_FEED_BYTES:
+                            raise RuntimeError(
+                                f"Decompressed NVD feed exceeds 2 GiB safety limit for {fname}."
+                            )
+                        decomp_hash.update(decomp_chunk)
+                sha_local_decomp = decomp_hash.hexdigest().lower()
             except OSError as e:
-                raise ValueError(f"Failed to gunzi[ {fname}: {e}]") from e
+                raise ValueError(f"Failed to gunzip {fname}: {e}") from e
 
-            # Decompressed sha256 of now local fname
-            sha_local_decomp = hashlib.sha256(decompressed).hexdigest().lower()
-
-            self.logger.debug(f"Content-Encoding={r.headers.get('Content-Encoding')}"
-                            f"Content-Type={r.headers.get('Content-Type')}"
-                            f"Content-Length={r.headers.get('Content-Length')}"
-                            f"User-Agent={r.headers.get("User-Agent")}")
+            self.logger.debug(
+                f"Content-Encoding={r_headers.get('Content-Encoding')} "
+                f"Content-Type={r_headers.get('Content-Type')} "
+                f"Content-Length={r_headers.get('Content-Length')} "
+                f"User-Agent={r_headers.get('User-Agent')}"
+            )
 
         validated = False
         checksum_src = "local"
@@ -878,7 +1215,7 @@ class FeedCacheManager:
             f.write(sha_hex)
 
     def _write_local_meta(self, ctx, meta_path: Path, payload: Dict):
-        with ctx.open_for_write(meta_path, mode = "w", label = "Feed meta sidecar (.meta.json)") as f:
+        with ctx.pfh.open_for_write(meta_path, mode = "w", label = "Feed meta sidecar (.meta.json)") as f:
             json.dump(payload, f, indent=2, sort_keys=True)
 
     def _resolve_nvd_key(self, key: str) -> Tuple[Path, Optional[Path], Optional[Path]]:
@@ -963,6 +1300,7 @@ class FeedCacheManager:
             overwrite = overwrite
         )
         tmp_path.replace(data_path)
+        self._harden_file_mode(data_path)
 
         # Write sha256
         digest = hashlib.sha256(data).hexdigest()
@@ -974,6 +1312,7 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(sha_path, mode = "w", label = f"{data_path.name} SHA256") as w:
             w.write(f"{digest} {data_path.name}\n")
+        self._harden_file_mode(sha_path)
         self._write_feed_integrity(key, data_path, digest)
 
         # Write/update meta
@@ -1001,6 +1340,9 @@ class FeedCacheManager:
         )
         with self.pfh.open_for_write(meta_path, mode = "w", label = f"{data_path.name} Meta") as w:
             w.write(json.dumps(meta, indent=2))
+        self._harden_file_mode(meta_path)
 
-        self.logger.success(f"Cached {data_path.name} at {self.pfh.format_for_log(data_path)}")
+        log_fn = getattr(self.logger, "print_success", None) or getattr(self.logger, "success", None)
+        if callable(log_fn):
+            log_fn(f"Cached {data_path.name} at {self.pfh.format_for_log(data_path)}")
         return data_path

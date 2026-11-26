@@ -1,24 +1,36 @@
-# Security Reporting
+# Security Policy
 
-We appreciate your interest in responsibly disclosing security vulnerabilities in VulnParse-Pin. If you believe you have found a security issue, please follow the guidelines below to report it to us.
+We appreciate your interest in responsibly disclosing security vulnerabilities in VulnParse-Pin (`vpp`). If you believe you have found a security issue, please follow the guidelines below to report it safely.
+
+## Supported Versions
+
+| Version | License | Support Status |
+| --- | --- | --- |
+| `2.0.x` | Apache-2.0 | Supported (active security & bug fixes) |
+| `1.0.0 – 1.2.2` | AGPL-3.0-or-later | End of Life (legacy AGPLv3+ releases; upgrade to `2.0.x`) |
 
 ## How to Report a Security Vulnerability
 
-1. **Identify the Issue**: Please provide a clear and concise description of the vulnerability, including steps to reproduce it if possible.
+1. **GitHub Private Vulnerability Reporting (Preferred)**:
+   Submit a private security advisory directly via GitHub:
+   - [Report a vulnerability on GitHub](https://github.com/QT-Ashley/VulnParse-Pin/security/advisories/new)
+   - Or navigate to the repository **Security** tab → **Advisories** → **Report a vulnerability**.
 
-2. **Contact Us**: Send an email to our security contact at [security@vulnparse-pin.com](mailto:security@vulnparse-pin.com). Please include the following information in your email:
-   - A detailed description of the vulnerability.
-   - Steps to reproduce the issue, if applicable.
-   - Any relevant screenshots or logs that can help us understand the issue.
+2. **Security Email (Alternative)**:
+   If you cannot use GitHub Private Vulnerability Reporting, email [security@vulnparse-pin.com](mailto:security@vulnparse-pin.com).
 
-3. **Response Time**: We will acknowledge receipt of your report within 72 hours and provide updates as we investigate and resolve the issue.
+3. **Include Reproduction Details**:
+   Please provide a clear description of the vulnerability, affected version(s), steps to reproduce or proof-of-concept inputs, and potential impact.
 
-4. **Confidentiality**: We ask that you do not publicly disclose the vulnerability until we have had a chance to investigate and address it. We will work with you to ensure that the issue is resolved before any public disclosure.
+4. **Response Time**:
+   We will acknowledge receipt of your report within 72 hours and provide status updates as we investigate and resolve the issue.
 
-5. **Reward**: While we do not currently have a formal bug bounty program, we value responsible disclosure and may offer recognition or rewards at our discretion.
+5. **Coordinated Disclosure**:
+   Please do not publicly disclose the vulnerability until we have investigated, prepared a fix, and coordinated release timing with you.
+
+6. **Recognition**:
+   While we do not currently run a paid bug bounty program, we value responsible disclosure and will credit reporters in security advisories (unless anonymity is requested).
 
 ## Our Commitment
 
-We take security seriously and are committed to addressing any vulnerabilities in a timely manner. We will work diligently to investigate and resolve any reported issues to ensure the safety and security of our users. We want to keep VulnParse-Pin secure for everyone, and we appreciate your help in achieving that goal.
-
-### Thank you for helping us keep VulnParse-Pin secure!
+We treat security seriously across parsing, feed caching, and report exports, and will work diligently to investigate and remediate confirmed vulnerabilities in supported releases.

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """
 Generate a massive Nessus XML file for stress testing Steps 4-5 optimizations.
 Target: 700k findings with realistic CVE distribution.

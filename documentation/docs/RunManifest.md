@@ -1,132 +1,112 @@
 # RunManifest Overview
 
-RunManifest is VulnParse-Pin's execution artifact for traceability, reproducibility, and explainable prioritization.
+RunManifest v2 is VulnParse-Pin's provenance, integrity, and audit-defense artifact (`manifest_version: "2.0"`). Built directly from `.vpp.db` via `build_runmanifest_from_db()` (`src/vulnparse_pin/utils/runmanifest.py`), it captures:
 
-When enabled, VulnParse-Pin emits a JSON artifact that captures:
-
-- Run metadata and runtime details.
-- Input and config fingerprints.
-- Pass phase summaries with metrics.
-- A tamper-evident decision ledger.
-- Verification metadata for integrity checks.
-
-The artifact is designed to be useful in day-to-day triage workflows and in governance or audit reviews where teams need to answer, "What was decided, and why?"
+- Run metadata (`run_id`, `profile`, `assets_sha256`, `decisions_sha256`, runtime version).
+- SHA-256 input & configuration fingerprints (`inputs.input_files_sha256`, `config_hashes`).
+- Output file paths and SHA-256 digests (`outputs`, `output_hashes`) across the exported artifact bundle.
+- Threat-intelligence metadata & snapshot statistics (`enrichment_summary`).
+- Per-pass summaries (`NmapAdapter`, `ACI@2.0`, `Scoring@3.0`, `Triage@2.0`, `Summary@2.0`) including multi-CVE KEV parity.
+- An append-only, SHA-256 hash-chained `decision_ledger` backed by DuckDB `ledger_events`.
+- Deterministic `verification.manifest_digest` for offline tamper detection.
 
 ## Why RunManifest Exists
 
-Raw scanner output tells you what was found. RunManifest tells you how VulnParse-Pin decided what mattered most.
-
-It closes a common gap in vulnerability operations:
-
-- Security engineering needs reproducible runs.
-- Analysts need explainability for prioritization.
-- Program owners need an evidence trail for decisions.
-- Auditors need integrity checks, not only logs.
+Raw scanner output tells you what was found. Decision Defense Dossiers tell stakeholders *why* a finding was prioritized or deferred. **RunManifest v2** cryptographically ties the inputs, policies, threat-intel snapshots, decision ledger, and exported artifacts together so teams can verify nothing was altered after the run.
 
 ## Practical Uses
 
-### 1. Triage evidence pack
-
-Attach the RunManifest to remediation tickets or change approvals. It gives reviewers an auditable explanation of scoring and ranking outcomes.
-
-### 2. Repeatability checks
-
-Compare manifests across runs to confirm behavior remains stable after config changes, feed updates, or code updates.
-
-### 3. Governance and controls
-
-Use verification output in control procedures to prove artifacts were not tampered with after generation.
-
-### 4. Pipeline interoperability
-
-Store the manifest in artifact repositories with JSON, CSV, and Markdown outputs so downstream systems can consume one canonical execution record.
+1. **Triage & Audit Evidence Pack:** Attach `runmanifest.json` alongside Decision Defense Dossiers (`dossier.html`, `dossier.md`) and CSV/JSON exports to prove scoring, SSVC decisions, and deferral evaluations match the recorded policy and threat feeds.
+2. **Repeatability & Drift Audits:** Compare `config_hashes`, `assets_sha256`, `decisions_sha256`, and `enrichment_summary.intel_metadata` across runs (complemented by `vpp diff`).
+3. **Tamper-Evident CI Gates:** Run `vpp verify <runmanifest.json>` in CI/CD or before archival to validate both the manifest digest/ledger chain and the SHA-256 digests of every listed output artifact on disk.
 
 ## What Is Captured
 
-Top-level sections include:
+Top-level sections (`runManifest.schema.json`, Draft 2020-12):
 
-- `manifest_version`
-- `runmanifest_mode`
-- `run_id`
+- `manifest_version` (`"2.0"`)
+- `runmanifest_mode` (`"compact"` or `"expanded"`)
+- `run_id`, `profile`, `assets_sha256`, `decisions_sha256`
 - `generated_at_utc`
-- `runtime`
-- `inputs`
-- `config_hashes`
-- `outputs`
-- `enrichment_summary`
+- `runtime` (`vulnparse_version`, `python_version`, `platform`)
+- `inputs` (`target_path`, `target_sha256`, `input_files`, `input_files_sha256`, `baseline_run_id`)
+- `config_hashes` (`config_yaml_sha256`, `scoring_json_sha256`, `tn_triage_json_sha256`, `assets_sha256`, `decisions_sha256`)
+- `outputs` & `output_hashes` (in `--output-all`, hashes all 6 written output keys: `json`, `csv`, `executive_markdown`, `technical_markdown`, `dossier_markdown`, `dossier_html`)
+- `enrichment_summary` (`kev_enabled`, `epss_enabled`, `nvd_enabled`, `exploit_enabled`, `ghsa_enabled`, `osv_enabled`, `intel_metadata`, `stats`)
 - `pass_summaries`
 - `decision_ledger`
-- `verification`
+- `verification` (`canonicalization: "json-c14n-v1"`, `volatile_fields_excluded`, `manifest_digest`)
 
 ## Decision Ledger at a Glance
 
-The embedded `decision_ledger` stores append-only entries with a hash chain:
+The embedded `decision_ledger` mirrors the DuckDB `ledger_events` table with an append-only SHA-256 hash chain:
 
-- Sequential `seq` values.
-- `prev_hash` links to the previous entry.
-- `entry_hash` protects each entry body.
-- `chain_root` anchors the full sequence.
+- Sequential `seq` values starting at `1`.
+- `prev_hash` links to the previous entry (`EMPTY_LEDGER_ROOT` for entry `1` / empty ledger).
+- `entry_hash` protects every entry body and `evidence_digest`.
+- `chain_root` anchors the final entry hash.
 
-This provides tamper evidence at the event level rather than only at the file level.
-
-In current ingestion-hardening workflows, the ledger also records parser and normalization quality gates, including:
-
-- CSV row drops for minimum-signal contract failures.
-- CSV malformed-row skips for schema-shape violations.
-- Strict-ingestion rejections.
-- Minimum ingestion-confidence threshold rejections.
-
-This makes degraded-input handling auditable in the same artifact as scoring and TopN decisions.
+The ledger records ingestion quality gates (CSV drops, malformed skips, strict-ingestion / confidence rejections), ACI summaries, Scoring summaries, Triage outcomes, and webhook emission statuses.
 
 ## Output Modes
 
-RunManifest supports two detail levels:
+- `compact` (default): high-impact decision events with minimal overhead.
+- `expanded`: richer per-finding/per-asset decision detail and SLA bucket breakdowns.
 
-- `compact` (default): high-impact decision events, lower storage overhead.
-- `expanded`: richer decision detail for forensic or deep-analysis scenarios.
+## Pre-Seal vs. Post-Export Dossier Seal
+
+During single-pass `vpp scan --output-dossier ... --output-runmanifest ...`, `vpp scan --output-all ...`, or `vpp demo`, `dossier.html` (and `dossier.md` / `executive_roadmap.html`) is written **before** `build_runmanifest_from_db()` computes `output_hashes` and seals `verification.manifest_digest` (preventing a circular SHA-256 self-hash). Consequently, inline dossiers generated during the scan pass display:
+
+`Pending post-export RunManifest seal (see runmanifest.json)`
+
+After the scan completes and stores `runs.manifest_digest` in `.vpp.db`, run `vpp export` to embed the sealed `sha256:...` digest directly inside the dossier:
+
+```bash
+vpp export --db .vpp.db --format dossier-html -o dossier.html
+```
 
 ## Core Commands
 
-Generate a runmanifest:
+Generate a RunManifest during `vpp scan`:
 
 ```bash
-vpp -f scan.nessus -o result.json --output-runmanifest runmanifest.json
+vpp scan scan.nessus --profile bod-26-04 --db workspace.vpp.db \
+  -o out/result.json --output-runmanifest out/runmanifest.json
 ```
 
-Generate with expanded decision detail:
+Generate the full 6-artifact `--output-all` bundle with `expanded` RunManifest mode:
 
 ```bash
-vpp -f scan.nessus -o result.json --output-runmanifest runmanifest.json --runmanifest-mode expanded
+vpp scan scan.nessus --profile bod-26-04 --db workspace.vpp.db \
+  --output-all out/prod --runmanifest-mode expanded
 ```
 
-Verify an existing manifest later (no scan re-run):
+Verify an existing RunManifest and its listed outputs (strictly read-only by default):
 
 ```bash
-vpp --verify-runmanifest runmanifest.json
+vpp verify out/prod_runmanifest.json
 ```
 
-## What Verification Confirms
+Enforce root confinement or inspect symlink-read overrides during verification:
 
-Verification validates:
+```bash
+vpp verify out/prod_runmanifest.json --enforce-root-read
+vpp verify out/prod_runmanifest.json --allow-symlinks-read
+```
 
-- JSON schema conformance.
-- Per-entry hash-chain continuity.
-- Entry hash recomputation.
-- Manifest digest recomputation.
+## What `vpp verify` Confirms
 
-A successful verification means the artifact structure and integrity checks both pass.
+`vpp verify` performs strictly read-only verification (no directories or log files are created unless you pass a custom `--log-file <name>`):
 
-Best-practice for auditability:
+1. Symlink rejection on the manifest path and all listed output artifacts (unless `--allow-symlinks-read` is explicitly passed), plus optional root confinement (`--enforce-root-read`).
+2. JSON Schema Draft 2020-12 conformance (`runManifest.schema.json`).
+3. Per-entry hash-chain continuity (`seq`, `prev_hash`, `entry_hash`, `chain_root`).
+4. Canonical `verification.manifest_digest` recomputation (`json-c14n-v1`).
+5. Existence and SHA-256 digest verification (`hmac.compare_digest`) for every non-null output listed in `outputs` / `output_hashes`.
 
-- Treat an unverified RunManifest as untrusted data.
-- Verify immediately after pipeline generation.
-- Verify again before any downstream trust action (ticket evidence, stakeholder sharing, governance review, or archival as final evidence).
+## Related Docs
 
-## Recommended Operational Pattern
-
-- Always emit RunManifest for production runs.
-- Immediately run `vpp --verify-runmanifest <path>` after pipeline completion.
-- Use `compact` by default for continuous workflows.
-- Use `expanded` for incident response and deep investigations.
-- Verify manifests before sharing them externally or using them as audit evidence.
-- Archive manifests with the corresponding output bundle.
+- [RunManifest Technical Deep Dive](RunManifest_Technical.md)
+- [Output Interpretation](Output%20Interpretation.md)
+- [ScanResult & DuckDB Schema](ScanResult_Schema.md)
+- [Security Features](Security%20Features.md)

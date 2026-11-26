@@ -88,13 +88,23 @@ Implement a staged seam architecture decomposing config loading into explicit bo
   2. If drift detected, route back to legacy monolithic path via feature toggle (not implemented; low risk)
   3. All config file formats and version policies remain unchanged
 
+## v2.0.0 Status
+
+In `v2.0.0` (`Apache-2.0`), this seam architecture was completed and extended for typed v2 policies and workspace context files:
+
+- `ConfigValidator` validates both `v1` and `v2` global/scoring/TopN configs (auto-projecting legacy `v1` configs to `v2` defaults with structured warnings) and enforces monotonic `epss.breakpoints` and webhook invariants.
+- `ConfigProjector` projects validated payloads into `RuntimeConfigBundle` (`VppConfigV2`, `ScoringPolicyV2`, `TriagePolicyV2`, `ACIPolicyV2`, and `SignalReliabilityPolicy`).
+- Workspace-scoped `assets.yaml` (`assets.schema.json` -> `AssetContextMatcher`) and `decisions.yaml` (`decisions.schema.json` -> `DecisionsRegistry`) follow the same safe-YAML + Draft 2020-12 schema validation pattern in `src/vulnparse_pin/core/assets_context.py`.
+
 ## References
 
 - Related docs:
   - [Config Seam Contract](../Config%20Seam%20Contract.md)
+  - [Configs](../Configs.md)
   - [Architecture](../Architecture.md)
 - Related PRs/code:
-  - `src/vulnparse_pin/core/config_source.py` (ConfigSource class)
-  - `src/vulnparse_pin/core/config_validator.py` (ConfigValidator class)
-  - `src/vulnparse_pin/core/config_projector.py` (ConfigProjector class)
-  - `src/vulnparse_pin/core/apppaths.py` (refactored load_config)
+  - `src/vulnparse_pin/core/config_source.py` (`ConfigSource`)
+  - `src/vulnparse_pin/core/config_validator.py` (`ConfigValidator`)
+  - `src/vulnparse_pin/core/config_projector.py` (`ConfigProjector`)
+  - `src/vulnparse_pin/core/assets_context.py` (`AssetContextMatcher`, `DecisionsRegistry`)
+  - `src/vulnparse_pin/core/apppaths.py` (`load_config`)

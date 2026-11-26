@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """Quick test to verify TopN process-pool optimization activates for large workloads."""
 
 from dataclasses import dataclass

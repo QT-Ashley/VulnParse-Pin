@@ -1,14 +1,58 @@
 # Benchmarks
 
-This document summarizes observed performance behavior for VulnParse-Pin v1.0.0rc.1 under high-volume test scenarios.
+This document tracks both the **v2.0 DuckDB Scale Benchmark Harness** (`benchmarks/bench_scale.py`) and **historical v1.x in-memory pipeline baselines**.
 
-## Public benchmark update (April 22, 2026)
+---
 
-This section is intended for external sharing and value communication. It summarizes
-the latest end-to-end runs with a consistent output set (JSON, CSV, executive Markdown,
-technical Markdown, and runmanifest).
+## v2.0 DuckDB Scale Benchmarks (Streaming + `.vpp.db`)
 
-### Consolidated benchmark table
+VulnParse-Pin v2.0.0 replaces full-DOM XML/JSON loading, in-memory `ScanResult` duplication, and `ProcessPoolExecutor` pickling with:
+
+1. **Streaming ingestion (`iter_batches`)**: Hardened `lxml.etree.iterparse` (XML), C-backed chunked `json.JSONDecoder.raw_decode` streaming (with bounded `ijson` sniffing) for SARIF 2.1.0, and line-streaming JSONL/CSV feeding `VppDatabase.ingest_normalized_batches()` via DuckDB `appender`.
+2. **Matched-CVE snapshot hydration (`populate_enrichment_snapshots`)**: Queries distinct matched CVEs/PURLs in `.vpp.db` and hydrates only scan-relevant records from NVD, EPSS v5, CISA KEV, Exploit-DB, GHSA, and OSV.
+3. **DuckDB Pass DAG (`run_v2_duckdb_pipeline`)**: `NmapAdapter@1.0` → `ACI@2.0` → `Scoring@3.0` → `Triage@2.0` → `TopN@2.0` → `Summary@2.0`, using memoized scoring/ACI and columnar `appender` writes.
+4. **Parameterized UI & Summary Queries**: `query_findings_page(..., priority_tier="P1", limit=100)` + `get_run_summary_counts()` + `get_shadow_assets()`.
+
+### Reproducible Harness (`benchmarks/bench_scale.py`)
+
+`benchmarks/bench_scale.py` generates realistic multi-scanner synthetic datasets (mixed Nessus `.nessus` XML + Trivy `.sarif` + Nuclei `.jsonl` + Semgrep `.sarif` + Nmap `.xml` + pattern `assets.yaml` + `decisions.yaml` + miniature EPSS v5 / KEV / NVD / Exploit-DB snapshots) and executes all four v2.0 pipeline stages end-to-end in isolated per-scale processes so `ru_maxrss` is measured cleanly for each target size.
+
+Run the full 500k–700k scale benchmark:
+
+```bash
+python benchmarks/bench_scale.py --findings 500000 --findings 700000 --json-out bench_v2_results.json
+```
+
+Quick developer smoke test (`5,000` or `10,000` findings):
+
+```bash
+python benchmarks/bench_scale.py --findings 10000
+```
+
+### Empirical v2.0 Results
+
+- **Measured on**: `2026-11-24T14:34:55Z` · Python `3.12.3` · `Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39` (`32` CPUs) · profile `bod-26-04` · streaming `batch_size=10000` (cold cache, subprocess-isolated per scale).
+
+| Raw Findings | Unique Findings | Assets (Shadow) | Parse+Ingest (s) | Enrich (s) | Pipeline DAG (s) | UI+Summary (s) | Total (s) | Throughput (raw/s) | Peak RSS (MiB) | `.vpp.db` (MiB) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 500,000 | 335,758 | 1,170 (178) | 39.215 | 8.572 | 38.705 | 0.8695 | 87.362 | 5,723.3 | 2364.70 | 278.76 |
+| 700,000 | 420,846 | 1,170 (178) | 162.117 | 6.631 | 41.830 | 0.9523 | 211.531 | 3,309.2 | 2633.21 | 351.26 |
+
+- `500,000` breakdown: `56,327` cross-scanner deduplicated findings merged into `335,758` canonical rows; `107,669` P1 (`bod-26-04`) findings; `11,601` KEV-matched findings (`3,843.3 unique/s`, UI+Summary `<0.87s`).
+- `700,000` breakdown: `102,225` cross-scanner deduplicated findings merged into `420,846` canonical rows; `139,501` P1 (`bod-26-04`) findings; `14,423` KEV-matched findings (`1,989.5 unique/s`, UI+Summary `<0.96s`) — matching the legacy `v1.0.0rc1` 700k single-scanner wall time (`210.65s`) while executing 4 scanners + Nmap + cold EPSS v5/KEV/Exploit-DB/NVD hydration + 12-table DuckDB + `ACI@2.0` + `Scoring@3.0` + `Triage@2.0` (`bod-26-04`) + paged TUI queries.
+
+---
+
+## Historical v1.x Baselines (In-Memory Pipeline, `v1.0.0rc1–v1.2.2`)
+
+> [!IMPORTANT]
+> All measurements below are **legacy `v1.x` in-memory `ScanResult` baselines** captured prior to the v2.0.0 DuckDB, streaming `lxml`/SARIF/Nuclei, EPSS v5, and `Triage@2.0` overhaul. They are preserved for historical comparison only.
+
+### Public benchmark update (April 22, 2026 — `v1.x`)
+
+This section summarizes legacy `v1.x` end-to-end runs with a consistent output set (JSON, CSV, executive Markdown, technical Markdown, and runmanifest).
+
+#### Consolidated v1.x benchmark table
 
 | Scenario | Input | Assets | Findings | Scored findings | Scoring coverage | Enriched findings | Enrichment coverage | Runtime | Throughput |
 | ---------- | ------- | -------- | ---------- | ----------------- | ------------------ | ------------------- | --------------------- | --------- | ------------ |
@@ -18,13 +62,13 @@ technical Markdown, and runmanifest).
 
 Source artifact: `tests_output/public_benchmark_comparison_apr22_2026.csv`
 
-### What this shows (public-facing value)
+#### What this showed (`v1.x`)
 
-1. Throughput scales strongly across larger workloads while still producing full output artifacts.
-1. Coverage behavior is dataset-sensitive, which is expected and useful for explaining risk context quality. The Lab 5k benchmark shows complete scoring coverage by construction, while OpenVAS 20k shows complete enrichment coverage with selective scoring coverage.
-1. Exposure-inference signals remain available at scale (rule-hit summaries and confidence buckets), enabling explainable prioritization rather than raw finding count reporting.
+1. Throughput scaled across larger workloads while producing full output artifacts.
+1. Coverage behavior is dataset-sensitive, which is expected and useful for explaining risk context quality. The Lab 5k benchmark showed complete scoring coverage by construction, while OpenVAS 20k showed complete enrichment coverage with selective scoring coverage.
+1. Exposure-inference signals remained available at scale (rule-hit summaries and confidence buckets), enabling explainable prioritization rather than raw finding count reporting.
 
-### Feature value versus a regular scanner output
+#### Feature value versus a regular scanner output
 
 | Feature area | VulnParse-Pin evidence from benchmark runs | Typical regular scanner output | Public-facing implication/value |
 | -------------- | --------------------------------------------- | ------------------------------- | --------------------------------- |
@@ -34,128 +78,31 @@ Source artifact: `tests_output/public_benchmark_comparison_apr22_2026.csv`
 | Actionable risk shaping | Risk-band distributions and TopN-derived context are surfaced in summary artifacts (critical/high/medium/low/info + top assets) | Regular scanner views frequently center on scanner-native severity bins without policy-aware context | Provides clearer, operations-oriented remediation sequencing and communication to leadership |
 | Reproducible benchmark evidence | Public table and raw comparison CSV included from actual e2e runs | Benchmark narratives are often anecdotal or not tied to reusable artifacts | Improves trust in performance/value claims during customer or leadership review |
 
-### Benchmark claims (evidence-bound)
+### Legacy v1.x Test Environment (March 2026)
 
-1. VulnParse-Pin processed 20,000 OpenVAS findings in 24.796s while producing JSON, CSV, executive report, technical report, and runmanifest outputs in the same run.
-2. On the 5,000-finding Nessus benchmark, VulnParse-Pin achieved 100.00% scoring coverage (5,000 of 5,000 findings).
-3. Across benchmark scenarios, VulnParse-Pin maintained cross-artifact numeric consistency between JSON, CSV, markdown summaries, and runmanifest pass summaries.
-4. VulnParse-Pin exposes explainable prioritization traces through decision trace summaries (for example, exposure confidence buckets and rule-hit counts).
-5. Benchmark claims are backed by reproducible artifacts in `tests_output/public_benchmark_comparison_apr22_2026.csv` and scenario-specific profile/delta files.
-
-Claim boundaries:
-
-- These numbers describe the tested benchmark workloads and environment; they are not universal guarantees for all datasets.
-- Coverage percentages vary by input structure, enrichment density, and CVE distribution.
-
-### Important interpretation note
-
-Different datasets have different CVE density and structure. Coverage percentages should be interpreted
-as workload characteristics, not universal fixed rates. The value signal is that VulnParse-Pin keeps
-decision-support outputs and traceability available across both small and high-volume runs.
-
-## Test environment
-
-- Date baseline: March 2026
+- Date baseline: March 2026 (`v1.0.0rc1`)
 - Platform: Windows Server 2025
 - Python: 3.14
 - CPU profile: 8-core class system
 
-## Nessus scale benchmark (NVD optimization focus)
+### Legacy v1.x Nessus Scale Benchmark (NVD Optimization Focus)
 
-### Dataset profile
+- Baseline file: `nessus_expanded_200.xml` (400 findings) → `~20s` (~20 findings/sec)
+- Synthetic demo-derived file: `Lab_test_scaled_5k.nessus` (5,000 findings across 10 assets) → `~7.91s` (~632 findings/sec)
+- Large-scale file: `nessus_benchmark_50k.xml` (50,000 findings, 338 unique CVEs) → `~194.59s` (~257 findings/sec)
 
-- Baseline file: `nessus_expanded_200.xml`
-- Baseline findings: 400
-- Synthetic demo-derived file: `Lab_test_scaled_5k.nessus`
-- Synthetic demo-derived findings: 5,000 across 10 assets
-- Large-scale file: `nessus_benchmark_50k.xml`
-- Large-scale findings: 50,000
-- Unique CVEs across both: 338
+### Legacy v1.x OpenVAS High-Volume Stress Benchmark
 
-The `Lab_test_scaled_5k.nessus` sample is generated from the bundled `Lab_test.nessus`
-template and forces one CVE per finding across years 2019-2025, with populated
-titles and plugin outputs for parser and enrichment realism.
+Mode used: offline with large-input allowance and low log verbosity (`v1.0.0rc1`).
 
-### 5k demo-derived benchmark snapshot
+- `openvas_real_stress_20k.xml` — 20,000 findings (~10.48 MB): `~48.49s` wall clock
+- `openvas_real_stress_100k.xml` — 100,000 findings (~52.41 MB): `~42.86s` wall clock
+- `openvas_real_stress_700k.xml` — 700,000 findings (~367.10 MB): `~210.65s` wall clock (3m 30.65s)
 
-- Input file: `Lab_test_scaled_5k.nessus`
-- Assets: 10
-- Findings: 5,000
-- Runtime: ~7.91s wall clock
-- Output set: JSON, CSV, executive Markdown, technical Markdown
-- Enrichment coverage: 100% scoring coverage, 5,000 CVSS vectors assigned and validated
+## Benchmarking Best Practices
 
-Observed summary from the benchmark run:
-
-- Known exploits: 47 findings
-- KEV hits: 10 findings
-- EPSS coverage: 2,225 / 5,000 findings (44.50%)
-- Enriched findings: 2,226
-
-### Runtime comparison
-
-- Baseline runtime: ~20s
-- 5k runtime: ~7.91s
-- 50k runtime: ~194.59s
-- Input growth: `125x`
-- Runtime growth: `9.73x`
-
-Result: sublinear scaling and significant throughput gains at scale.
-
-### Throughput signal
-
-- Baseline: ~20 findings/sec
-- 5k run: ~632 findings/sec
-- 50k run: ~257 findings/sec
-- Effective throughput improvement: ~12.8x
-
-### NVD optimization impact
-
-Observed NVD phase remained near-flat relative to finding growth due to:
-
-- Streaming/filtered feed handling
-- CVE-targeted indexing
-- Early termination behavior
-- Parallel feed parsing
-
-This decoupled major NVD cost from raw finding count when CVE distribution was stable.
-
-## OpenVAS high-volume stress benchmark
-
-Mode used: offline with large-input allowance and low log verbosity.
-
-### Dataset sizes
-
-- `openvas_real_stress_20k.xml` — 20,000 findings (~10.48 MB)
-- `openvas_real_stress_100k.xml` — 100,000 findings (~52.41 MB)
-- `openvas_real_stress_700k.xml` — 700,000 findings (~367.10 MB)
-
-### Runtime results
-
-- 20k: ~48.49s wall clock
-- 100k: ~42.86s wall clock
-- 700k: ~210.65s wall clock (3m 30.65s)
-
-All runs completed with exit code 0.
-
-## Interpretation
-
-- NVD-related work can remain bounded when unique-CVE cardinality is constrained
-- At very large scales, bottlenecks shift toward scoring, ranking, and serialization
-- Output and I/O overhead become proportionally more significant as payloads grow
-
-## Projection guidance
-
-Based on observed behavior and current architecture:
-
-- 100k findings: practical for single-machine workflows
-- 1M findings: feasible but likely dominated by scoring and output costs
-
-Use this as directional guidance, not a guaranteed SLA.
-
-## Benchmarking best practices
-
-- Benchmark with production-like CVE diversity
-- Isolate cold-cache vs warm-cache runs
-- Record phase timing, not only total time
-- Keep configuration snapshots for reproducibility
+- Benchmark with realistic multi-scanner CVE diversity and non-CVE exposure findings
+- Isolate cold-cache vs warm-cache runs and per-scale RSS measurements (via subprocess isolation)
+- Record per-stage timing (`Parse+Ingest`, `Enrich`, `Pipeline DAG`, `UI+Summary`), not only total time
+- Flush DuckDB WAL cleanly (`.close()`) before measuring `.vpp.db` disk footprint
+- Keep configuration and feed metadata snapshots for reproducibility

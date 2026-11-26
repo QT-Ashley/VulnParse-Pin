@@ -1,0 +1,126 @@
+# Kubernetes Hardened CronJob for Daily Threat-Intel Sync + Stale-Assumption Drift Detection
+#
+# Prerequisites:
+#   1. Use ghcr.io/qt-ashley/vulnparse-pin:2.0.0 (or mirror/build from the root Dockerfile to a private enclave registry).
+#   2. Seed /work/.vpp.db and /work/decisions.yaml on the PVC (or mount decisions.yaml via ConfigMap).
+#   3. Replace placeholder Secret values below with real random HMAC keys before applying.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vpp-hmac-secrets
+type: Opaque
+stringData:
+  VP_FEED_CACHE_HMAC_KEY: "replace-with-32-byte-random-feed-hmac-secret"
+  VP_SQLITE_HMAC_KEY: "replace-with-32-byte-random-sqlite-hmac-secret"
+  VP_WEBHOOK_HMAC_KEY: "replace-with-32-byte-random-webhook-hmac-secret"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vpp-workspace-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vpp-kev-drift-check
+spec:
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: vpp-drift
+              # Multi-arch attested OCI image (mirror to private registry for air-gapped clusters)
+              image: ghcr.io/qt-ashley/vulnparse-pin:2.0.0
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -euo
+                - pipefail
+                - -c
+                - |
+                  mkdir -p /work/out
+                  vpp intel sync --feed kev
+                  vpp intel sync --feed epss
+                  vpp intel sync --feed nvd
+                  re_enrich_args=()
+                  if [ -z "${SCAN_FILES:-}" ]; then
+                    re_enrich_args=(--re-enrich)
+                  fi
+                  set +e
+                  vpp diff \
+                    --db /work/.vpp.db \
+                    --decisions /work/decisions.yaml \
+                    "${re_enrich_args[@]}" \
+                    --fail-on stale-assumption \
+                    --output-md /work/out/drift_report.md \
+                    --output-json /work/out/drift_report.json
+                  rc=$?
+                  set -e
+                  if [ "$rc" -eq 2 ]; then
+                    echo "[ALERT] Stale-assumption policy drift detected (exit 2). See /work/out/drift_report.md" >&2
+                    exit 2
+                  fi
+                  exit "$rc"
+              env:
+                - name: HOME
+                  value: /work
+                - name: XDG_DATA_HOME
+                  value: /cache/data
+                - name: XDG_CONFIG_HOME
+                  value: /cache/config
+                - name: XDG_CACHE_HOME
+                  value: /cache/xdg
+                - name: TMPDIR
+                  value: /tmp
+              envFrom:
+                - secretRef:
+                    name: vpp-hmac-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                requests:
+                  cpu: "250m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "1000m"
+                  memory: "2Gi"
+              volumeMounts:
+                - name: vpp-workspace
+                  mountPath: /work
+                  subPath: work
+                - name: vpp-workspace
+                  mountPath: /cache
+                  subPath: cache
+                - name: vpp-tmp
+                  mountPath: /tmp
+          volumes:
+            - name: vpp-workspace
+              persistentVolumeClaim:
+                claimName: vpp-workspace-pvc
+            - name: vpp-tmp
+              emptyDir: {}

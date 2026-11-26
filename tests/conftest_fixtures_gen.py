@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """
 Fixture generator for creating realistic expanded test data.
 Generates multiple assets with 120-400 findings each.

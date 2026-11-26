@@ -1,17 +1,11 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import resources
 import json
-from pathlib import Path
 from typing import Any, Dict, Tuple, Sequence, TYPE_CHECKING
 
 from vulnparse_pin.core.passes.TopN.TN_triage_schema import (
@@ -178,9 +172,11 @@ def _fallback_aci_config() -> ACIConfig:
     This avoids duplicating every capability/chain rule in code.
     """
     try:
-        base_dir = Path(__file__).resolve().parents[3]
-        resource_path = base_dir / "resources" / "tn_triage.json"
-        raw = json.loads(resource_path.read_text(encoding="utf-8"))
+        raw = json.loads(
+            resources.files("vulnparse_pin.resources")
+            .joinpath("tn_triage.json")
+            .read_text(encoding="utf-8")
+        )
         normalized, issues = validate_and_normalize_semantics(raw)
         if normalized is not None and not issues:
             return normalized.aci

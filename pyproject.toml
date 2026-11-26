@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -14,8 +14,19 @@ authors = [
 maintainers = [
     {name = "Quashawn Ashley", email = "qt.ashley@vulnparse-pin.com"}
 ]
-dependencies = ["defusedxml>=0.7.1", "cvss>=3.6", "requests>=2.33.1", "ruamel.yaml>=0.19.1", "platformdirs>=4.9.6", "colorama>=0.4.6", "jsonschema>=4.26.0", "ijson>=3.5.0"]
-license = { text = "AGPL-3.0-or-later" }
+dependencies = [
+    "duckdb>=1.2.0",
+    "lxml>=5.3.0",
+    "jinja2>=3.1.5",
+    "requests>=2.33.1",
+    "ruamel.yaml>=0.19.1",
+    "platformdirs>=4.9.6",
+    "colorama>=0.4.6",
+    "jsonschema>=4.26.0",
+    "ijson>=3.5.0",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 classifiers = [
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
@@ -27,7 +38,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Development Status :: 5 - Production/Stable",
     "Natural Language :: English",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Topic :: Security",
     "Topic :: System :: Systems Administration",
     "Typing :: Typed",
@@ -35,17 +45,17 @@ classifiers = [
 keywords = ["vulnerability", "vm", "vulnerability-management", "security-tools", "security", "defensive-security", "nessus", "openvas", "triage", "cvss", "nvd", "cisa-kev", "epss", "threat-intel"]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0.3"]
+ui = ["textual>=2.1.0"]
+dev = ["pytest>=9.0.3", "pytest-asyncio>=0.25.0", "build>=1.2.2"]
 sbom = ["cyclonedx-bom>=7.3.0"]
 
 [project.urls]
 Homepage = "https://github.com/QT-Ashley/VulnParse-Pin"
 Repository = "https://github.com/QT-Ashley/VulnParse-Pin"
 Issues = "https://github.com/QT-Ashley/VulnParse-Pin/issues"
-Documentation = "https://github.com/QT-Ashley/VulnParse-Pin/blob/main/README.md"
+Documentation = "https://qt-ashley.github.io/VulnParse-Pin/"
 
 [tool.setuptools]
-license-files = ["LICENSE"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
@@ -53,15 +63,31 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 vulnparse_pin = [
+    "py.typed",
     "resources/*.yaml",
     "resources/*.json",
     "resources/*.xml",
-    "resources/*.nessus",
+    "resources/demo/*.nessus",
+    "resources/demo/*.sarif",
+    "resources/demo/*.jsonl",
+    "resources/demo/*.xml",
+    "resources/demo/*.yaml",
+    "resources/demo/intel_snapshot/*",
+    "resources/demo/intel_snapshot/*/*",
     "core/schemas/*.json",
+    "storage/*.sql",
+    "reporting/templates/*.j2",
 ]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", "*.py[cod]"]
 
 [tool.setuptools.dynamic]
 version = { attr = "vulnparse_pin.__version__" }
 
 [project.scripts]
 vpp = "vulnparse_pin.main:main"
+vulnparse-pin = "vulnparse_pin.main:main"
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"

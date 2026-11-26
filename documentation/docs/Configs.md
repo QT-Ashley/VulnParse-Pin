@@ -1,325 +1,123 @@
 # Configs
 
-This page is the technical reference for configuring VulnParse-Pin policy behavior.
+This page is the technical reference for VulnParse-Pin v2.0.0 configuration files, workspace context YAML (`assets.yaml` and `decisions.yaml`), environment variables, and CLI policy overrides.
 
-## Configuration surfaces
+## Configuration Surfaces
 
-VulnParse-Pin behavior is driven by three policy files plus runtime flags and optional environment variables.
+VulnParse-Pin separates **engine policy** (user/system defaults) from **engagement context** (per-workspace inventory & triage decisions):
 
-Policy files:
+1. **Engine policy files** (`src/vulnparse_pin/resources/` provisioned into `paths.config_dir`):
+   - `config.yaml` (`version: v2`) — runtime profile, `signal_reliability`, `triage`, `feed_cache`, `enrichment`, `nmap_ctx`, `summary`, `webhook`
+   - `scoring.json` (`version: v2`) — EPSS v5 breakpoints, Track A/B evidence points, risk bands, multi-CVE decay
+   - `tn_triage.json` (`version: v2`) — `topn` decay/limits, `inference` predicates, and `aci` token rules
+2. **Workspace context configs** (supplied via `--assets` and `--decisions`):
+   - `assets.yaml` (`src/vulnparse_pin/core/schemas/assets.schema.json`) — inventory matching rules (`aliases`, `cidrs`, `hostnames`, `uris`, `images`, `repos`), `criticality`, `internet_facing`, `owner`, `env`, `tags`, and optional inline `decisions`
+   - `decisions.yaml` (`src/vulnparse_pin/core/schemas/decisions.schema.json`) — audit-defensible `deferred`, `accepted`, and `mitigated` entries with expiration and assumption predicates (`vpp defer`)
+3. **Runtime controls:** CLI flags (`src/vulnparse_pin/cli/args.py`) and integrity/token environment variables.
 
-- `src/vulnparse_pin/resources/config.yaml`
-- `src/vulnparse_pin/resources/scoring.json`
-- `src/vulnparse_pin/resources/tn_triage.json`
+> [!NOTE]
+> `ConfigValidator` accepts legacy `version: v1` `config.yaml` and `scoring.json` files and auto-projects them to `v2` defaults with a warning.
 
-Runtime controls:
+## Config Location and Mode Behavior (`AppPaths`)
 
-- CLI flags from `src/vulnparse_pin/cli/args.py`
-- env vars used by cache integrity modules
+Path layout is resolved by `AppPaths.resolve()` (`src/vulnparse_pin/core/apppaths.py`):
 
-Defaults are materialized into user config locations during bootstrap if missing.
+- **System mode (default):** OS-native app data directory via `platformdirs.user_data_dir("VulnParse-Pin")`.
+- **Portable mode (`--portable` / `-P` or `VULNPARSE_PIN_PORTABLE=1`):** Project-local `./data/` tree for config, cache, logs, and outputs.
 
-## Config location and mode behavior
+## `config.yaml` Reference (`version: v2`)
 
-Path layout is resolved by `AppPaths` (`src/vulnparse_pin/core/apppaths.py`).
+### Top-level & Triage Policy
 
-- System mode (default): platform app-data directories.
-- Portable mode (`--portable`): project-local data tree for config/cache/log/output.
+- `version`: `"v2"` (or legacy `"v1"` auto-projected)
+- `profile`: `"default"` or `"bod-26-04"`
+- `signal_reliability`:
+  - `enabled`: `true`
+  - `weights`: `active_dast: 1.0`, `credentialed_host: 1.0`, `sca_container: 0.90`, `uncredentialed_banner: 0.85`, `static_sast: 0.55`, `network_probe: 0.80`
+- `triage`:
+  - `default_profile`: `"default"` (or `"bod_26_04"`)
+  - `static_sast_p1_cap`: `true` (prevents uncorroborated SAST findings from triggering `P1`)
 
-## `config.yaml` reference
+### Feed TTL & NVD / OSV Controls
 
-`config.yaml` controls feed cache policy, NVD feed policy, enrichment policy (including GHSA), Nmap context policy, and summary options.
+- `feed_cache.defaults.ttl_hours` (`24`) and per-feed `feed_cache.ttl_hours.{exploit_db,kev,epss,nvd_yearly,nvd_modified,osv,ghsa}` (`0` = always stale, `< 0` = never expires, `> 0` = TTL hours).
+- `feed_cache.feeds.nvd`: `enabled`, `start_year` (`2002`), `end_year` (`null`), `ttl_yearly`, `ttl_modified`, `sqlite_enforce_permissions` (`true`), `sqlite_file_mode` (`"0o600"`), `sqlite_max_age_hours` (`336`), `sqlite_max_rows` (`500000`).
+- `feed_cache.feeds.osv`: `enabled`, `ttl_hours` (`24`).
 
-### Webhook controls
+### Enrichment & Confidence (`enrichment`)
 
-`webhook` controls signed scan-complete event delivery over HTTPS.
+- `ghsa_source`: `null` | `"online"` | `"offline"` (CLI `--ghsa` overrides; config alone does not auto-enable online lookups)
+- `ghsa_online_prefetch_budget`: `25` (overridden by `--ghsa-budget`)
+- `ghsa_token_env`: `"VP_GHSA_TK"` (falls back to `GITHUB_TOKEN`; validated env name and GitHub token prefix)
+- `ghsa_cache`: `sqlite_max_age_hours: 336`, `sqlite_max_rows: 500000`
+- `osv_source`: `null` (overridden by `--osv <PATH>`)
+- `confidence`:
+  - `model_version`: `"v2"`
+  - `max_score`: `100`, `base_scanner`: `35`
+  - `weights`: `nvd: 25`, `kev: 15`, `epss: 10`, `exploitdb: 10`, `ghsa: 15`, `osv: 15`
+  - `ghsa_signals`: `advisory_confidence_bonus: 3`, `max_advisory_confidence_bonus: 9`, `exploit_signal_on_high_severity: false`, `exploit_signal_confidence_bonus: 5`
 
-Canonical keys:
+### Nmap Context (`nmap_ctx`) & Summary (`summary`)
 
-- `enabled`
-- `signing_key_env`
-- `key_id`
-- `timeout_seconds`
-- `connect_timeout_seconds`
-- `read_timeout_seconds`
-- `max_retries`
-- `max_payload_bytes`
-- `replay_window_seconds`
-- `allow_spool`
-- `spool_subdir`
-- `endpoints[]` with `url`, `enabled`, `oal_filter`, `format`
+- `nmap_ctx.port_tiebreak_enabled`: `true`
+- `nmap_ctx.scoring_port_bonus`: `0.0` (schema-bounded `0.0–5.0`)
+- `summary.top_n_findings`: `20`
 
-Validation and safety rules:
+### Signed Webhooks (`webhook`)
 
-- Endpoints must use `https://`.
-- Embedded credentials in endpoint URLs are rejected.
-- `timeout_seconds` must be greater than or equal to `max(connect_timeout_seconds, read_timeout_seconds)`.
-- When `enabled: true`, at least one endpoint must be enabled.
-- `oal_filter` values: `all`, `P1`, `P1b`, `P2`.
+- `enabled`, `signing_key_env` (`"VP_WEBHOOK_HMAC_KEY"`), `key_id` (`"primary"`), `timeout_seconds` (`5`), `connect_timeout_seconds` (`3`), `read_timeout_seconds` (`5`), `max_retries` (`2`), `max_payload_bytes` (`262144`), `replay_window_seconds` (`300`), `allow_spool` (`true`), `spool_subdir` (`"webhook_spool"`), `endpoints[]` (`url`, `enabled`, `oal_filter` in `all|P1|P1b|P2`, `format`).
+- Endpoints must use `https://` without embedded credentials, and `timeout_seconds >= max(connect_timeout_seconds, read_timeout_seconds)`.
 
-Runtime notes:
+## `scoring.json` Reference (`version: v2`)
 
-- Signature header uses HMAC-SHA256 with the secret from the env var named by `signing_key_env`.
-- Failures can spool payloads under `<output_dir>/<spool_subdir>/` when `allow_spool: true`.
-- CLI `--webhook-endpoint` enables one-off webhook delivery without editing config files.
-- CLI `--webhook-oal-filter` overrides lane filtering (`all`, `P1`, `P1b`, `P2`).
+Maps to `ScoringPolicyV2` (`src/vulnparse_pin/core/config_projector.py`):
 
-### Feed TTL controls
+- `epss`: monotonic piecewise `breakpoints` (`[[0.0, 0.0], [0.04, 1.8], [0.10, 3.0], [0.50, 4.2], [1.0, 5.0]]`), `use_percentile: true`, cutoffs (`0.04`/`0.10`, percentile `0.90`/`0.95`).
+- `evidence_points`: `kev` (`4.5`), `verified_exploit` (`2.0`), `verified_exploit_with_kev` (`0.5`), `heuristic_exploit` (`0.0`).
+- `bands`: strictly monotonic `critical` (`12.8`) > `high` (`9.6`) > `medium` (`6.4`) > `low` (`3.2`) >= `0`.
+- `risk_ceiling`: `max_raw_risk` (`16.0`), `max_operational_risk` (`10.0`).
+- `aggregation`: `cve_aggregation_mode` (`"stacked_decay"`), `cve_aggregation_decay` (`0.35`), `cve_aggregation_max_contributors` (`8`).
+- `exposure_track`: Track B (`exposure_weakness`) severity base and `ACI@2.0` uplift parameters.
 
-- `feed_cache.defaults.ttl_hours`
-- `feed_cache.ttl_hours.kev`
-- `feed_cache.ttl_hours.epss`
-- `feed_cache.ttl_hours.exploit_db`
-- `feed_cache.ttl_hours.nvd_yearly`
-- `feed_cache.ttl_hours.nvd_modified`
+## `tn_triage.json` Reference (`version: v2`)
 
-These are consumed by `build_feed_cache_policy(...)` and `FeedCacheManager.is_fresh()`.
+Controls `TopN@2.0` / `TopNPass` (`decay` starting at `1.0`, non-increasing in `[0, 1]`), exposure inference `rules[].when` predicates validated against `allow_predicates`, and `aci` token/uplift settings (`token_mode`, `disabled_core_tokens`, `min_confidence`, `max_uplift`, `asset_uplift_weight`).
 
-TTL semantics:
+## `assets.yaml` Reference (`assets.schema.json`)
 
-- `0`: always stale.
-- `< 0`: never expires.
-- `> 0`: valid while age is within TTL hours.
+Passed via `vpp scan --assets <PATH>` (or `vpp diff --assets <PATH>`):
 
-### NVD policy controls
+- `version`: `"v1"` | `"v2"`
+- `defaults`: fallback `criticality` (`critical|high|medium|low`), `internet_facing`, `owner`, `env`, `tags`
+- `rules[]`: ordered pattern entries (`id` required; optional `asset_id`, `aliases[]`, `cidrs[]`, `hostnames[]`, `uris[]`, `images[]`, `repos[]`, `internet_facing`, `criticality`, `owner`, `env`, `tags`) matched via 5-tier precedence (`alias` -> `exact` -> longest-prefix `cidr` -> `glob` -> `unmatched_shadow`)
+- `decisions[]`: optional inline decision entries evaluated alongside `decisions.yaml`
 
-Canonical keys under `feed_cache.feeds.nvd`:
+## `decisions.yaml` Reference (`decisions.schema.json`)
 
-- `enabled`
-- `start_year`
-- `end_year`
-- `ttl_yearly`
-- `ttl_modified`
-- `sqlite_enforce_permissions`
-- `sqlite_file_mode`
-- `sqlite_max_age_hours`
-- `sqlite_max_rows`
+Passed via `vpp scan --decisions <PATH>`, `vpp diff --decisions <PATH>`, `vpp ui --decisions <PATH>`, or updated via `vpp defer`:
 
-These are normalized by `nvd_policy_from_config(...)`.
-
-### Summary controls
-
-- `summary.top_n_findings`
-
-Used by `SummaryPass` configuration during runtime bootstrap.
-
-## `enrichment` section in `config.yaml`
-
-The `enrichment` block controls GHSA enrichment source selection, online lookup budgets, SQLite cache retention, and confidence scoring policy. Qualys parser findings flow through the same confidence model as all other scanner outputs — there are no Qualys-specific config keys.
-
-### `enrichment.ghsa_source`
-
-- Type: string or null, values `null` / `"online"` / `"offline"`, default `null`
-- Config-level GHSA source hint. At runtime this is overridden by the `--ghsa` CLI flag if present.
-- `null`: GHSA enrichment disabled unless `--ghsa` is passed at runtime.
-- `"online"`: prefetch advisory data via the GitHub Advisories API.
-- `"offline"`: load from a local advisory database directory (requires `--ghsa <path>` at runtime).
-
-### `enrichment.ghsa_online_prefetch_budget`
-
-- Type: integer, default `25`
-- Maximum number of distinct CVEs queried against the GitHub Advisories API during a single online GHSA prefetch run.
-- Override at runtime with `--ghsa-budget <COUNT>` (online mode only; rejected if offline mode is active).
-
-### `enrichment.ghsa_token_env`
-
-- Type: string, default `VP_GHSA_TK`
-- Name of the environment variable that holds a GitHub personal access token for authenticated advisory API requests.
-- Falls back to `GITHUB_TOKEN` if the primary env var is absent.
-- If neither variable is set, requests are unauthenticated (subject to lower rate limits).
-
-### `enrichment.ghsa_cache`
-
-Controls GHSA SQLite cache (`ghsa_cache.sqlite3`) retention policy.
-
-- `sqlite_max_age_hours` (integer, default `336`): rows older than this are pruned during init and post-upsert.
-- `sqlite_max_rows` (integer, default `500000`): row cap; excess rows are pruned by age (oldest first).
-
-Cache integrity: SHA-256 signature sidecar by default; HMAC-SHA-256 when `VP_SQLITE_HMAC_KEY` is set. Tamper-detected files are quarantined and a clean index is rebuilt automatically.
-
-### `enrichment.confidence`
-
-Controls the enrichment confidence scoring model applied to all findings regardless of scanner source (Nessus, OpenVAS, Qualys, etc.).
-
-- `model_version`: schema version identifier, currently `v1`.
-- `max_score` (integer, default `100`): confidence score ceiling.
-- `base_scanner` (integer, default `35`): baseline confidence contributed by scanner-reported data alone.
-
-#### `enrichment.confidence.weights`
-
-Per-source confidence contribution weights:
-
-| Key | Default | Source |
-|---|---|---|
-| `nvd` | `25` | NVD CVE record presence |
-| `kev` | `15` | CISA KEV hit |
-| `epss` | `10` | EPSS probability record |
-| `exploitdb` | `10` | Exploit-DB entry |
-| `ghsa` | `15` | GHSA advisory hit |
-
-#### `enrichment.confidence.ghsa_signals`
-
-GHSA-specific confidence tuning applied on top of the base GHSA weight:
-
-- `advisory_confidence_bonus` (integer, default `3`): per-advisory bonus added when a GHSA advisory matches a finding.
-- `max_advisory_confidence_bonus` (integer, default `9`): cumulative cap on advisory bonuses across all matched advisories for a single finding.
-- `exploit_signal_on_high_severity` (boolean, default `false`): when `true`, a GHSA advisory match on a high-severity finding promotes an additional exploit signal.
-- `exploit_signal_confidence_bonus` (integer, default `5`): confidence bonus applied when the exploit signal promotion triggers.
-
-## `scoring.json` reference
-
-`scoring.json` maps to `ScoringPolicyV1`.
-
-Key sections:
-
-- `epss`: normalization and scaling (`scale`, `min`, `max`)
-- `evidence_points`: KEV and exploit evidence contributions
-- `bands`: risk band boundaries
-- `weights`: contribution multipliers
-- `risk_ceiling`: operational normalization bounds
-- `aggregation`: asset-level aggregation mode
-
-Bootstrap validation enforces:
-
-- non-negative weight/evidence values
-- monotonic risk bands (`critical > high > medium > low >= 0`)
-- EPSS scaling and ordering constraints
-
-### Raw vs operational score
-
-- `raw_score`: composite finding score for ranking behavior.
-- `operational_score`: normalized/clamped score for policy-facing risk reporting.
-
-These are intentionally different metrics.
-
-## `tn_triage.json` reference
-
-`tn_triage.json` controls TopN and inference policy.
-
-### `topn` section
-
-- `rank_basis`: `raw` or `operational`
-- `decay`: top-k weighting vector
-- `max_assets`
-- `max_findings_per_asset`
-- `include_global_top_findings`
-- `global_top_findings_max`
-
-Semantic requirements:
-
-- `decay` must be non-empty
-- `decay[0] == 1.0`
-- decay values must be non-increasing and in range `[0, 1]`
-
-### `inference` section
-
-- `confidence_thresholds` (`low < medium < high`)
-- `public_service_ports`
-- `allow_predicates`
-- `rules`
-
-Semantic validation rejects invalid threshold ordering, invalid port ranges, empty predicate allow-lists, and malformed rule definitions.
-
-Supported predicate forms in `rules[].when`:
-
-- `ip_is_public`, `ip_is_private`
-- `any_port_in_public_list`
-- `port_in:[p1,p2,...]`
-- `hostname_contains_any:[t1,t2,...]`
-- `criticality_is:[extreme|high|medium|low]`
-
-`allow_predicates` controls which predicate forms are permitted in loaded config. Any predicate not in this list causes a validation rejection at startup.
-
-## Environment variable reference
-
-Optional integrity hardening environment variables:
-
-- `VP_FEED_CACHE_HMAC_KEY`: signs feed integrity sidecars in `FeedCacheManager`.
-- `VP_SQLITE_HMAC_KEY`: signs NVD and GHSA SQLite signature sidecars (`nvd_cache.sqlite3`, `ghsa_cache.sqlite3`).
-- `VP_GHSA_TK`: GitHub personal access token for authenticated GHSA advisory API requests (primary env var; falls back to `GITHUB_TOKEN`).
-
-If `VP_FEED_CACHE_HMAC_KEY` / `VP_SQLITE_HMAC_KEY` are not set, modules fall back to SHA-256 signature-only mode.
-
-## CLI-to-policy mapping
-
-Nmap context:
-
-- `--nmap-ctx` / `-nmap`: path to a Nmap XML file to use as supplementary attack-surface context
-
-GHSA enrichment:
-
-- `--ghsa [PATH|online]`: enable GHSA enrichment; bare flag = online mode, `--ghsa <path>` = offline advisory database directory
-- `--ghsa-budget <COUNT>`: override online prefetch CVE budget (online mode only, must be ≥ 1)
-
-Webhook delivery:
-
-- `--webhook-endpoint <HTTPS_URL>`: send signed webhook payloads to a specific endpoint for that run.
-- `--webhook-oal-filter <all|P1|P1b|P2>`: restrict webhook payload findings to a specific OAL lane.
-
-Cache and enrichment behavior:
-
-- `--refresh-cache`
-- `--allow_regen`
-- `--no-kev`
-- `--no-epss`
-- `--no-exploit`
-- `--kev-source`
-- `--epss-source`
-- `--exploit-source`
-- `--kev-feed`
-- `--epss-feed`
-- `--no-nvd`
-
-Runtime and PFH behavior:
-
-- `--forbid-symlinks-read`
-- `--forbid-symlinks-write`
-- `--enforce-root-read`
-- `--enforce-root-write`
-- `--file-mode`
-- `--dir-mode`
-- `--debug-path-policy`
-
-Logging behavior:
-
-- `--log-file`
-- `--log-level`
-
-## Configuration workflow guidance
-
-1. Start from version-controlled defaults.
-2. Change one policy area at a time (cache, scoring, or TopN).
-3. Re-run representative datasets.
-4. Compare score distribution, TopN output shape, and cache/runtime logs.
-5. Promote only validated changes.
-
-## `nmap_ctx` section in `config.yaml`
-
-`nmap_ctx` controls Nmap context adapter behavior. Both keys are optional; defaults apply if the section is omitted.
-
-### `port_tiebreak_enabled`
-
-- Type: boolean, default `true`
-- Gates the TopN ranking tiebreak. When `true`, equal-score findings and assets with a confirmed Nmap open port rank above those without.
-- Setting to `false` reverts TopN tiebreak to ID-only ordering.
-- Does not affect numeric scores.
-
-### `scoring_port_bonus`
-
-- Type: float, range `0.0–5.0`, default `0.0`
-- When `> 0`, adds to `raw_score` for any finding whose service port is confirmed open in the Nmap output.
-- Applied before operational score normalization.
-- Schema validation rejects values outside `[0.0, 5.0]`.
-
-See [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md) for full configuration and operational guidance.
+- `version`: `"v1"` | `"v2"`
+- `decisions[]`: entries with `id`, `cve_or_rule_id`, `status` (`deferred|accepted|mitigated`), `rationale`, optional `asset_id` / `asset_pattern` (glob), `owner`, `created_at`, `expires_at`, and `assumptions`:
+  - `in_kev` (`boolean | null`)
+  - `max_epss` (`0.0–1.0`)
+  - `max_epss_percentile` (`0.0–1.0`)
+  - `internet_facing` (`boolean | null`)
+  - `max_cvss` (`0.0–10.0`)
+
+## Environment Variable Reference
+
+| Variable | Purpose |
+| --- | --- |
+| `VP_FEED_CACHE_HMAC_KEY` | HMAC-SHA256 key for `FeedCacheManager` `.integrity.json` sidecars |
+| `VP_SQLITE_HMAC_KEY` | HMAC-SHA256 key for all 5 SQLite `.sig.json` caches (`nvd`, `epss`, `kev`, `ghsa`, `osv`) |
+| `VP_GHSA_TK` / `GITHUB_TOKEN` | GitHub PAT for online GHSA advisory prefetch |
+| `VP_WEBHOOK_HMAC_KEY` | Default HMAC-SHA256 signing key for webhook deliveries (`signing_key_env`) |
+| `VULNPARSE_PIN_PORTABLE` | Truthy (`1`/`true`/`yes`/`on`) enables `--portable` `./data/` layout |
 
 ## Related deep dives
 
+- [Config Seam Contract](Config%20Seam%20Contract.md)
 - [Caching Deep Dive](Caching%20Deep%20Dive.md)
 - [Runtime Policy Deep Dive](Runtime%20Policy%20Deep%20Dive.md)
-- [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)
-- [ACI Feature Explanation](ACI%20Feature%20Explanation.md)
-- [ACI Rule Authoring Tutorial](ACI%20Rule%20Authoring%20Tutorial.md)
-- [ACI Technical Deep Dive](ACI%20Technical%20Deep%20Dive.md)
 - [Nmap Context Deep Dive](Nmap%20Context%20Deep%20Dive.md)
 - [Enrichment Deep Dive](Enrichment%20Deep%20Dive.md)

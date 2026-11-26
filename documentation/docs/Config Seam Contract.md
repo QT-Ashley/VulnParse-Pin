@@ -1,176 +1,51 @@
 # Config Seam Contract
 
-This document defines an implementation-ready seam contract for configuration loading and validation, with staged migration and rollback guidance.
+This document defines the shipped v2.0.0 configuration architecture separating file discovery/provisioning, schema & semantic validation, `v1 -> v2` projection, and typed runtime policy bundles, plus workspace inventory/decision context configs.
 
 ## Objective
 
-Create a clear configuration boundary between:
+Enforce clean boundaries across four stages of runtime configuration plus two workspace context surfaces:
 
-1. File discovery and provisioning
-2. Parse and schema validation
-3. Version policy and compatibility decisions
-4. Runtime projection into typed policy objects
+1. **File discovery and provisioning** (`ConfigSource`)
+2. **Draft 2020-12 schema and semantic validation** (`ConfigValidator`)
+3. **Version compatibility projection & typed runtime bundle** (`ConfigProjector`)
+4. **Workspace context configs** (`assets.yaml` via `AssetContextMatcher`, `decisions.yaml` via `DecisionsRegistry`)
 
-The goal is to reduce coupling inside configuration bootstrap while preserving strict validation, deterministic startup behavior, and backward-compatible migration paths.
+## Implemented Contracts
 
-## Current State (baseline)
+### Contract A: Config Source (`src/vulnparse_pin/core/config_source.py`)
 
-Configuration handling is currently centralized primarily in `src/vulnparse_pin/core/apppaths.py` and consumed in bootstrap.
+`ConfigSource` discovers, provisions missing defaults from `vulnparse_pin.resources`, and reads `config.yaml`, `scoring.json`, and `tn_triage.json` through `PermFileHandler` (`YAML(typ="safe", pure=True)` + `json.load`):
 
-Current workflow includes:
+- `ConfigSource.ensure_files(paths) -> ConfigFileSet(global_yaml, scoring_json, topn_json)`
+- `ConfigSource.read_payloads(ctx, files) -> RawConfigPayloads(global_config, scoring_config, topn_config)`
+- `ConfigSource.load_packaged_defaults() -> RawConfigPayloads`
 
-1. Ensuring user config files exist (`config.yaml`, `scoring.json`, `tn_triage.json`)
-2. Reading YAML/JSON with PFH policy enforcement
-3. Schema validation against packaged schemas
-4. Global config version warning/fail policy
-5. Returning raw dict payloads for downstream policy construction
+### Contract B: Config Validator (`src/vulnparse_pin/core/config_validator.py`)
 
-## Seam Contract
+`ConfigValidator.validate(ctx, payloads) -> ConfigValidationResult` enforces:
 
-### Contract A: Config source boundary
+1. JSON Schema Draft 2020-12 validation against `config.schema.json`, `scoring.schema.json`, and `topN.schema.json`.
+2. Webhook URL/timeout invariants (`https://` only, no embedded credentials, `timeout_seconds >= max(connect_timeout_seconds, read_timeout_seconds)`).
+3. Scoring semantic invariants (monotonically non-decreasing `epss.breakpoints`, strictly ordered `bands`: `critical > high > medium > low >= 0`).
+4. Version policy (`SUPPORTED_CONFIG_VERSIONS = ("v1", "v2")`): accepts `v2` cleanly and auto-projects `v1` (or unversioned) configs to `v2` defaults (`_project_global_v1_to_v2`, `_project_scoring_v1_to_v2`) while emitting structured warnings. Unsupported versions raise `RuntimeError`.
 
-Config source handling should expose one contract for discover/provision/read operations.
+### Contract C: Config Projector (`src/vulnparse_pin/core/config_projector.py`)
 
-```python
-class ConfigSource(Protocol):
-    def ensure_files(self, ctx: RunContext) -> ConfigFileSet:
-        ...
+`ConfigProjector.project(validation) -> RuntimeConfigBundle` builds immutable typed policy dataclasses:
 
-    def read_payloads(self, ctx: RunContext, files: ConfigFileSet) -> RawConfigPayloads:
-        ...
-```
+- `RuntimeConfigBundle.v2_config` (`VppConfigV2`)
+- `RuntimeConfigBundle.scoring_policy` (`ScoringPolicyV2` with `.to_v1_policy()` bridge)
+- `RuntimeConfigBundle.triage_policy` (`TriagePolicyV2` — `default` / `bod-26-04`, `static_sast_p1_cap`)
+- `RuntimeConfigBundle.aci_policy` (`ACIPolicyV2`)
+- `RuntimeConfigBundle.signal_reliability` (`SignalReliabilityPolicy`)
 
-#### ConfigFileSet
+### Contract D: Workspace Context Configs (`src/vulnparse_pin/core/assets_context.py`)
 
-Required fields:
+Optional per-engagement / per-repository context files are loaded separately from global `AppPaths` configs and validated against Draft 2020-12 schemas:
 
-1. `global_yaml`: Path
-2. `scoring_json`: Path
-3. `topn_json`: Path
-
-#### RawConfigPayloads
-
-Required fields:
-
-1. `global_config`: dict
-2. `scoring_config`: dict
-3. `topn_config`: dict
-
-### Contract B: Validation boundary
-
-Validation should be isolated and deterministic, producing explicit failure/warning structures.
-
-```python
-class ConfigValidator(Protocol):
-    def validate(self, payloads: RawConfigPayloads) -> ConfigValidationResult:
-        ...
-```
-
-#### ConfigValidationResult
-
-Required fields:
-
-1. `ok`: bool
-2. `warnings`: list[str]
-3. `errors`: list[str]
-4. `normalized`: RawConfigPayloads
-
-Validation responsibilities:
-
-1. Schema validation for all runtime configs
-2. Global version policy checks (`version: v1` compatibility behavior)
-3. Type/top-level object guarantees for all config payloads
-
-### Contract C: Runtime projection boundary
-
-Raw validated config should be projected into typed runtime policy objects in one explicit stage.
-
-```python
-@dataclass(frozen=True)
-class RuntimeConfigBundle:
-    global_config: dict
-    scoring_policy: ScoringPolicyV1
-    topn_policy: TriageConfigLoadResult
-```
-
-This projection boundary preserves strict loading while minimizing config-shape leakage across modules.
-
-## Non-goals
-
-1. No scoring algorithm changes
-2. No TopN ranking logic changes
-3. No parser detection behavior changes
-4. No runtime CLI flag semantics changes
-
-## Migration Sketch
-
-### Stage 0 (compatibility wrappers)
-
-1. Keep existing `load_config(ctx)` entrypoint.
-2. Internally split responsibilities into source/validate/project helper modules.
-3. Preserve current exception and warning behavior.
-
-### Stage 1 (source split)
-
-1. Move file ensure/read logic into dedicated source module.
-2. Keep PFH enforcement and current file naming unchanged.
-3. Return `ConfigFileSet` and `RawConfigPayloads`.
-
-### Stage 2 (validation split)
-
-1. Move schema/version validation into validator module.
-2. Keep error wording and fail-fast behavior stable where practical.
-3. Keep global version compatibility rule unchanged.
-
-### Stage 3 (projection split)
-
-1. Consolidate conversion from raw config dicts to typed policy objects.
-2. Keep bootstrap signatures stable via adapter layer.
-3. Preserve existing policy defaults and threshold semantics.
-
-### Stage 4 (cleanup)
-
-1. Remove transitional glue once parity is verified.
-2. Keep `load_config` compatibility shim until consumers are fully migrated.
-
-## Blast Radius
-
-Potentially affected areas:
-
-1. `src/vulnparse_pin/core/apppaths.py`
-2. `src/vulnparse_pin/app/bootstrap.py`
-3. `src/vulnparse_pin/core/passes/Scoring/`
-4. `src/vulnparse_pin/core/passes/TopN/`
-5. config schema resources and related tests
-
-Risk is controlled by preserving current entrypoints and staged migration.
-
-## Rollback Strategy
-
-1. Keep legacy `load_config` path available behind a compatibility branch.
-2. If validation/projection drift is detected, route startup back to legacy logic immediately.
-3. Preserve current schema files and version policy behavior to avoid startup regressions.
-
-## Verification Plan
-
-Minimum validation for implementation phase:
-
-1. Existing config schema validation tests pass unchanged.
-2. Bootstrap and pass-contract tests remain green.
-3. Version-policy behavior is verified for:
-
-    - missing `version`
-    - supported `version: v1`
-    - unsupported versions
-
-4. Runtime startup parity checks validate identical loaded policy outcomes.
-
-## Exit Criteria
-
-1. Config seam contracts are documented and accepted.
-2. Migration plan is staged and reversible.
-3. Blast radius and rollback plan are explicit.
-4. Test matrix for parity and version behavior is defined.
+- **`assets.yaml` (`--assets`):** Validated against `assets.schema.json` (`version: v1|v2`, `defaults`, `rules[]`, optional inline `decisions[]`) via `AssetContextMatcher.from_file(path, pfh=ctx.pfh)`.
+- **`decisions.yaml` (`--decisions`):** Validated against `decisions.schema.json` (`version: v1|v2`, `decisions[]`) via `DecisionsRegistry.from_file(path, pfh=ctx.pfh)`.
 
 ## Related Docs
 
@@ -179,5 +54,3 @@ Minimum validation for implementation phase:
 - [Pipeline System](Pipeline%20System.md)
 - [Enrichment Seam Contract](Enrichment%20Seam%20Contract.md)
 - [ADR-0001: Config Seam Architecture](adr/ADR-0001-config-seam.md)
-- [Architecture Review Checklist](Architecture%20Review%20Checklist.md)
-- [ADR Workflow](ADR%20Workflow.md)

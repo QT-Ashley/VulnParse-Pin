@@ -1,47 +1,29 @@
 # Features
 
-Below is a comprehensive list of features that VulnParse-Pin offers to help security teams manage and prioritize vulnerabilities effectively:
+VulnParse-Pin (`vpp`) **v2.0.0** (`Apache-2.0`) combines streaming multi-scanner ingestion, persistent DuckDB storage, threat-intelligence enrichment, dual-track scoring, CISA BOD 26-04 SSVC triage, scan-over-scan drift detection, Decision Defense Dossiers, and an interactive Textual TUI.
 
-- **Multi-Scanner Support**: VulnParse-Pin can ingest and normalize vulnerability data from a wide range of popular vulnerability scanners, including but not limited to Nessus, OpenVAS, and soon to be more. This allows organizations to consolidate findings from multiple sources into a single, unified view.
+- **Multi-Scanner Streaming Ingestion**: Ingests and normalizes **Nessus** (`.nessus` XML, `.csv`), **OpenVAS** (`.xml`), **Qualys** (`.xml`, `.csv`), **SARIF 2.1.0** (`Trivy`, `Grype`, `Clair`, `Semgrep`, `CodeQL`, `Bandit`), **Nuclei JSONL** (`.jsonl`), and **Nmap** (`.xml` host context) via bounded 64 KB format sniffing (`SchemaDetector`) and 10,000-row streaming `iter_batches()` parsers. Experimental JSON parser paths (`openvas-json`, `nessus-json`) remain available for legacy compatibility.
+- **Persistent DuckDB Workspace (`.vpp.db`)**: Stores normalized runs across a 12-table columnar schema (`runs`, `assets`, `asset_aliases`, `findings`, `finding_evidence`, `finding_cves`, `enrichment_snapshots`, `aci_signals`, `scores`, `triage_decisions`, `diff_events`, `ledger_events`) with `0o600` POSIX creation permissions, symlink rejection, and deterministic cross-scanner deduplication (`aid_v2_` / `fid_v2_`).
+- **Pattern `assets.yaml` & `decisions.yaml`**: Draft 2020-12 schema-validated `AssetContextMatcher` (5-tier precedence: `alias`/`asset_id` → exact IP/FQDN/URI/image → longest-prefix CIDR → `fnmatchcase` glob → `unmatched_shadow` visibility) and `DecisionsRegistry` (`deferred`, `accepted`, `mitigated`) with assumption predicates (`expires_at`, `in_kev`, `max_epss`, `max_epss_percentile`, `internet_facing`, `max_cvss`).
+- **Unified Threat-Intelligence Enrichment**: Hydrates scan-matched CVEs and PURLs from **CISA KEV**, **FIRST EPSS v5** (`#model_version`, raw probability, percentile), **NVD** (CVSS v4.0 / v3.x / v2.0 with `NVD > CNA > GHSA > OSV > Scanner-Supplied > Missing` precedence), **Exploit-DB**, opt-in **GHSA** (`--ghsa`, including `ghsa_package_index` PURL lookup), and optional offline **OSV** (`--osv`), cached in `0o600` HMAC/SHA-256 verified SQLite indexes.
+- **Dual-Track `Scoring@3.0` & Signal Reliability**: Vectorized DuckDB scoring across Track A (`cve_threat`, monotonic EPSS v5 piecewise breakpoints, non-double-counted KEV + verified exploit) and Track B (`exposure_weakness`), weighted by `detection_mode` Signal Reliability (`credentialed_host`/`active_dast` `1.0`, `sca_container` `0.90`, `uncredentialed_banner` `0.85`, `static_sast` `0.55`), with clean-room Apache-2.0 CVSS v2.0/v3.x/v4.0 calculation and full `score_trace`.
+- **Attack Capability Inference (`ACI@2.0`)**: Default-enabled DuckDB pass enriching findings with inferred attack capabilities (`remote_execution`, `auth_bypass`, `sql_injection`, `privilege_escalation`, etc.), exposure chains, and confidence scores across both CVE and non-CVE Track B findings.
+- **CISA BOD 26-04 SSVC & `Triage@2.0`**: Supports `--profile default` and `--profile bod-26-04`, mapping findings to SSVC actions (`Act`, `Attend`, `Track*`, `Track`), priority tiers (`P1`, `P1b`, `P2`, `P3`, `P4`), SLA buckets (`3-day + Forensic Triage`, `14-day`, `60-day`, `Fix on Upgrade`), a `static_sast` P1-cap guardrail, and `decisions.yaml` reconciliation.
+- **Scan-Over-Scan Diff Engine (`vpp diff`)**: Compares `.vpp.db` runs (or two scan files on the fly) to detect newly introduced high-risk findings, threat-intel escalations (KEV additions, EPSS `0.04`/`0.10` or percentile `90th`/`95th` crossings, CVSS `+1.0` jumps, `internet_facing` flips), verified remediations, shadow-asset deltas, and stale-assumption deferral invalidations (`--fail-on p1|p2|kev|stale-assumption|none`, exit code `2` on breach).
+- **Decision Defense Dossiers & Executive Client Roadmaps**: Self-contained Jinja2 HTML & Markdown Decision Defense Dossiers (Why Prioritized, Why Deprioritized/Deferred, Invalidated Deferrals, Shadow Asset Disclosure, `RunManifest` digest) and Executive Roadmaps (`autoescape`, `md_escape`, zero external CDNs, customizable via `--template-dir`), plus concise PR diff comments (`--output-pr-comment`).
+- **Interactive Textual TUI (`vpp ui`)**: Optional `vulnparse-pin[ui]` terminal workbench over `.vpp.db` supporting instant tier/track/KEV/shadow filtering, paged search, live `score_trace` & merged multi-scanner evidence inspection, diff/stale-assumption review, one-key dossier export, and interactive deferral modals.
+- **Subcommand CLI & 100% Offline Demo**: Purpose-built subcommands (`scan`, `demo`, `diff`, `ui`, `export`, `verify`, `defer`, `intel`) with a transparent legacy compatibility shim (`-f`/`--file`, `--demo`, `--verify-runmanifest`), plus an under-2-second 100% offline multi-scanner `vpp demo`.
+- **Auditability & `RunManifest` v2**: Append-only SHA-256 hash-chained decision ledger (`ledger_events`), chunked SHA-256 hashing of all written artifacts, and strictly read-only `vpp verify <runmanifest.json>` validation (verifying schema, manifest digest, ledger chain, and listed output files).
+- **Scale & Performance**: Streaming `lxml.etree.iterparse`, chunked `JSONDecoder.raw_decode` SARIF parsing, DuckDB `appender` ingestion, and parameterized SQL queries validated up to `700,000` multi-scanner findings in `benchmarks/bench_scale.py` with `<1.0s` UI/summary queries.
+- **Secure-by-Default I/O & Outputs**: Fail-closed path policy (`PermFileHandler`, symlink rejection on read/write, `0o600`/`0o700` POSIX permissions), XXE/Billion-Laughs XML blocking, zip-traversal protection on OSV archives, CSV formula-injection sanitization (`--no-csv-sanitize` blocked without `--confirm-unsafe-csv`), and HMAC-SHA256 signed HTTPS webhooks (`--webhook-endpoint`).
+- **Nmap Attack-Surface Context (`--nmap`)**: Streaming `NmapXMLParser` (`NmapAdapter@1.0`) mapping confirmed open ports to assets for tie-breaking and optional `scoring_port_bonus` without blocking if omitted.
+- **Permissive Open Source (`Apache-2.0`)**: Released under `Apache-2.0` starting at `v2.0.0` with zero copyleft Python runtime dependencies, PEP 639 packaging, SLSA provenance, and CycloneDX SBOM generation.
 
-- **Contextual Enrichment**: Each vulnerability finding is enriched with additional context from authoritative sources such as the National Vulnerability Database (NVD), Exploit Database, FIRST EPSS, and CISA KEV. This enrichment provides critical information such as exploit availability, attack vectors, and potential impact.
+## Related Docs
 
-- **Customizable Scoring Model**: VulnParse-Pin applies a configurable scoring model that prioritizes vulnerabilities based on factors such as CVSS scores, exploit availability, and organizational risk tolerance. This helps security teams focus on the most critical issues first.
-
-- **Risk-Based Contextualization**: By combining vulnerability data with asset information and threat intelligence along with inferred asset relationships and characteristics, VulnParse-Pin provides a risk-based view of vulnerabilities, allowing teams to understand the real-world impact of each finding.
-
-- **Integration Capabilities**: VulnParse-Pin can be integrated with existing security tools and workflows, such as SIEMs, ticketing systems, and vulnerability management platforms, to streamline the remediation process.
-
-- **Automated Prioritization**: With its advanced scoring and enrichment capabilities, VulnParse-Pin automates the prioritization of vulnerabilities, reducing the manual effort required by security teams and enabling faster decision-making.
-
-- **Scalability**: Designed to handle large volumes of vulnerability data, VulnParse-Pin can scale to meet the needs of organizations of all sizes, from small businesses to large enterprises.
-
-- **Simple CLI Interface**: VulnParse-Pin offers a straightforward command-line interface for easy deployment and integration into existing workflows, making it accessible to security teams without requiring extensive training.
-
-- **Open Source**: VulnParse-Pin is open source, allowing for community contributions and transparency in its development. This fosters collaboration and continuous improvement of the tool.
-
-- **Offline Mode**: VulnParse-Pin can operate in an offline mode, allowing organizations to process vulnerability data without requiring an internet connection, which is particularly useful for sensitive environments. For enrichment, users can download the necessary data sources to external storage media and use them locally. This is especially beneficial for organizations with strict data security policies or those operating in air-gapped environments.
-
-- **TopN Prioritization**: VulnParse-Pin can be configured to prioritize the top N vulnerabilities based on the scoring model, allowing security teams to focus on the most critical issues without being overwhelmed by the volume of findings. TopN prioritization also allows for asset exposure inference, where the tool can infer the exposure level of assets based on their relationships and characteristics, further refining the prioritization process. This is particularly useful for organizations with limited resources, enabling them to focus on the most impactful vulnerabilities first.
-
-- **Modular Architecture**: VulnParse-Pin is built with a modular architecture, allowing for easy addition of new features, integrations, and data sources as the threat landscape evolves. This ensures that the tool remains relevant and effective in addressing emerging vulnerabilities and attack vectors.
-
-- **Comprehensive Reporting**: VulnParse-Pin provides detailed reports that include vulnerability details, enrichment information, and prioritization scores. These reports can be customized to meet the specific needs of different stakeholders, such as security analysts, management, and auditors.
-
-- **Secure Filesystem Handling**: VulnParse-Pin ensures that all file handling operations are performed securely, preventing potential vulnerabilities related to file access and manipulation. This includes proper validation of input paths, secure handling of temporary files, and adherence to best practices for file permissions.
-
-- **Extensive Documentation**: VulnParse-Pin comes with comprehensive documentation that covers installation, configuration, usage, and troubleshooting. This helps users get up to speed quickly and ensures they can make the most of the tool's capabilities.
-
-- **Secure Output Handling**: VulnParse-Pin ensures that all output generated by the tool is handled securely, preventing potential vulnerabilities related to data exposure and manipulation. This includes proper sanitization of output data, secure handling of sensitive information, and adherence to best practices for data storage and transmission.
-
-- **Robust Default Configuration**: VulnParse-Pin comes with a robust default configuration that provides a solid starting point for users. This includes sensible defaults for scoring, enrichment, and prioritization, allowing users to get immediate value from the tool while still providing the flexibility to customize settings as needed.
-
-- **Defensive Programming Practices**: VulnParse-Pin is developed with defensive programming practices in mind, ensuring that the tool is resilient to unexpected inputs and conditions. This includes thorough input validation, error handling, and logging to help identify and address potential issues.
-
-- **Adversarial Resilience**: VulnParse-Pin is designed to be resilient against adversarial inputs and attempts to manipulate the tool's functionality. This includes measures to prevent injection attacks, tampering with data sources, and other common attack vectors that could compromise the integrity of the vulnerability management process.
-
-- **Explainable Prioritization**: VulnParse-Pin provides transparency into the prioritization process, allowing users to understand why certain vulnerabilities are prioritized over others. This includes detailed explanations of the scoring model, enrichment factors, and how different inputs contribute to the final prioritization score. This feature helps build trust in the tool's recommendations and enables security teams to make informed decisions based on the underlying rationale.
-
-- **Deterministic Output**: VulnParse-Pin ensures that given the same input data and configuration, the output will be consistent and reproducible. This allows security teams to have confidence in the tool's results and facilitates auditing and verification of the prioritization process. Deterministic output is particularly important for organizations that require traceability and accountability in their vulnerability management practices.
-
-- **Nmap Attack-Surface Context**: VulnParse-Pin can accept Nmap XML scan output as supplementary context via `--nmap-ctx`. When supplied, the Nmap adapter maps confirmed open ports to scan assets and makes port evidence available to scoring and TopN ranking. Equal-score findings and assets with a confirmed open port rank above those without (tiebreak mode, zero score impact by default). An optional `scoring_port_bonus` can be configured to explicitly lift reachable findings in the risk ordering. The adapter is fully non-blocking — if the source file is missing or invalid, the pipeline continues without interruption.
+- [Overview](Overview.md)
+- [Getting Started In 5 Minutes](Getting%20Started%20In%205%20Minutes.md)
+- [Usage](Usage.md)
+- [Workflow Examples](Workflow%20Examples.md)
+- [Deployment Options](Deployment%20Options.md)
+- [Benchmarks](Benchmarks.md)

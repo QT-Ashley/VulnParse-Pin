@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Executive Remediation Roadmap — {{ run.run_id }}</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #475569;
+      --accent: #1d4ed8;
+      --p1: #991b1b;
+      --p1-bg: #fee2e2;
+      --p2: #9a3412;
+      --p2-bg: #ffedd5;
+      --p3: #854d0e;
+      --p3-bg: #fef9c3;
+      --ok: #166534;
+      --ok-bg: #dcfce7;
+      --warn-bg: #fef2f2;
+      --warn-border: #b91c1c;
+      --shadow-bg: #fffbeb;
+      --shadow-border: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0 0 8px 0; font-size: 24px; }
+    h2 {
+      margin: 26px 0 12px 0;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--border);
+      font-size: 19px;
+    }
+    h3 { margin: 16px 0 8px 0; font-size: 15px; }
+    .meta-row { display: flex; flex-wrap: wrap; gap: 12px 24px; color: var(--muted); font-size: 13px; }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 14px;
+      border-left: 5px solid;
+    }
+    .alert-danger { background: var(--warn-bg); border-color: var(--warn-border); color: #7f1d1d; }
+    .alert-warning { background: var(--shadow-bg); border-color: var(--shadow-border); color: #78350f; }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .kpi-val { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-p1 { background: var(--p1-bg); color: var(--p1); }
+    .badge-p2 { background: var(--p2-bg); color: var(--p2); }
+    .badge-p3 { background: var(--p3-bg); color: var(--p3); }
+    .badge-ok { background: var(--ok-bg); color: var(--ok); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 16px 0;
+      background: var(--surface);
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 7px 10px;
+      text-align: left;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    th { background: #f1f5f9; font-weight: 600; }
+    code {
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+    }
+    footer {
+      margin-top: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media print {
+      body { background: #ffffff; padding: 0; font-size: 11px; }
+      .card, header, .kpi-card, table { page-break-inside: avoid; }
+      h2 { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Executive Vulnerability Summary &amp; Client Remediation Roadmap</h1>
+      <div class="meta-row">
+        <div><strong>Run ID:</strong> <code>{{ run.run_id }}</code></div>
+        <div><strong>Profile:</strong> <code>{{ run.profile }}</code></div>
+        <div><strong>Generated (UTC):</strong> {{ generated_at_utc }}</div>
+        <div><strong>RunManifest Digest:</strong> <code>{{ run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)' }}</code></div>
+      </div>
+    </header>
+
+    {% if kpis.invalidated_count > 0 %}
+    <div class="alert alert-danger">
+      <strong>ALERT — {{ kpis.invalidated_count }} INVALIDATED DEFERRAL(S):</strong>
+      Previously deferred or accepted findings have violated their assumption predicates and require immediate re-triage.
+    </div>
+    {% endif %}
+
+    {% if kpis.shadow_assets > 0 %}
+    <div class="alert alert-warning">
+      <strong>INVENTORY GAP WARNING — {{ kpis.shadow_assets }} UNMATCHED SHADOW ASSET(S):</strong>
+      Findings appeared on assets outside <code>assets.yaml</code>. Assign owners to prevent unmonitored exposure.
+    </div>
+    {% endif %}
+
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Assets Scanned</div>
+        <div class="kpi-val">{{ kpis.total_assets }}</div>
+        <div class="kpi-sub">{{ kpis.matched_assets }} matched / {{ kpis.shadow_assets }} shadow</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Findings</div>
+        <div class="kpi-val">{{ kpis.total_findings }}</div>
+        <div class="kpi-sub">{{ kpis.cve_findings }} CVE / {{ kpis.exposure_findings }} Exposure</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Immediate P1 / P2</div>
+        <div class="kpi-val">{{ kpis.p1_count }} / {{ kpis.p2_count }}</div>
+        <div class="kpi-sub">P3: {{ kpis.p3_count }} | P4: {{ kpis.p4_count }}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">CISA KEV / Exploits</div>
+        <div class="kpi-val">{{ kpis.kev_findings }}</div>
+        <div class="kpi-sub">{{ kpis.verified_exploit_findings }} verified exploit(s)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Invalidated Alerts</div>
+        <div class="kpi-val">{{ kpis.invalidated_count }}</div>
+        <div class="kpi-sub">Stale-assumption triggers</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Operational Risk</div>
+        <div class="kpi-val">{{ kpis.avg_operational_score | fmt_score }}</div>
+        <div class="kpi-sub">Max: {{ kpis.max_operational_score | fmt_score }} / 10.00</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>BOD 26-04 / Priority SLA Remediation Roadmap</h2>
+      {% if sla_roadmap %}
+      <table>
+        <thead>
+          <tr><th>SLA Bucket</th><th>SSVC Action</th><th>Active Findings</th><th>Assets</th><th>KEV Listed</th><th>Max Op Score</th></tr>
+        </thead>
+        <tbody>
+          {% for bucket in sla_roadmap %}
+          <tr>
+            <td><strong>{{ bucket.sla_bucket }}</strong></td>
+            <td><span class="badge {% if bucket.ssvc_action == 'Act' %}badge-p1{% elif bucket.ssvc_action == 'Attend' %}badge-p2{% else %}badge-p3{% endif %}">{{ bucket.ssvc_action }}</span></td>
+            <td>{{ bucket.finding_count }}</td>
+            <td>{{ bucket.asset_count }}</td>
+            <td>{{ bucket.kev_count }}</td>
+            <td>{{ bucket.max_operational_score | fmt_score }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% for bucket in sla_roadmap %}
+      <div class="card">
+        <h3>{{ bucket.sla_bucket }} — {{ bucket.ssvc_action }} ({{ bucket.finding_count }} findings)</h3>
+        {% if bucket.top_findings %}
+        <table>
+          <thead><tr><th>Finding ID</th><th>Asset</th><th>CVE / Title</th><th>Owner</th><th>Tier</th><th>Op Score</th><th>KEV</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for f in bucket.top_findings %}
+            <tr>
+              <td><code>{{ f.finding_id }}</code></td>
+              <td>{{ f.asset_display }}</td>
+              <td>{{ f.primary_cve or f.title }}</td>
+              <td>{{ f.owner or 'Unassigned' }}</td>
+              <td>{{ f.priority_tier or 'N/A' }}</td>
+              <td>{{ f.operational_score | fmt_score }}</td>
+              <td>{{ 'Yes' if f.in_kev else 'No' }}</td>
+              <td>{{ f.decision_status or 'active' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p>No active findings in this SLA bucket.</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% else %}
+      <p>No active remediation SLA buckets found for this run.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Owner-Grouped Remediation Batches</h2>
+      {% if owner_batches %}
+      <table>
+        <thead>
+          <tr><th>Owner</th><th>Assets</th><th>Active Findings</th><th>P1</th><th>P2</th><th>KEV</th><th>Invalidated</th><th>Max Op Score</th></tr>
+        </thead>
+        <tbody>
+          {% for batch in owner_batches %}
+          <tr>
+            <td><strong>{{ batch.owner }}</strong></td>
+            <td>{{ batch.asset_count }}</td>
+            <td>{{ batch.finding_count }}</td>
+            <td>{{ batch.p1_count }}</td>
+            <td>{{ batch.p2_count }}</td>
+            <td>{{ batch.kev_count }}</td>
+            <td>{{ batch.invalidated_count }}</td>
+            <td>{{ batch.max_operational_score | fmt_score }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% for batch in owner_batches %}
+      <div class="card">
+        <h3>Owner: {{ batch.owner }} ({{ batch.finding_count }} finding(s) across {{ batch.asset_count }} asset(s))</h3>
+        <ul>
+          {% for f in batch.top_findings %}
+          <li><code>{{ f.finding_id }}</code> on <strong>{{ f.asset_display }}</strong> — {{ f.primary_cve or f.title }} (Tier={{ f.priority_tier or 'N/A' }}, SLA={{ f.sla_bucket or 'N/A' }}, Op={{ f.operational_score | fmt_score }}{% if f.in_kev %}, <strong>KEV</strong>{% endif %})</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p>No owner-assigned remediation batches found.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Top Quick-Win Fixes</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Root Cause / CVE</th><th>Findings</th><th>Assets Affected</th><th>KEV</th><th>Priority / SLA</th><th>Max Op Score</th><th>Recommended Action</th></tr>
+        </thead>
+        <tbody>
+          {% if quick_wins %}
+          {% for qw in quick_wins %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td><strong>{{ qw.fix_key }}</strong> — {{ qw.title }}</td>
+            <td>{{ qw.finding_count }}</td>
+            <td>{{ qw.asset_count }}</td>
+            <td>{{ 'Yes' if qw.in_kev else 'No' }}</td>
+            <td>{{ qw.priority_tier or 'N/A' }} / {{ qw.sla_bucket or 'N/A' }}</td>
+            <td>{{ qw.max_operational_score | fmt_score }}</td>
+            <td>{{ qw.solution or 'Apply vendor patch or mitigate exposure' }}</td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr><td colspan="8">No quick-win fixes identified.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </section>
+
+    {% if diff %}
+    <section>
+      <h2>Scan-over-Scan Remediation Velocity (<code>{{ diff.base_run_id }}</code> &rarr; <code>{{ diff.target_run_id }}</code>)</h2>
+      <table>
+        <thead><tr><th>Velocity Metric</th><th>Count</th></tr></thead>
+        <tbody>
+          <tr><td>Baseline Total Findings</td><td>{{ diff.summary.base_total_findings | default(0) }}</td></tr>
+          <tr><td>Target Total Findings</td><td>{{ diff.summary.target_total_findings | default(0) }}</td></tr>
+          <tr><td>Persisting Findings</td><td>{{ diff.summary.persisting_findings | default(0) }}</td></tr>
+          <tr><td>Newly Introduced High-Risk (All New)</td><td>{{ diff.summary.newly_introduced_high_risk | default(0) }} ({{ diff.summary.newly_introduced_all | default(0) }})</td></tr>
+          <tr><td>Threat-Intel Escalated</td><td>{{ diff.summary.threat_intel_escalated | default(0) }}</td></tr>
+          <tr><td>Verified Remediated (Patched / Asset Missing)</td><td>{{ diff.summary.verified_remediated | default(0) }} ({{ diff.summary.verified_remediated_confirmed | default(0) }} / {{ diff.summary.verified_remediated_asset_missing | default(0) }})</td></tr>
+          <tr><td>Invalidated Assumptions</td><td>{{ diff.summary.invalidated_assumptions | default(0) }}</td></tr>
+          <tr><td>Shadow Assets New / Resolved</td><td>{{ diff.summary.shadow_assets_new | default(0) }} / {{ diff.summary.shadow_assets_resolved | default(0) }}</td></tr>
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <section>
+      <h2>Shadow / Unmatched Asset Disclosure</h2>
+      {% if shadow_assets %}
+      <table>
+        <thead><tr><th>Asset ID</th><th>Host / IP / Target</th><th>Exposed</th><th>Findings</th><th>KEV</th><th>Max Op Score</th></tr></thead>
+        <tbody>
+          {% for a in shadow_assets %}
+          <tr>
+            <td><code>{{ a.asset_id }}</code></td>
+            <td>{{ a.hostname or a.ip_address or a.target_uri or a.image_or_repo or a.canonical_key or 'N/A' }}</td>
+            <td>{{ 'Yes' if a.internet_facing else 'No' }}</td>
+            <td>{{ a.finding_count }}</td>
+            <td>{{ a.kev_count }}</td>
+            <td>{{ a.max_operational_score | fmt_score }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p>All scanned assets matched known inventory rules (<code>0</code> shadow assets).</p>
+      {% endif %}
+    </section>
+
+    <footer>
+      <div><strong>Run ID:</strong> <code>{{ run.run_id }}</code> | <strong>Created (UTC):</strong> {{ run.created_at_utc }} | <strong>RunManifest Digest:</strong> <code>{{ run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)' }}</code></div>
+      <div><strong>Intel Provenance:</strong> EPSS={{ run.intel_metadata.epss_model_version or 'N/A' }} ({{ run.intel_metadata.epss_score_date or run.intel_metadata.epss_date or 'N/A' }}) | KEV={{ run.intel_metadata.kev_catalog_version or 'N/A' }} ({{ run.intel_metadata.kev_date_released or 'N/A' }}) | NVD={{ run.intel_metadata.nvd_status or 'N/A' }}</div>
+    </footer>
+  </div>
+</body>
+</html>

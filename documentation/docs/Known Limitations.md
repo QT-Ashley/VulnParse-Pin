@@ -1,47 +1,52 @@
 # Known Limitations
 
-This document tracks current boundaries and non-goals for VulnParse-Pin v1.0.0.
+This document records current architectural boundaries, operational constraints, and planned Phase 2 capabilities for VulnParse-Pin v2.0.0 (`Apache-2.0`).
 
-## Parser coverage limits
+## Honest Network & Operational Reachability Boundary
 
-- Production-grade paths focus on Nessus/OpenVAS XML parser flows
-- JSON parser implementations are present but marked experimental
-- Non-standard or heavily vendor-customized exports may require parser extension work
+VulnParse-Pin's reachability and exposure model is grounded in **network & deployment context** — specifically:
 
-## Data and model limits
+- Confirmed open TCP/UDP ports from supplementary Nmap XML (`NmapAdapterPass`),
+- Operator-declared `internet_facing`, `criticality`, `cidrs`, `aliases`, and `tags` from `assets.yaml` (`AssetContextMatcher`), and
+- Deterministic `ACI@2.0` signal inference (`aci_signals`) and `detection_mode` Signal Reliability weighting.
 
-- No built-in historical delta analysis across multiple scan generations
-- Identity model is primarily host/service/plugin oriented
-- Enrichment is strongest for CVE-referenced findings
+VulnParse-Pin does **not** perform static AST source-code call-graph reachability analysis (determining whether a vulnerable dependency function is invoked by application code) or eBPF/kernel runtime execution tracing. Accordingly, `static_sast` findings carry a `0.55` `signal_reliability` weight and an explicit `static_sast_p1_cap` guardrail unless corroborated by high-confidence exposure/severity context.
 
-## Performance/size guardrails
+## Parser & Input Boundaries
 
-- Default size protections prioritize safety over unrestricted ingestion
-- Extremely large inputs can shift bottlenecks to scoring and serialization
-- Runtime characteristics depend on CVE cardinality, not only finding count
+- **Production vs. experimental parsers:** Production workflows should use `nessus-xml`, `openvas-xml`, `qualys-xml`, `nmap-xml`, `sarif-2.1.0`, `nuclei-jsonl`, `nessus-csv`, or `qualys-csv`. The legacy JSON fallbacks (`openvas-json`, `nessus-json`) remain `experimental` and `deprecated`.
+- **Size guardrails:** `FileInputValidator` caps scanner inputs at **500 MiB** by default (**50 GiB** with `--allow-large`), JSONL lines at **8 MiB**, XML prologs at **1 MiB**, and CSV fields at **32 MiB**.
+- **Vendor export nuances & Nmap port-only XML:** Qualys CSV exports with more than 25 non-empty metadata preamble lines before the real header row are rejected; port-only Nmap XML passed positionally (`vpp scan nmap.xml`) produces `Informational` port exposure findings rather than CVE risk (use `--nmap nmap.xml` alongside primary scanners for exposure context). See [Detection and Parsing — Vendor Export Nuances](Detection%20and%20Parsing.md#vendor-export-nuances) for Nessus Plugin `19506`, CVSS v4.0/v3.x/v2.0 precedence, and Qualys schema details.
+- **Custom scanner exports:** Vendor-customized XML/CSV schemas outside standard scanner fields may drop malformed rows or fall back to sentinel markers (`SENTINEL:No_Description`, `SENTINEL:Vector_Unavailable`).
 
-## Platform-specific behavior
+## Enrichment & Threat-Intel Boundaries
 
-- POSIX-style file mode enforcement is strongest on Linux/macOS
-- Windows permission semantics rely on OS ACL model, not chmod parity
+- **CVE vs. non-CVE enrichment depth:** Track A (`cve_threat`) receives full NVD/CNA/EPSS v5/KEV/Exploit-DB/GHSA/OSV hydration. Non-CVE findings (`exposure_weakness`, Track B) rely on scanner severity, CWEs, structured tags, PURL advisory matching (where applicable), and `ACI@2.0` signals.
+- **Online vs. air-gapped sync:** Online feed refreshes (`vpp intel sync` or online `vpp scan`) require outbound HTTPS access to CISA, FIRST, NVD, GitLab/Exploit-DB, or GitHub (`VP_GHSA_TK` / `GITHUB_TOKEN`). Air-gapped enclaves must pre-seed signed caches and run with `--offline` (and `--osv` / `--ghsa <path>` / `--nvd <path>` as needed).
+- **No Shodan live API:** Automated Shodan enrichment is not included in v2.0.0.
 
-## Feature backlog indicators
+## Storage, Auditability, Concurrency, & Platform Semantics
 
-Current codebase TODO markers include areas such as:
+- **Single-pass vs. post-export `dossier.html` RunManifest seal:** Single-pass `vpp scan` / `vpp demo` outputs write `dossier.html` before `RunManifest` computes `output_hashes`, so inline dossiers show `Pending post-export RunManifest seal (see runmanifest.json)` (preventing circular SHA-256 self-hashing). Run `vpp export --db .vpp.db --format dossier-html -o dossier.html` after the scan to embed the sealed `sha256:...` digest.
+- **`--enforce-root-read` with `$PWD` scans:** Without `--portable` (`-P`), `PermFileHandler` sets `root_dir` to the OS user data directory (`~/.local/share/VulnParse-Pin/`), so `--enforce-root-read` rejects files under `$PWD`. Pair `--enforce-root-read` with `--portable` when scanning or verifying files under `$PWD`.
+- **DuckDB single-writer locking:** `.vpp.db` is a local columnar workspace optimized for single-process writes (`vpp scan`, `vpp defer`, `vpp diff`); avoid running concurrent writers against the same `.vpp.db` file simultaneously.
+- **OS permission parity:** POSIX `0o600`/`0o700` file and directory mode enforcement and `umask` hardening apply on Linux and macOS. Windows deployments rely on OS NTFS ACLs rather than `chmod` bits.
 
-- **Shodan enrichment** (deferred to post-1.0) — placeholder at src/vulnparse_pin/utils/enricher.py; full implementation planned for v1.1+
-- **Extended enrichment features** — additional threat intel integrations and vendor-specific enrichment modes
-- **Additional strict schema/policy validation pathways** — full contract validation will be tightened in future releases
-- **Further parser parity for non-XML formats** — JSON parsers are experimental; post-1.0 parity improvements planned
+## Phase 2 Planned Capabilities (`v2.1+`)
 
-All deferred features are explicit non-blockers for v1.0.0 stability and API contract completion.
+Per [ROADMAP.md](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/ROADMAP.md), the following capabilities are intentionally deferred to Phase 2 (`v2.1+`) and are not part of `v2.0.0`:
 
-## Operational caveats
+- **OpenVEX & CycloneDX VEX ingestion** (`not_affected`, `affected`, `fixed`, `under_investigation` fed into `Triage@2.0` and Dossiers)
+- **CMDB & cloud inventory compilers** (AWS, GCP, Azure, NetBox, ServiceNow exports -> `assets.yaml`)
+- **Extended threat-intel overlays** (VulnCheck KEV++ and ENISA EUVD regional advisories)
+- **Cosign OCI signatures & pre-built air-gapped wheelhouse tarballs** (`release.yml` publishes attested multi-arch `ghcr.io/qt-ashley/vulnparse-pin` images; Cosign container signatures and bundled release wheelhouse archives remain planned for `v2.1+`)
+- **`vpp bundle` signed offline evidence/intel archives**
+- **Federal GRC export profiles** (native eMASS and FedRAMP POA&M templates)
+- **Multi-run SLA burn-down analytics, ticketing (Jira/ServiceNow), and SIEM/chat adapters** (Splunk HEC, OpenSearch, Slack, Teams, PagerDuty)
 
-- Disabling safe defaults (path confinement, CSV sanitization) increases risk
-- Using unsupported or malformed input can produce reduced enrichment fidelity
-- Process-pool behavior requires pickle-safe worker payload discipline
+## Related pages
 
-## Documentation note
-
-Limitations here are transparent by design so teams can plan controls, capacity, and integration strategy realistically.
+- [Architecture](Architecture.md)
+- [Threat Model](Threat%20Model.md)
+- [Detection and Parsing](Detection%20and%20Parsing.md)
+- [Enrichment Deep Dive](Enrichment%20Deep%20Dive.md)

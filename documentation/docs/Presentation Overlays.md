@@ -1,52 +1,50 @@
 # Presentation Overlays
 
-Presentation overlays let you shape derived pass output for reporting consumers without changing core normalized scan semantics.
+Presentation overlays let you shape derived pass output (`Scoring@3.0`, `Triage@2.0`, `ACI@2.0`) in normalized JSON exports without mutating core finding fields or `.vpp.db` storage semantics.
 
-## Purpose
+Overlay generation is implemented in `src/vulnparse_pin/utils/reportgen.py` (`export_duckdb_json` and `materialize_presentation`).
 
-- Make pass-derived intelligence easier to consume in dashboards/reports
-- Preserve compatibility with tools expecting flattened fields
-- Offer namespaced mode for cleaner machine-readability
+## Overlay Modes
 
-Overlay generation logic is implemented in `src/vulnparse_pin/utils/reportgen.py`.
+### `namespace` (Recommended / Default for DuckDB JSON)
 
-## Overlay modes
+Derived pass outputs are grouped under a dedicated `derived` object per finding and per asset:
 
-## `flatten`
+- **Finding `derived`:**
+  - `derived["Scoring@3.0"]`: `raw_risk_score`, `operational_score`, `risk_band`, `score_trace`
+  - `derived["Triage@2.0"]`: `profile`, `priority_tier`, `oal_compat`, `ssvc_action`, `sla_bucket`, `sla_days`, `decision_status`, `decision_id`, `assumed_state`, `rationale_summary`
+  - `derived["ACI@2.0"]`: `capabilities`, `chains`, `matched_tokens`, `confidence`, `uplift_score`
+- **Asset `derived`:**
+  - `derived["Scoring@3.0"]`: `asset_criticality`
 
-Derived values are merged into finding-level output fields for easy consumption by existing report templates.
+Best for API consumers, schema governance, and avoiding key collisions.
 
-Best for:
+### `flatten`
 
-- Legacy consumers
-- Spreadsheet/report workflows with fixed field expectations
+Derived fields are promoted directly onto each finding and asset object for legacy consumers and flat JSON pipelines:
 
-Tradeoff:
+- **Finding top-level keys:** `raw_risk_score`, `operational_score`, `risk_score`, `risk_band`, `score_trace`, `priority_tier`, `oal_compat`, `ssvc_action`, `sla_bucket`, `sla_days`, `decision_status`, `decision_id`, `rationale_summary`, `aci_capabilities`, `aci_chains`, `aci_confidence`, `aci_uplift_score`.
+- **Asset top-level keys:** `derived_criticality`, `criticality`.
 
-- Greater chance of field name collision if consumers add custom keys
+## CLI Usage
 
-## `namespace`
+```bash
+# Default DuckDB JSON export via vpp scan (uses namespace overlay)
+vpp scan scan.nessus --db workspace.vpp.db -o out/scan.json
 
-Derived values are grouped under a dedicated namespaced object (for example, `derived`) per finding.
+# Flattened presentation JSON during vpp scan
+vpp scan scan.nessus --db workspace.vpp.db -o out/scan_flat.json --presentation --overlay-mode flatten
 
-Best for:
+# Export JSON from an existing .vpp.db workspace
+vpp export --db workspace.vpp.db --format json --overlay-mode namespace -o out/export.json
+vpp export --db workspace.vpp.db --format json --overlay-mode flatten -o out/export_flat.json
+```
 
-- API consumers
-- Long-term schema governance
-- Reduced key collision risk
+> [!NOTE]
+> On `vpp scan`, `--overlay-mode` requires `--presentation` when set to `flatten`. On `vpp export --format json`, `--overlay-mode` defaults to `namespace`.
 
-Tradeoff:
+## Related Docs
 
-- Consumers must traverse nested structures
-
-## Typical usage
-
-Use overlay mode when generating presentation-focused artifacts for stakeholders who do not need full internal context detail.
-
-Keep raw + derived canonical exports for system integrations and auditability.
-
-## Recommended pattern
-
-- Store canonical JSON as source-of-truth
-- Generate overlays as downstream views
-- Keep overlay mode choice documented per integration endpoint
+- [Output Interpretation](Output%20Interpretation.md)
+- [ScanResult & DuckDB Schema](ScanResult_Schema.md)
+- [Usage](Usage.md)

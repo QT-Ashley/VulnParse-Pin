@@ -9,13 +9,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Upgrade Notes
 
-- GHSA is now explicit CLI opt-in only. Use `--ghsa` for online mode or `--ghsa <path>` for offline advisory enrichment.
-- TopN now expects `ACI@1.0` output; when missing, it emits a soft no-op artifact with error metadata instead of failing.
-- Scoring semantics changes under `Scoring@2.0` to whole-of-CVEs aggregation with bounded decay; scoring traces now include contributor-level metadata for auditability.
-- Packaged scoring config is now `version: v2` to reflect new scoring semantics and trace fields. Review custom 'scoring.json' files for compatibility before upgrading.
-- Default JSON output suppresses presentation-only score overlay fields unless `--presentation` is enabled, while preserving derived scoring artifacts for auditability.
+- **Clean License Cut at `v2.0.0`**: Releases `v1.0.0–v1.2.2` remain licensed under `AGPL-3.0-or-later`. Starting with `v2.0.0`, VulnParse-Pin is licensed under `Apache-2.0` with zero copyleft Python runtime dependencies.
+- **Subcommand CLI**: New subcommand workflow (`vpp scan`, `vpp demo`, `vpp diff`, `vpp ui`, `vpp export`, `vpp verify`, `vpp defer`, `vpp intel`) with a transparent compatibility shim for legacy flags (`-f`/`--file`, `--demo`, `--verify-runmanifest`).
+- **Offline `vpp demo`**: `vpp demo` now runs 100% offline in under 2 seconds using a compact bundled multi-scanner demo pack and miniature intelligence snapshot.
+- **Persistent DuckDB Workspace**: Runs persist into `.vpp.db` (`0o600` POSIX permissions) enabling scan-over-scan `vpp diff`, Decision Defense Dossiers, and optional Textual TUI (`pip install "vulnparse-pin[ui]"`).
+- **Config & Scoring `v2`**: Packaged configs advance to `version: v2` (`config.yaml`, `scoring.json`), adding monotonic EPSS v5 piecewise breakpoints, `NVD > CNA > GHSA > OSV > Scanner-Supplied > Missing` CVSS provenance, Signal Reliability weights, and `--profile bod-26-04` SSVC triage. Legacy `v1` config files continue loading with structured migration warnings.
 
 ## [Unreleased]
+
+## [2.0.0] - 2026-11-25 Apache-2.0, DuckDB Workspace, Streaming Parsers, BOD 26-04, Diff Engine & TUI
+
+### Licensing & Supply-Chain Cut
+
+- **Apache-2.0 Forward Relicense**: Relicensed `v2.0.0+` under the **Apache License, Version 2.0** (`LICENSE`, root `NOTICE`, `SPDX-License-Identifier: Apache-2.0` headers across `src/`, `tests/`, and `benchmarks/`). Historical `v1.0.0–v1.2.2` releases remain under `AGPL-3.0-or-later`.
+- **PEP 639 Packaging**: Upgraded `[build-system]` to `setuptools>=77.0.3` with `license = "Apache-2.0"`, `license-files = ["LICENSE", "NOTICE"]`, `src/vulnparse_pin/py.typed` (PEP 561), dual `vpp` / `vulnparse-pin` entrypoints, and optional `[ui]` extra (`textual>=2.1.0`) keeping core CI/headless installs lightweight.
+- **Copyleft & Legacy Dependency Removal**:
+  - Replaced LGPL-3.0-or-later `cvss` dependency with a clean-room Apache-2.0 CVSS v2.0 / v3.x / v4.0 base-score calculator (`src/vulnparse_pin/utils/cvss_utils.py`) incorporating FIRST.ORG BSD-2-Clause v4.0 macrovector lookup data (attributed in `NOTICE`).
+  - Removed `defusedxml` across all XML parsers and passes in favor of hardened streaming `lxml`.
+  - Retired PyInstaller `--onefile` standalone binary workflow (`re_build.yml`) in favor of PEP 639 wheels/sdists, SLSA build provenance (`actions/attest-build-provenance`), and isolated-wheel CycloneDX SBOM verification in `.github/workflows/release.yml` (fixing the stale root `sbom.json` and empty-env SBOM bug).
+  - Added `.github/workflows/ci.yml` testing Python `3.11–3.14` + Apache-2.0/SPDX license gates on every push and PR; removed unused 11 MB `Lab_test_scaled_5k.nessus`, stray root `__init__.py`, and `.coverage`.
+
+### Added
+
+#### DuckDB Local Workspace & Canonical v2 Identity
+- **DuckDB Workspace (`src/vulnparse_pin/storage/`)**: Added `schema.sql` (12 tables: `runs`, `assets`, `asset_aliases`, `findings`, `finding_evidence`, `finding_cves`, `enrichment_snapshots`, `aci_signals`, `scores`, `triage_decisions`, `diff_events`, `ledger_events`), `VppDatabase` (`0o600` POSIX mode, symlink path rejection, clean `.close()`), and `repositories.py` (`ingest_normalized_batches` using DuckDB `appender`, deterministic cross-scanner `(asset_id, primary_cve)` / `(asset_id, nocve_key)` deduplication preserving all `finding_evidence`, parameterized `query_findings_page`, `get_finding_detail`, `get_run_summary_counts`, `get_shadow_assets`, `list_runs`).
+- **Canonical v2 Identity (`core/id.py`)**: Added `make_asset_id_v2` (`aid_v2_`), `make_finding_id_v2` (`fid_v2_`), and `canonicalize_target_key` normalizing IPs, FQDNs, URIs, and container images/repos across scanners while preserving `aid_v1_` / `fid_v1_` compatibility.
+- **Pattern `assets.yaml` & `decisions.yaml` (`core/assets_context.py`, `core/schemas/{assets,decisions}.schema.json`)**: Implemented Draft 2020-12 validated `AssetContextMatcher` with 5-tier precedence (`alias`/`asset_id` → exact IP/FQDN/URI/image → longest-prefix CIDR → `fnmatchcase` glob → `unmatched_shadow` visibility) and `DecisionsRegistry` evaluating deferral/acceptance assumptions (`expires_at`, `in_kev`, `max_epss`, `max_epss_percentile`, `internet_facing`, `max_cvss`) with comment-preserving `ruamel.yaml` `upsert_decision`.
+
+#### Streaming Parsers & Hardened Ingestion
+- **Unified Streaming Contract (`parsers/base_parser.py`)**: Added `NormalizedFindingRecord` and `iter_batches(batch_size=10_000)` across all parsers with single-pass `parse() -> ScanResult` compatibility and clean `cves=[]` (removing `SENTINEL:No_CVE_Listed`).
+- **Bounded Format Sniffing & Validation (`core/schema_detector.py`, `utils/validations.py`)**: Single 64 KB head-bytes sniff classifying `xml`, `csv`, `sarif`, `jsonl`, `json`, `unknown`; UTF-8 BOM stripping; `--allow-large` honored up to 50 GiB across validator and all parsers; replaced `json.load()` + `max_nesting=12` cap.
+- **Hardened Streaming `lxml` XML (`parsers/_xml_security.py`, `nessusXML_parser.py`, `openvasXML_parser.py`, `qualys_parser.py`, `nmap_parser.py`)**: `lxml.etree.iterparse` (`resolve_entities=False`, `no_network=True`, `load_dtd=False`, `huge_tree=False`) with O(1) sibling pruning and prolog guardrails blocking external DTDs/XXE/Billion Laughs while permitting benign `<!DOCTYPE nmaprun>` / `<!DOCTYPE SCAN>`; full streaming `NmapXMLParser`.
+- **New Streaming Scanners (`parsers/sarif_parser.py`, `parsers/nuclei_jsonl_parser.py`)**: Added streaming `ijson` SARIF 2.1.0 parser (`sca_container` for Trivy/Grype/Clair vs `static_sast` for Semgrep/CodeQL/Bandit) and streaming Nuclei JSONL parser (`active_dast`, `high` fidelity).
+
+#### Threat Intelligence v2 & Unified Provenance
+- **CVSS v4.0 / v3.x / v2.0 & Authoritative Precedence (`utils/nvdcacher.py`, `utils/enricher.py`)**: Added `cvssMetricV40` selection, `NVD` (`Primary` `nvd@nist.gov`) vs `CNA` (`Secondary`) provenance, and unified `NVD > CNA > GHSA > OSV > Scanner-Supplied > Missing` precedence in both `resolve_cvss_vector` and `cve_analysis`.
+- **EPSS v5 & KEV Indexed SQLite Caches (`utils/enricher.py`)**: Parsed `#model_version` / `score_date` headers plus raw `epss` and `percentile` into HMAC-signed `0o600` `epss_cache.sqlite3`, and full KEV metadata (`date_added`, `due_date`, `known_ransomware`, `required_action`) into `kev_cache.sqlite3`.
+- **GHSA Package Index & Optional Offline OSV (`utils/ghsa_enrichment.py`, `utils/osv_enrichment.py`)**: Added `ghsa_package_index` PURL warm-lookup table and new `OSVEnrichmentSource` (`osv_cache.sqlite3`, zip-bomb/traversal hardened ZIP & JSON ingestion).
+- **DuckDB Enrichment Snapshotter (`app/enrichment.py`)**: Added `populate_enrichment_snapshots()` hydrating only scan-matched CVEs/PURLs and persisting feed provenance metadata on `runs`.
+
+#### Dual-Track Scoring, ACI@2.0, BOD 26-04 SSVC & Scan-Over-Scan Diff
+- **Dual-Track `Scoring@3.0` (`core/passes/Scoring/scoringPass.py`)**: Vectorized DuckDB scoring across Track A (`cve_threat`, monotonic EPSS v5 piecewise breakpoints, non-double-counted KEV + verified exploit) and Track B (`exposure_weakness`), weighted by `detection_mode` Signal Reliability (`credentialed_host`/`active_dast` `1.0`, `sca_container` `0.90`, `uncredentialed_banner` `0.85`, `static_sast` `0.55`), with rich `score_trace_json`.
+- **Upgraded `ACI@2.0`, `Triage@2.0`, `TopN@2.0`, `Summary@2.0` (`core/passes/`)**: Default-enabled `ACIV2Pass` batch-streaming DuckDB (`aci_signals`), `TriageDecisionPass` supporting `--profile default` and `--profile bod-26-04` (CISA BOD 26-04 SSVC `Act` / `Attend` / `Track*` / `Track` actions, SLA buckets `3-day + Forensic Triage` / `14-day` / `60-day` / `Fix on Upgrade`, SAST P1-cap guardrail, and `DecisionsRegistry` reconciliation), unified DuckDB `TopNV2Pass` & `SummaryV2Pass`, and `run_v2_duckdb_pipeline()`.
+- **Scan-Over-Scan `DiffEngine` (`core/diff_engine.py`)**: DuckDB `FULL OUTER JOIN` diff engine detecting newly introduced high-risk findings, threat-intel escalations (KEV, EPSS `0.04`/`0.10`, EPSS percentile `90th`/`95th`, CVSS `+1.0` / `Missing` → scored, `internet_facing` flip), verified remediations, shadow-asset deltas, and stale-assumption deferral invalidations (`evaluate_fail_gate`, exit `2` on breach).
+
+#### Dossiers, Roadmaps, Subcommand CLI, Offline Demo, Textual TUI, CI & Benchmarks
+- **Decision Defense Dossiers & Client Roadmaps (`src/vulnparse_pin/reporting/`)**: Jinja2 templates (`autoescape`, `md_escape`, zero external CDNs, custom `--template-dir`) producing HTML & Markdown Decision Defense Dossiers (Why Prioritized, Why Deprioritized/Deferred, Invalidated Deferrals, Shadow Asset Disclosure, RunManifest digest), Executive Client Roadmaps, and Diff PR comments.
+- **Streaming Exporters & Chunked `RunManifest` (`utils/csv_exporter.py`, `utils/reportgen.py`, `utils/runmanifest.py`)**: Added `export_duckdb_csv` (with `_sanitize_csv_cell`), `export_duckdb_json` (streaming asset-by-asset), `build_runmanifest_from_db`, and 1 MB chunked `_file_sha256`.
+- **Subcommand CLI, Offline Demo & Textual TUI (`cli/args.py`, `main.py`, `ui/app.py`, `resources/demo/`)**: Added `scan`, `demo` (<2s 100% offline multi-scanner pack), `diff`, `ui` (optional `vulnparse-pin[ui]` Textual TUI with filters `1–4`/`t`/`k`/`u`/`/`, live `score_trace`, `d` diff tab, `e`/`E` dossier export, `f` deferral modal), `export`, `verify`, `defer`, and `intel` subcommands plus legacy flag compatibility shim.
+- **CI Templates, Scale Benchmark & Demo Capture**: Added copy-pasteable Trivy + `vpp` workflows in `examples/ci/` (`github-actions-trivy-vpp.yml`, `gitlab-ci-trivy-vpp.yml`), reproducible 500k–700k scale benchmark harness `benchmarks/bench_scale.py`, and Charm VHS script `documentation/demo/vpp-demo.tape`.
+- **Portable Multi-Arch OCI Container (`ghcr.io/qt-ashley/vulnparse-pin`)**: Added multi-stage non-root `Dockerfile` (`uid=10001`, `--read-only` rootfs compatible, `[ui]` Textual support) and multi-arch (`linux/amd64`, `linux/arm64`) GHCR publishing in `.github/workflows/release.yml` with pre-push read-only container smoke checks, SBOMs, and build provenance attestations.
+- **Operational Regression Harness (`tests/operational/`)**: Added end-to-end operational test suites covering proprietary vendor-export torture cases, real-world workflows and deployment artifacts, TUI/CLI ergonomics, and documentation/examples truthfulness.
+
+### Changed
+
+- `ConfigProjector` (`core/config_projector.py`) now projects validated `v1`/`v2` YAML/JSON configs into typed `RuntimeConfigBundle` dataclasses (`VppConfigV2`, `ScoringPolicyV2`, `TriagePolicyV2`, `ACIPolicyV2`, `SignalReliabilityPolicy`).
+- `NmapAdapterPass` (`core/passes/Nmap/nmap_adapter_pass.py`) streams XML via `lxml.etree.iterparse`, reconciles open ports/exposure onto `.vpp.db` `assets`, and surfaces Nmap-only hosts as `unmatched_shadow`.
+- Removed interactive blocking `input()` prompts from `feed_cache.py` (replaced with fail-closed `FeedChecksumError`) and `io_resolution.py` (`--no-csv-sanitize` now requires `--confirm-unsafe-csv`); replaced library `sys.exit(1)` calls with typed `VppError`.
+- Explicitly respected user-specified `--db` and `--output-*` paths via `pfh.allow_workspace_root(...)` instead of stripping parent directories into `versions/<ver>/outputs/`.
+
+### Fixed
+
+- Fixed critical non-monotonic EPSS weight inversion in `ScoringPass` (`0.40–0.69` previously weighted `0.4x` below `<0.40` `1.0x`) using monotonic piecewise breakpoints.
+- Fixed `enricher.py` KEV/Exploit double-counting (stopped setting `exploit_available = True` solely from `cisa_kev`) and made text exploit heuristics negation-aware (`not exploitable`, `no known exploit`, etc. no longer pollute `verified_exploit` or `enrichment_sources`).
+- Fixed `EnrichmentHandoffBuilder.build()` silently dropping `nmap_ctx_config`, `webhook_config`, and `global_config` from `Services`.
+- Fixed `nvdcacher.py` `ctx.pfh.open_for_write(..., log=False)` `TypeError`, chunked `WHERE cve_id IN (...)` queries at `<= 900` params, filtered non-CVE sentinels before hydration, fixed `get()` missing-CVE `last_modified` key casing, and replaced hardcoded `end_year: 2025` with dynamic UTC year.
+- Fixed `enrichment_source_loader.py` `plan.kev_source == "offline"` check, `aci_pass.py` dead `cap_lateral_movement` guardrail & duplicate `asset_uplift_weight` multiplication, `nessusXML_parser.py` 250-char text truncation & v2 CVSS `#` `IndexError`, `openvasXML_parser.py` `"SENINTEL"` typo, `reportgen.py` `namespace`/`namespaced` mismatch & full-RAM `json.dumps`, and `apppaths.py` `sys.frozen` check.
+- Hardened empty-run scan/UI handling, TUI banner scroll clipping, webhook SSRF guardrails, feed/intel cache validation, and real-world vendor parser edge cases across Nessus, OpenVAS, Qualys, Nmap, SARIF, and Nuclei.
 
 ## [1.2.2] - 2026-04-27
 
@@ -430,7 +490,8 @@ Incident Response, forensics, and compliance teams can now rely on the RunManife
 - Fixed downstream scoring/reporting usage of asset identity to avoid relying on finding-level IDs.
 - Resolved various unused import and unused variable issues in parser modules.
 
-[Unreleased]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/QT-Ashley/VulnParse-Pin/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/QT-Ashley/VulnParse-Pin/compare/v1.2.2...v2.0.0
 [1.2.2]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.2.1...v1.2.2
 [1.2.0]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/VulnParse-Pin/VulnParse-Pin/compare/v1.1.0...v1.1.1

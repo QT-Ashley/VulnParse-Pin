@@ -1,206 +1,110 @@
 # Extension Playbooks
 
-This guide provides practical implementation playbooks for extending VulnParse-Pin in its current architecture.
+This guide provides implementation playbooks for extending VulnParse-Pin v2.0.0 (`Apache-2.0`) while preserving streaming memory bounds, DuckDB persistence contracts, and zero-copyleft runtime licensing.
 
-Current extension seams are explicit but code-driven:
-
-- Parser extensions are registered through `PARSER_SPECS`.
-- Pass extensions are wired in bootstrap into `PassRunner`.
-- Enrichment extensions are integrated in the enrichment pipeline and supporting enrichment modules.
-
-## Playbook 1: Add a New Parser
-
-### Goal (Parser extension)
-
-Add support for a new scanner format while preserving schema detection behavior and normalization contracts.
-
-### Where to implement (Parser extension)
-
-1. Create parser module under `src/vulnparse_pin/parsers/`.
-2. Implement `BaseParser` subclass with `parse()` and `detect_file()`.
-3. Register parser in `src/vulnparse_pin/parsers/__init__.py` via `PARSER_SPECS`.
-
-### Minimal parser skeleton
-
-```python
-from pathlib import Path
-from typing import List, Tuple
-
-from vulnparse_pin.core.classes.dataclass import ScanResult
-from vulnparse_pin.parsers.base_parser import BaseParser
-
-
-class CustomXMLParser(BaseParser):
-    @classmethod
-    def detect_file(cls, filepath: str | Path):
-        # Preferred: return (confidence, evidence)
-        # confidence >= 0.50 means matched
-        # evidence: list[tuple[str, str]]
-        return 0.85, [("root_tag", "custom_scan"), ("extension", ".xml")]
-
-    def parse(self) -> ScanResult:
-        # Build normalized ScanResult with assets/findings populated
-        raise NotImplementedError
-```
-
-### Register parser
-
-Add to `PARSER_SPECS` with a stable name, scanner label, format hints, and tie-break priority.
-
-```python
-ParserSpec(
-    name="custom-xml",
-    parser_cls=CustomXMLParser,
-    formats=("xml",),
-    scanner="custom",
-    priority=15,
-    stability="stable",
-    deprecated=False,
-)
-```
-
-Lifecycle metadata recommendations:
-
-1. Production parser paths should set `stability="stable"`.
-2. In-progress parser paths should set `stability="experimental"`.
-3. Sunset parser paths should set `deprecated=True` and provide `deprecation_notice`.
-
-### Detection contract notes
-
-1. `SchemaDetector` first does lightweight format sniffing.
-2. Candidate parsers then run `detect_file()`.
-3. Winner selection uses confidence, then priority, then parser name.
-4. Legacy boolean `detect_file()` returns still work, but confidence tuple is preferred.
-
-### Parser extension checklist
-
-1. Parser returns valid `ScanResult` with stable `asset_id` mapping.
-2. Findings include required identity and vulnerability fields.
-3. Fallback chains are deterministic for title/description/port/protocol extraction.
-4. Regression sample is added under `tests/regression_testing/`.
-5. Parser tests updated (`tests/test_parser_smoke.py` plus targeted fallback tests).
-6. Parser lifecycle metadata is set intentionally and documented if user-visible.
-
-## Playbook 2: Add a New Pass
-
-### Goal (Pass extension)
-
-Add a new derived-analysis pass while preserving append-only derived context and pass pipeline determinism.
-
-### Where to implement (Pass extension)
-
-1. Create pass module under `src/vulnparse_pin/core/passes/<PassName>/`.
-2. Implement `Pass` protocol: `name`, `version`, and `run(ctx, scan)`.
-3. Return `DerivedPassResult` with `PassMeta` and structured data.
-4. Wire pass into bootstrap pass list in `src/vulnparse_pin/app/bootstrap.py`.
-
-### Minimal pass skeleton
-
-```python
-from datetime import datetime, timezone
-
-from vulnparse_pin.core.classes.pass_classes import DerivedPassResult, Pass, PassMeta
-
-
-class ExposurePass(Pass):
-    name = "Exposure"
-    version = "1.0"
-
-    def run(self, ctx, scan):
-        data = {"status": "ok"}
-        return DerivedPassResult(
-            meta=PassMeta(
-                name=self.name,
-                version=self.version,
-                created_at_utc=datetime.now(timezone.utc).isoformat(),
-                notes="Exposure analysis",
-            ),
-            data=data,
-        )
-```
-
-### Wiring in pipeline
-
-Add your pass to bootstrap pass order, respecting dependencies (for example, TopN depends on scoring output).
-
-### Pass extension checklist
-
-1. Pass output key (`Name@Version`) is unique.
-2. Output shape is deterministic and testable.
-3. Pass behavior is documented if user-visible.
-4. Contract tests are added or updated in `tests/test_pass_contracts.py`.
-5. If output impacts reports/exporters, update report/export tests.
-
-## Playbook 3: Add a New Enrichment Source
-
-### Goal
-
-Add a new intelligence source (or enrich signal) without breaking existing KEV/EPSS/Exploit/NVD flow.
+## Playbook 1: Add a New Streaming Parser
 
 ### Where to implement
 
-Current enrichment flow is orchestrated in `src/vulnparse_pin/app/enrichment.py` and helper modules under `src/vulnparse_pin/utils/`.
+1. Create a parser module under `src/vulnparse_pin/parsers/`.
+2. Subclass `BaseParser` (`src/vulnparse_pin/parsers/base_parser.py`) implementing `detect_file()` and `iter_batches(batch_size=...)`.
+3. Register a `ParserSpec` in `PARSER_SPECS` (`src/vulnparse_pin/parsers/__init__.py`).
 
-Common integration points:
+### Hardened streaming & licensing rules
 
-1. Source loader function (pattern similar to `load_kev` / `load_epss`).
-2. Per-finding enrichment transform.
-3. Enrichment pipeline integration and stats reporting.
-4. Optional feed cache spec and cache policy integration.
+- **XML parsers:** Must use `safe_iterparse()` and `prune_element()` from `src/vulnparse_pin/parsers/_xml_security.py` (backed by `lxml.etree.iterparse`). Never introduce `defusedxml` or `xml.etree.ElementTree`.
+- **JSON / SARIF / JSONL parsers:** Must stream via chunked `json.JSONDecoder.raw_decode` (see `_FastSarifStreamReader` in `sarif_parser.py`), `ijson`, or bounded line iteration (`nuclei_jsonl_parser.py`)—never materialize multi-hundred-MB DOMs with `json.load()`.
+- **CSV parsers:** Must enforce `_MAX_CSV_FIELD_BYTES` (32 MiB), build a single-pass header index map, and emit ledger events on malformed/dropped rows.
+- **Zero-copyleft dependency gate:** All new parser or utility dependencies must be `Apache-2.0`-compatible (MIT, BSD, PSF, Apache-2.0). Never add `AGPL`, `GPL`, or `LGPL` runtime dependencies.
 
-### Suggested implementation pattern
+### Minimal streaming parser skeleton
 
-1. Add a loader function with online/offline support and bounded logging.
-2. Normalize keys once for lookup efficiency.
-3. Apply enrichment in batch loops with clear fallback behavior.
-4. Update enrichment stats and status fields.
-5. Keep behavior compatible with `--log-level` and large-workload patterns.
+```python
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional
 
-### Enrichment extension checklist
+from vulnparse_pin.parsers.base_parser import BaseParser
 
-1. New source can be enabled/disabled explicitly.
-2. Offline path behavior is defined and tested.
-3. Source failures degrade gracefully (warn and continue where safe).
-4. Output fields are documented and do not silently collide with existing keys.
-5. Tests cover source hit, source miss, malformed input, and offline fallback.
 
-## Testing Matrix for Extension Work
+class CustomStreamParser(BaseParser):
+    NAME = "custom-stream"
 
-Use this minimum matrix for extension PRs:
+    @classmethod
+    def detect_file(
+        cls,
+        filepath: str | Path,
+        *,
+        ctx: Optional[Any] = None,
+        allow_large: Optional[bool] = None,
+        head_bytes: Optional[bytes] = None,
+    ) -> tuple[float, list[tuple[str, str]]]:
+        return 0.85, [("format", "custom")]
 
-1. Parser contract and smoke tests for parser changes.
-2. Pass contract tests for pass changes.
-3. Enrichment-specific tests plus runmanifest checks for enrichment changes.
-4. At least one representative end-to-end run.
-
-Recommended commands:
-
-```bash
-pytest tests/test_parser_smoke.py -v
-pytest tests/test_pass_contracts.py -v
-pytest tests/test_runmanifest.py -v
-pytest tests/ -v
+    def iter_batches(self, batch_size: int = 10_000) -> Iterator[List[Dict[str, Any]]]:
+        path = self._validate_filepath_and_size()
+        # Stream records via self._open_read(path, self.ctx, ...) and yield NormalizedFindingRecord dicts
+        yield []
 ```
 
-## Documentation and Changelog Requirements
+### Parser extension checklist
 
-When extension behavior is user-visible:
+1. `detect_file()` inspects only bounded `head_bytes` (`<= 64 KiB`).
+2. `iter_batches()` emits complete `NormalizedFindingRecord` fields (`detection_mode`, `signal_reliability`, `ingestion_confidence`, `fidelity_tier`, `source_format`).
+3. Regression fixtures and tests cover detection, streaming batches, and malformed/adversarial edge cases (`tests/test_streaming_parsers.py`, `tests/test_xxe_hardening.py`).
 
-1. Update `documentation/docs/Usage.md` as needed.
-2. Update migration/troubleshooting docs if semantics changed.
-3. Add changelog notes in `CHANGELOG.md`.
+---
 
-When extension behavior is architecture-impacting:
+## Playbook 2: Add or Extend a DuckDB Repository Query or Pass
 
-1. Add or update an ADR using [ADR Workflow](ADR%20Workflow.md).
-2. Complete [Architecture Review Checklist](Architecture%20Review%20Checklist.md) in the PR description.
+### Where to implement
+
+- **Schema & workspace lifecycle:** `src/vulnparse_pin/storage/schema.sql`, `src/vulnparse_pin/storage/db.py` (`VppDatabase`).
+- **Parameterized repository helpers:** `src/vulnparse_pin/storage/repositories.py`.
+- **Derived pass:** `src/vulnparse_pin/core/passes/<PassName>/`, wired into `run_v2_duckdb_pipeline()` (`src/vulnparse_pin/core/passes/__init__.py`).
+
+### Rules for DuckDB extensions
+
+1. **Parameterized SQL only:** Never interpolate user/scanner strings into SQL. Use `?` parameter bindings and explicit allowlists for sort/table identifiers.
+2. **Deterministic ordering:** Every query driving scores, triage, diffing, or UI pagination must end with deterministic tie-breakers (`asset_id ASC` / `finding_id ASC`).
+3. **Bulk ingestion via Appender:** Batch writes (`> 100` rows) must stage via `TEMP TABLE` + `conn.appender(...)` inside `BEGIN TRANSACTION` / `COMMIT`.
+4. **Pass DAG isolation:** Declare `name`, semantic `version`, and `requires_passes` on the `Pass` subclass, write outputs to `.vpp.db` tables for the active `run_id`, and return `DerivedPassResult`.
+5. **Test coverage:** Update `tests/test_storage_duckdb.py`, `tests/test_pass_contracts.py`, and `tests/test_iter2_cross_component.py`.
+
+---
+
+## Playbook 3: Add a New Threat-Intel Source or Triage Profile
+
+### Enrichment sources
+
+1. Implement source loading inside `EnrichmentSourceLoader` (`src/vulnparse_pin/app/enrichment_source_loader.py`).
+2. If maintaining a local SQLite cache, inherit or mirror `_SignedSQLiteFeedCache` (`0o600` POSIX perms, `S_IWOTH` rejection, `VP_SQLITE_HMAC_KEY` anti-downgrade, `.tampered.<UTCSTAMP>` quarantine, `<= 900`-parameter SQLite chunking).
+3. If fetching over HTTPS, use `_open_https_stream()` / `stream_https_get_bytes()` (`allow_redirects=False`, per-hop HTTPS validation, bounded byte cap).
+4. Wire snapshot hydration into `populate_enrichment_snapshots()` (`src/vulnparse_pin/app/enrichment.py`), expose health in `vpp intel status` / `vpp intel sync` (`src/vulnparse_pin/cli/commands.py`), and update `tests/test_intel_v2.py` + `tests/test_iter1_intel_sec.py`.
+
+### Triage profiles (`Triage@2.0`)
+
+1. Register profile normalization in `normalize_triage_profile()` (`src/vulnparse_pin/core/config_validator.py`) and `cli/args.py`.
+2. Implement deterministic SSVC / SLA mapping in `TriageDecisionPass` (`src/vulnparse_pin/core/passes/Triage/triage_pass.py`) while preserving `DecisionsRegistry` (`decisions.yaml`) assumption checks and `static_sast_p1_cap`.
+3. Verify `DiffEngine` (`src/vulnparse_pin/core/diff_engine.py`) and `renderer.py` Dossier/Roadmap templates handle the profile cleanly (`tests/test_bod_26_04.py`, `tests/test_diff_engine.py`, `tests/test_reporting_v2.py`).
+
+---
+
+## Verification Commands
+
+```bash
+pytest tests/test_streaming_parsers.py tests/test_xxe_hardening.py -v
+pytest tests/test_storage_duckdb.py tests/test_pass_contracts.py -v
+pytest tests/test_intel_v2.py tests/test_iter1_intel_sec.py -v
+pytest tests/test_bod_26_04.py tests/test_diff_engine.py tests/test_reporting_v2.py -v
+pytest tests/test_cli_v2.py tests/test_iter2_cross_component.py -v
+```
 
 ## Related Docs
 
 - [Architecture](Architecture.md)
+- [Architecture Review Checklist](Architecture%20Review%20Checklist.md)
 - [Detection and Parsing](Detection%20and%20Parsing.md)
 - [Pipeline System](Pipeline%20System.md)
 - [Enrichment Seam Contract](Enrichment%20Seam%20Contract.md)
 - [Config Seam Contract](Config%20Seam%20Contract.md)
-- [Testing Guide](Testing%20Guide.md)
 - [Contributing](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/CONTRIBUTING.md)

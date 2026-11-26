@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """Regenerate src/vulnparse_pin/resources/openvas_updated_test.xml with 30 profiles.
 
 Headline profiles (10): appear exactly once per asset — guarantees TopN k=5 picks distinct titles.

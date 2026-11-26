@@ -1,0 +1,28 @@
+version: v2
+defaults:
+  criticality: medium
+  internet_facing: false
+rules:
+  - id: edge-api
+    aliases:
+      - "203.0.113.10"
+      - "edge-api.acme.test"
+      - "https://edge-api.acme.test"
+      - "ghcr.io/acme/edge-api"
+    internet_facing: true
+    criticality: critical
+    owner: platform-sec@acme.test
+    env:
+      - prod
+      - dmz
+    tags:
+      tier: tier0
+  - id: internal-legacy-net
+    cidrs:
+      - "10.20.0.0/16"
+    internet_facing: false
+    criticality: medium
+    owner: core-infra@acme.test
+    env:
+      - prod
+      - internal

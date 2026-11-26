@@ -1,203 +1,85 @@
 # Attack Capability Inference (ACI) Feature Explanation
 
-This page explains what ACI is, what problem it solves, what data it uses, and how to use it responsibly in vulnerability triage workflows.
+This page explains what `ACI@2.0` is, what problem it solves across CVE and non-CVE scanner findings, what DuckDB inputs it consumes, and how its outputs appear in scoring, triage, the Textual TUI, and Decision Defense Dossiers.
 
-## Why ACI exists
+## Why ACI Exists
 
-Many environments have thousands of findings with similar CVSS and similar enrichment signals. Analysts still need a practical way to answer:
+Vulnerability scanners emit thousands of findings across Nessus, OpenVAS, Qualys, Trivy/Grype/Semgrep/CodeQL SARIF, and Nuclei JSONL. Analysts still need a deterministic way to answer:
 
-- Which findings imply meaningful attacker capability?
-- Which findings combine into realistic attack pathways?
-- Which assets should be triaged first when score ties exist?
+- Which findings imply high-impact attacker capability (e.g., `remote_execution`, `command_execution`, `auth_bypass`, `sql_injection`, `deserialization`, `ssrf`), especially when **no CVE exists** (Track B `exposure_weakness`)?
+- Which findings combine into multi-step attack pathway candidates (`chain_candidates`)?
+- Which findings should break ties inside `TopN@2.0` and qualify for SSVC `automatable` / `technical_impact=total` escalation in `Triage@2.0`?
 
-ACI adds a deterministic, explainable inference layer that helps answer those questions.
+ACI adds a deterministic, explainable inference pass that preserves raw scanner truth while feeding structured capability signals into `Scoring@3.0`, `Triage@2.0`, and `TopN@2.0`.
 
-Methodology note:
+## What ACI@2.0 Is
 
-- VulnParse-Pin triage methodology is real-world impact probability first: prioritize findings by the highest near-term likelihood of meaningful operational impact.
-- This is a default decision model, not a universal mandate. Teams should tune ACI and TopN configuration and policy to their own environment, risk appetite, compliance duties, and business goals.
+`ACIV2Pass` (`ACI@2.0` in `src/vulnparse_pin/core/passes/ACI/aci_pass.py`) is the default-enabled DuckDB-first pass that:
 
-## What ACI is
+1. Streams findings from `.vpp.db` joined with `finding_cves`, `enrichment_snapshots`, and `finding_evidence`.
+2. Extracts normalized signals from text, structured Nuclei/SARIF tags, CWE IDs, normalized `scanner_sig` rule IDs (`_scan_sig`), affected remote ports, and KEV/exploit flags.
+3. Evaluates capability rules (with guardrails against generic remote-port or protocol-only false positives) and multi-capability chain rules.
+4. Computes bounded `confidence` (`0.0–1.0`) and `uplift_score` (`0.0–max_uplift`).
+5. Persists per-finding results into the DuckDB `aci_signals` table and emits `ACI@2.0` metrics/semantics.
 
-ACI is a derived pass (`ACI@1.0`) that:
+## What ACI Is Not
 
-1. Extracts normalized signals from finding evidence
-2. Maps signals to capability hypotheses
-3. Optionally detects multi-capability chain candidates
-4. Computes bounded confidence and bounded uplift
-5. Emits finding and asset semantics for downstream ranking and reporting
+ACI is decision support—not:
 
-ACI data is stored under:
-
-- `derived["ACI@1.0"]`
-
-## What ACI is not
-
-ACI is not:
-
-- proof of exploit success
+- proof of exploit success or network reachability
 - proof of compromise
-- replacement for analyst validation
-- replacement for environment-specific controls assessment
+- a replacement for analyst validation or compensating-control review
 
-The feature is designed as evidence-based decision support.
+## Inputs ACI@2.0 Uses
 
-## Inputs ACI uses
+In the v2.0 DuckDB pipeline, `ACIV2Pass` joins:
 
-ACI derives signals from existing finding context, including:
+- **`findings`**: `title`, `description`, `plugin_output`, `references_json`, `tags_json`, `cwes_json`, `affected_port`, `exploit_evidence`
+- **`finding_cves` + `enrichment_snapshots`**: `BOOL_OR` union of `in_kev` and `verified_exploit` across **all** linked CVEs (both `primary_cve` and secondary CVEs)
+- **`finding_evidence`**: distinct `scanner_sig` values aggregated across deduplicated cross-scanner evidence rows, parsed via `_scan_sig`
 
-- finding title and description
-- plugin output
-- references
-- CVE analysis text fields (`description`, `summary`, `vector`)
-- exploit flags and KEV flags
-- selected service port hints
+## Outputs ACI@2.0 Produces
 
-Signal extraction is substring-based and normalized to lower-case semantics.
+### DuckDB `aci_signals` Table
 
-## Outputs ACI produces
+For every finding in a run, `ACIV2Pass` writes one row to `aci_signals`:
 
-### Finding semantics
+- `capabilities_json`: sorted list of inferred capabilities (e.g., `["auth_bypass", "remote_execution"]`)
+- `chains_json`: matched attack pathway labels (e.g., `["Initial access and credential theft pathway"]`)
+- `matched_tokens_json`: normalized tokens/signals that triggered inference
+- `confidence`: bounded float in `[0.0, 1.0]`
+- `uplift_score`: bounded float in `[0.0, max_uplift]`
 
-For each finding, ACI can emit:
+### Metrics & Derived Output
 
-- confidence score
-- confidence factors
-- inferred capabilities
-- chain candidates
-- CWE IDs
-- evidence list
-- exploit boost applied
-- rank uplift
+For runs up to `10,000` findings, `DerivedPassResult` also populates `finding_semantics` in memory (`asset_semantics` up to `50,000` assets) alongside aggregate `metrics` (`total_findings`, `inferred_findings`, `coverage_ratio`, `capabilities_detected`, `chain_candidates_detected`, `confidence_buckets`, `uplifted_findings`). Larger runs stream directly through DuckDB without holding per-finding semantic objects in RAM.
 
-### Asset semantics
+## How ACI Integrates with Scoring@3.0, Triage@2.0, and TopN@2.0
 
-For each asset, ACI can emit:
+Unlike v1.x (where `ACI@1.0` ran after `Scoring@2.0`), in v2.0 **`ACI@2.0` runs before `Scoring@3.0`**:
 
-- weighted confidence
-- max confidence
-- capability count
-- chain candidate count
-- ranked finding count
-- aggregate rank uplift
+1. **Track B (`exposure_weakness`) in `Scoring@3.0`:** Non-CVE findings (Nuclei, Semgrep, misconfigurations) receive `+3.5` for high-impact ACI capabilities (or `+2.0` for general ACI capabilities) and `+1.0` for `aci_chains`, before applying `signal_reliability`.
+2. **SSVC & Guardrails in `Triage@2.0`:**
+   - High-impact capabilities/tokens (`remote_execution`, `command_execution`, `auth_bypass`, `default-login`, `rce`) feed SSVC `exploitation=active` (when `scoring_track == "exposure_weakness"` and `signal_reliability >= 0.90`), `automatable=true`, and `technical_impact=total`.
+   - `aci_chains` elevate findings to `P2` (`Attend`, `60-day` in `bod-26-04`; `14-day` in `default`).
+   - High-impact ACI capabilities/chains can corroborate internet-facing `High`/`Critical` `static_sast` findings under the SAST P1-cap guardrail.
+3. **Tie-Breaking in `TopN@2.0`:** `TopNV2Pass` orders ties after `(priority_tier, operational_score, epss_score)` by `aci.uplift_score DESC`.
 
-### Metrics snapshot
+## Display in `vpp ui` and Decision Defense Dossiers
 
-Metrics include:
+- **`vpp ui`:** The finding detail inspector renders `ACI Caps` and `ACI Chains` directly from `aci_signals` (with `score_trace` fallback).
+- **Decision Defense Dossiers (`dossier.html`, `dossier.md`):** Prioritized finding blocks display **ACI Signals** (`capabilities`, `chains`, `confidence`, `uplift`).
+- **JSON & CSV Exports:** `namespace` JSON includes `derived["ACI@2.0"]` (`capabilities`, `chains`, `matched_tokens`, `confidence`, `uplift_score`); `full` and `audit` CSV profiles include `aci_capabilities`, `aci_chains`, `aci_confidence`, and `aci_uplift_score`.
 
-- total findings
-- inferred findings
-- coverage ratio
-- capability counts
-- chain counts
-- confidence bucket counts
-- uplifted finding count
+## Guardrails and Token Vocabulary Governance
 
-## How ACI affects ranking
+- **Hybrid token model (`tn_triage.json`):** Maintainer-owned core tokens + word-boundary short-token matching (`rce`, `sqli`, `lfi`, `smb`, `ssh`, `rdp`, `rpc`, `xss`) + structured tag/CWE maps + user `signal_aliases`, `disabled_core_tokens`, or `token_mode: "replace"`.
+- **Precision guardrails:** `remote_service` port matches alone never trigger `remote_execution` or `initial_access`, and bare protocol tokens (`smb`, `ssh`, `rdp`, `rpc`) require lateral/exploit/credential context before inferring `lateral_movement`.
 
-ACI uses bounded uplift and is integrated as a ranking signal. It does not rewrite source truth.
-
-High-level behavior:
-
-- confidence below `min_confidence` yields no uplift
-- confidence above threshold yields uplift up to `max_uplift`
-- TopN uses these signals to improve ordering in near-tie situations
-
-This keeps ACI influence controlled and auditable.
-
-## Token vocabulary model
-
-ACI uses a hybrid vocabulary governance model:
-
-- Maintainer-owned core token baseline
-- User-extensible aliases (`signal_aliases`)
-- Optional suppression (`disabled_core_tokens`)
-- Optional full replacement (`token_mode: replace`)
-
-Benefits:
-
-- safe defaults for broad environments
-- flexibility for organization-specific language
-- stable behavior unless explicitly tuned
-
-## Capability and chain rules
-
-### Capability rules
-
-Capability rules map one or more signals to a capability label with a weight.
-
-Examples of capability labels in the default policy:
-
-- `initial_access`
-- `remote_execution`
-- `privilege_escalation`
-- `credential_access`
-- `information_disclosure`
-- `persistence`
-- `local_file_inclusion`
-- `sql_injection`
-- `auth_bypass`
-- `command_execution`
-- `secrets_exposure`
-- `lateral_movement`
-
-### Chain rules
-
-Chain rules identify pathway candidates using `requires_all` capability sets.
-
-Examples:
-
-- initial access and credential theft pathway
-- file inclusion to information disclosure pathway
-- command execution to privilege escalation pathway
-
-## Reporting behavior
-
-Markdown reporting includes ACI-specific sections that summarize:
-
-- ACI availability and coverage
-- top inferred capabilities
-- top assets mapped to findings and inferred capabilities
-- chain candidate context
-- explicit disclaimer that capabilities are inferred and require due diligence
-
-This is provided in both executive and technical views.
-
-## Guardrails and validation
-
-ACI config is guarded by:
-
-1. schema constraints (field shape, type, ranges)
-2. semantic checks (duplicates, normalization, required arrays)
-
-Guardrails prevent:
-
-- malformed rule IDs
-- invalid token alias entries
-- out-of-range weights and confidence parameters
-- empty signal or chain definitions
-
-## Recommended adoption pattern
-
-1. Start with default ACI policy and `enabled: true`.
-2. Observe one to two scan cycles with no custom aliases.
-3. Add only environment-specific aliases.
-4. Tune capability weights conservatively.
-5. Add chain rules for workflows you actively triage.
-6. Keep runmanifest artifacts for reviewability.
-
-## Operational value summary
-
-ACI improves triage operations by providing:
-
-- better ordering within dense score clusters
-- explicit capability hypotheses for analyst review
-- repeatable pathway hints for remediation planning
-- explainable, policy-driven behavior rather than opaque scoring jumps
-
-## Related docs
+## Related Docs
 
 - [ACI Rule Authoring Tutorial](ACI%20Rule%20Authoring%20Tutorial.md)
 - [ACI Technical Deep Dive](ACI%20Technical%20Deep%20Dive.md)
+- [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)
 - [Output Interpretation](Output%20Interpretation.md)
 - [RunManifest Overview](RunManifest.md)

@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnparse-pin.local/schemas/assets.schema.json",
+  "title": "VulnParse-Pin Assets Inventory & Pattern Rules Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["v1", "v2"]
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "criticality": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"]
+        },
+        "internet_facing": {
+          "type": ["boolean", "null"]
+        },
+        "owner": {
+          "type": ["string", "null"]
+        },
+        "env": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}},
+            {"type": "null"}
+          ]
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AssetRule"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/InlineDecisionEntry"
+      }
+    }
+  },
+  "$defs": {
+    "AssetRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "asset_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "aliases": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "cidrs": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "hostnames": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "uris": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "images": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "repos": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "internet_facing": {
+          "type": ["boolean", "null"]
+        },
+        "criticality": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"]
+        },
+        "owner": {
+          "type": ["string", "null"]
+        },
+        "env": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}},
+            {"type": "null"}
+          ]
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "InlineDecisionEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "cve_or_rule_id", "status", "rationale"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "asset_id": {"type": ["string", "null"]},
+        "asset_pattern": {"type": ["string", "null"]},
+        "cve_or_rule_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "status": {"type": "string", "enum": ["deferred", "accepted", "mitigated"]},
+        "rationale": {"type": "string", "minLength": 1},
+        "owner": {"type": ["string", "null"]},
+        "created_at": {"type": ["string", "null"]},
+        "expires_at": {"type": ["string", "null"]},
+        "assumptions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "in_kev": {"type": ["boolean", "null"]},
+            "max_epss": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+            "max_epss_percentile": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+            "internet_facing": {"type": ["boolean", "null"]},
+            "max_cvss": {"type": ["number", "null"], "minimum": 0.0, "maximum": 10.0}
+          }
+        }
+      }
+    }
+  }
+}

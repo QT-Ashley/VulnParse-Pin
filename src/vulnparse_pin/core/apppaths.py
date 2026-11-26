@@ -1,15 +1,10 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from __future__ import annotations
 import os
 import stat
+import sys
 from typing import TYPE_CHECKING, Tuple
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,8 +38,7 @@ def _portable_base() -> Path:
     - Else use current working directory or script dir.
     """
     # PyInstaller
-    if getattr(os, "frozen", False):
-        import sys
+    if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
 
     # Run from source/venv/etc

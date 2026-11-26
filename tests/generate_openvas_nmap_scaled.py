@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """
 Generate a scaled OpenVAS XML (15 assets, 100 findings, all with real CVEs)
 and a matching Nmap XML covering all 15 IPs in 192.168.170.0/24 with

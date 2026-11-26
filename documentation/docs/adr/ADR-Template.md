@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: YYYY-MM-DD
 - Deciders: <names or team>
-- Tags: <parser|pass|enrichment|schema|runtime-policy>
+- Tags: <parser|storage|pass|enrichment|triage|schema|runtime-policy|security>
 
 ## Context
 
@@ -33,16 +33,17 @@ Negative:
 
 1. 
 
-## Compatibility Impact
+## Compatibility & Licensing Impact
 
 - Classification: none | additive | breaking
-- Affected contracts:
+- Affected contracts (DuckDB schema, JSON schemas, CLI, RunManifest):
+- Clean-room Apache-2.0 dependency compliance verified: yes | no
 - Migration guidance:
 
 ## Test and Validation Plan
 
-1. Contract tests:
-2. Regression tests:
+1. Contract & schema tests:
+2. Security / adversarial tests:
 3. Runtime verification:
 
 ## Rollout and Rollback

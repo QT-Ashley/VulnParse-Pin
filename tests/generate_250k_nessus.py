@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """
 Generate a large Nessus XML file with 50 assets and ~250k findings
 for performance benchmarking of the NVD optimization.

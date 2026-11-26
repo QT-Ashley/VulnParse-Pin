@@ -1,11 +1,5 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 """
 Markdown report generator for executive and technical audiences.
@@ -13,7 +7,11 @@ Markdown report generator for executive and technical audiences.
 """
 
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from pathlib import Path
+from typing import Any, Optional, Union, TYPE_CHECKING
+
+from vulnparse_pin.reporting.renderer import md_escape
+from vulnparse_pin.storage.db import open_for_write_non_pfh
 
 if TYPE_CHECKING:
     from vulnparse_pin.core.classes.dataclass import RunContext, ScanResult
@@ -670,7 +668,7 @@ def _generate_executive_report(
     md = f"""# Vulnerability Scan Executive Summary
 
 **Generated:** {timestamp}  
-**Scan Period:** {overview.get('scan_timestamp', 'N/A')}
+**Scan Period:** {md_escape(overview.get('scan_timestamp', 'N/A'))}
 
 ---
 
@@ -735,7 +733,7 @@ Top capability signals:
 
     if top_capabilities:
         for cap, count in top_capabilities:
-            md += f"- `{cap}`: {int(count):,}\n"
+            md += f"- `{md_escape(cap)}`: {int(count):,}\n"
     else:
         md += "- ACI data unavailable or no capability signals inferred.\n"
 
@@ -752,7 +750,7 @@ Interpretation notes:
     if aci_zero_notes:
         md += "ACI zero-inference diagnostic:\n\n"
         for note in aci_zero_notes:
-            md += f"- {note}\n"
+            md += f"- {md_escape(note)}\n"
         md += "\n"
 
     if isinstance(decision_trace, dict) and decision_trace:
@@ -773,12 +771,12 @@ Interpretation notes:
             f"- ACI inferred findings: {int(decision_trace.get('aci_inferred_findings', 0) or 0):,}\n"
         )
         if risk_band_counts:
-            band_parts = ", ".join(f"{b}={int(c):,}" for b, c in risk_band_counts.items())
+            band_parts = ", ".join(f"{md_escape(b)}={int(c):,}" for b, c in risk_band_counts.items())
             md += f"- Findings by risk band: {band_parts}\n"
         if top_rules:
             md += "- Top exposure rule hits:\n"
             for rid, count in list(top_rules.items())[:5]:
-                md += f"  - `{rid}`: {int(count):,}\n"
+                md += f"  - `{md_escape(rid)}`: {int(count):,}\n"
         md += "\n"
 
     md += """
@@ -805,10 +803,10 @@ This view maps top-ranked assets to their top-ranked findings and inferred attac
         for asset in aci_asset_map:
             tags = asset.get("context_tags", []) if isinstance(asset, dict) else []
             md += (
-                f"### Asset `{asset['asset_id']}` ({asset['hostname']} / {asset['ip_address']})\n\n"
+                f"### Asset `{md_escape(asset['asset_id'])}` ({md_escape(asset['hostname'])} / {md_escape(asset['ip_address'])})\n\n"
             )
             if tags:
-                md += f"Context Tags: {' | '.join(tags)}\n\n"
+                md += f"Context Tags: {' | '.join(md_escape(tag) for tag in tags)}\n\n"
                 has_oal2_priority_tags = any(
                     str(tag).startswith("OAL-2 Priority:") for tag in tags
                 )
@@ -824,11 +822,19 @@ This view maps top-ranked assets to their top-ranked findings and inferred attac
             )
             if asset["findings"]:
                 for finding in asset["findings"]:
-                    capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
-                    chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
+                    capabilities = (
+                        ", ".join(md_escape(cap) for cap in finding["capabilities"])
+                        if finding["capabilities"]
+                        else "None inferred"
+                    )
+                    chains = (
+                        ", ".join(md_escape(chain) for chain in finding["chain_candidates"])
+                        if finding["chain_candidates"]
+                        else "None"
+                    )
                     md += (
-                        f"| {finding['finding_id']} ({finding['finding_title']}) | {finding['risk_band']} | {finding['score']:.2f} | "
-                        f"{capabilities} | {chains} | {finding['confidence']:.2f} | {finding['policy_lane']} |\n"
+                        f"| {md_escape(finding['finding_id'])} ({md_escape(finding['finding_title'])}) | {md_escape(finding['risk_band'])} | {finding['score']:.2f} | "
+                        f"{capabilities} | {chains} | {finding['confidence']:.2f} | {md_escape(finding['policy_lane'])} |\n"
                     )
             else:
                 md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
@@ -865,7 +871,7 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
 """
 
     for i, cve in enumerate(remediation['immediate_cves'][:5], 1):
-        md += f"{i}. `{cve}`\n"
+        md += f"{i}. `{md_escape(cve)}`\n"
 
     if not remediation['immediate_cves']:
         md += "- No immediate-action CVEs detected in this scan window.\n"
@@ -890,9 +896,9 @@ Derived risk bands below are calculated by VulnParse-Pin scoring and should be u
         agg_kev = int(risk.get('aggregated_kev_cve_count', 0) or 0)
 
         md += (
-            f"| {risk['cve']} | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
+            f"| {md_escape(risk['cve'])} | {risk['finding_risk_score']:.2f} | {md_escape(risk['risk_band'])} | "
             f"{exploit_icon} | {kev_icon} | {agg_count:,} | {agg_exploit:,} | {agg_kev:,} | "
-            f"{cvss} | {occurrences:,} | {_risk_drivers(risk)} |\n"
+            f"{md_escape(cvss)} | {occurrences:,} | {md_escape(_risk_drivers(risk))} |\n"
         )
 
     md += """
@@ -909,9 +915,9 @@ These are the recommended most vulnerable assets to target first for patching ba
 
     for asset in asset_summary['assets'][:10]:
         md += (
-            f"| {asset.get('asset_id', 'N/A')} | {asset.get('hostname') or 'N/A'} | "
-            f"{asset.get('criticality') or 'N/A'} | {asset.get('critical_findings', 0):,} | "
-            f"{asset.get('high_findings', 0):,} | {asset.get('top_cve', 'N/A')} |\n"
+            f"| {md_escape(asset.get('asset_id', 'N/A'))} | {md_escape(asset.get('hostname') or 'N/A')} | "
+            f"{md_escape(asset.get('criticality') or 'N/A')} | {asset.get('critical_findings', 0):,} | "
+            f"{asset.get('high_findings', 0):,} | {md_escape(asset.get('top_cve', 'N/A'))} |\n"
         )
 
     md += f"""
@@ -938,7 +944,7 @@ Immediate-action CVE shortlist:
 
     if remediation['immediate_cves']:
         for i, cve in enumerate(remediation['immediate_cves'][:5], 1):
-            md += f"{i}. `{cve}`\n"
+            md += f"{i}. `{md_escape(cve)}`\n"
     else:
         md += "- No immediate-action CVEs detected in this scan window.\n"
 
@@ -1089,7 +1095,7 @@ def _generate_technical_report(
 | Exploitable (Public PoC) | {overview['exploitable_findings']:,} |
 | CISA KEV Listed | {overview['kev_listed_findings']:,} |
 | GHSA Advisory Matches | {ghsa_findings:,} findings ({ghsa_refs:,} references) |
-| Scan Timestamp | {overview.get('scan_timestamp', 'N/A')} |
+| Scan Timestamp | {md_escape(overview.get('scan_timestamp', 'N/A'))} |
 
 ---
 
@@ -1103,8 +1109,8 @@ def _generate_technical_report(
 
     for asset in asset_summary['assets'][:20]:  # Limit for readability
         md += (
-            f"| {asset['asset_id']} | {asset['ip'] or 'N/A'} | {asset['hostname'] or 'N/A'} | "
-            f"{asset.get('criticality') or 'N/A'} | {asset['total_findings']:,} | {asset['risk_score']:.2f} | "
+            f"| {md_escape(asset['asset_id'])} | {md_escape(asset['ip'] or 'N/A')} | {md_escape(asset['hostname'] or 'N/A')} | "
+            f"{md_escape(asset.get('criticality') or 'N/A')} | {asset['total_findings']:,} | {asset['risk_score']:.2f} | "
             f"{asset['critical_findings']:,} | {asset['high_findings']:,} |\n"
         )
 
@@ -1169,9 +1175,9 @@ Use this distribution for remediation prioritization and queue ordering.
         agg_kev = int(risk.get('aggregated_kev_cve_count', 0) or 0)
 
         md += (
-            f"| {i} | `{risk['cve']}` | {risk['finding_risk_score']:.2f} | {risk['risk_band']} | "
-            f"{cvss} | {epss} | {exploit} | {kev} | {agg_count:,} | {agg_exploit:,} | {agg_kev:,} | "
-            f"{occurrences:,} | {_risk_drivers(risk)} |\n"
+            f"| {i} | `{md_escape(risk['cve'])}` | {risk['finding_risk_score']:.2f} | {md_escape(risk['risk_band'])} | "
+            f"{md_escape(cvss)} | {epss} | {exploit} | {kev} | {agg_count:,} | {agg_exploit:,} | {agg_kev:,} | "
+            f"{occurrences:,} | {md_escape(_risk_drivers(risk))} |\n"
         )
 
     md += f"""
@@ -1207,7 +1213,7 @@ Interpretation notes:
     if aci_zero_notes:
         md += "### Zero-Inference Diagnostic\n\n"
         for note in aci_zero_notes:
-            md += f"- {note}\n"
+            md += f"- {md_escape(note)}\n"
         md += "\n"
 
     md += """
@@ -1220,7 +1226,7 @@ Interpretation notes:
 
     if top_capabilities:
         for cap, count in top_capabilities[:10]:
-            md += f"| {cap} | {int(count):,} |\n"
+            md += f"| {md_escape(cap)} | {int(count):,} |\n"
     else:
         md += "| _No capability signals inferred_ | 0 |\n"
 
@@ -1234,7 +1240,7 @@ Interpretation notes:
 
     if top_chains:
         for chain, count in top_chains[:10]:
-            md += f"| {chain} | {int(count):,} |\n"
+            md += f"| {md_escape(chain)} | {int(count):,} |\n"
     else:
         md += "| _No chain candidates inferred_ | 0 |\n"
 
@@ -1266,7 +1272,7 @@ Findings by risk band:
     _dts_risk_bands = (decision_trace.get("findings_by_risk_band", {}) if isinstance(decision_trace, dict) else {}) or {}
     if isinstance(_dts_risk_bands, dict) and _dts_risk_bands:
         for band, count in _dts_risk_bands.items():
-            md += f"- **{band.title()}**: {int(count):,}\n"
+            md += f"- **{md_escape(str(band).title())}**: {int(count):,}\n"
     else:
         md += "- No ranked finding data available.\n"
 
@@ -1274,7 +1280,7 @@ Findings by risk band:
 
     if isinstance(decision_trace, dict) and isinstance(decision_trace.get("exposure_rule_hit_counts", {}), dict) and decision_trace.get("exposure_rule_hit_counts"):
         for rid, count in list(decision_trace.get("exposure_rule_hit_counts", {}).items())[:10]:
-            md += f"- `{rid}`: {int(count):,}\n"
+            md += f"- `{md_escape(rid)}`: {int(count):,}\n"
     else:
         md += "- No exposure rule-hit trace data available.\n"
 
@@ -1302,10 +1308,10 @@ This section maps top-ranked assets to top-ranked findings and their inferred at
         for asset in aci_asset_map:
             tags = asset.get("context_tags", []) if isinstance(asset, dict) else []
             md += (
-                f"### Asset `{asset['asset_id']}` ({asset['hostname']} / {asset['ip_address']})\n\n"
+                f"### Asset `{md_escape(asset['asset_id'])}` ({md_escape(asset['hostname'])} / {md_escape(asset['ip_address'])})\n\n"
             )
             if tags:
-                md += f"Context Tags: {' | '.join(tags)}\n\n"
+                md += f"Context Tags: {' | '.join(md_escape(tag) for tag in tags)}\n\n"
                 has_oal2_priority_tags = any(
                     str(tag).startswith("OAL-2 Priority:") for tag in tags
                 )
@@ -1321,11 +1327,19 @@ This section maps top-ranked assets to top-ranked findings and their inferred at
             )
             if asset["findings"]:
                 for finding in asset["findings"]:
-                    capabilities = ", ".join(finding["capabilities"]) if finding["capabilities"] else "None inferred"
-                    chains = ", ".join(finding["chain_candidates"]) if finding["chain_candidates"] else "None"
+                    capabilities = (
+                        ", ".join(md_escape(cap) for cap in finding["capabilities"])
+                        if finding["capabilities"]
+                        else "None inferred"
+                    )
+                    chains = (
+                        ", ".join(md_escape(chain) for chain in finding["chain_candidates"])
+                        if finding["chain_candidates"]
+                        else "None"
+                    )
                     md += (
-                        f"| {finding['finding_id']} ({finding['finding_title']}) | {finding['risk_band']} | {finding['score']:.2f} | "
-                        f"{capabilities} | {chains} | {finding['confidence']:.2f} | {finding['policy_lane']} |\n"
+                        f"| {md_escape(finding['finding_id'])} ({md_escape(finding['finding_title'])}) | {md_escape(finding['risk_band'])} | {finding['score']:.2f} | "
+                        f"{capabilities} | {chains} | {finding['confidence']:.2f} | {md_escape(finding['policy_lane'])} |\n"
                     )
             else:
                 md += "| _No ranked findings available_ | N/A | N/A | None inferred | None | 0.00 | N/A |\n"
@@ -1372,7 +1386,7 @@ This section maps top-ranked assets to top-ranked findings and their inferred at
 | Signal | Value |
 |--------|-------|
 | Report Generated At | {timestamp} |
-| Scan Timestamp | {overview.get('scan_timestamp', 'N/A')} |
+| Scan Timestamp | {md_escape(overview.get('scan_timestamp', 'N/A'))} |
 | Integrity Reference | Use runmanifest verification for artifact-level trust validation |
 
 Provenance note: this markdown report summarizes derived outputs; verifiable integrity and decision-chain validation are provided by the runmanifest artifact when generated.
@@ -1416,3 +1430,109 @@ Analyst reminder:
 """
 
     return md
+
+
+def _write_markdown_output(
+    output_path: Union[str, Path],
+    content: str,
+    *,
+    pfh: Optional[Any] = None,
+    label: str = "Markdown Report",
+) -> Path:
+    target = Path(output_path)
+    if pfh is not None:
+        resolved = pfh.ensure_writable_file(
+            target,
+            label=label,
+            create_parents=True,
+            overwrite=True,
+        )
+        with pfh.open_for_write(resolved, mode="w", encoding="utf-8", label=label) as f:
+            f.write(content)
+        return Path(resolved)
+
+    with open_for_write_non_pfh(target, label=label, encoding="utf-8") as f:
+        f.write(content)
+    return target
+
+
+def generate_dossier_markdown_report(
+    db: Any,
+    run_id: str,
+    output_path: Union[str, Path],
+    *,
+    finding_id: Optional[str] = None,
+    diff_report: Optional[Any] = None,
+    template_dir: Optional[Union[str, Path]] = None,
+    pfh: Optional[Any] = None,
+) -> Path:
+    """Delegate DuckDB Decision Defense Dossier rendering to `vulnparse_pin.reporting.renderer`."""
+    from vulnparse_pin.reporting.renderer import render_dossier_markdown
+
+    content = render_dossier_markdown(
+        db,
+        run_id,
+        finding_id=finding_id,
+        diff_report=diff_report,
+        template_dir=template_dir,
+    )
+    return _write_markdown_output(output_path, content, pfh=pfh, label="Decision Defense Dossier Markdown")
+
+
+def generate_executive_roadmap_report(
+    db: Any,
+    run_id: str,
+    output_path: Union[str, Path],
+    *,
+    diff_report: Optional[Any] = None,
+    template_dir: Optional[Union[str, Path]] = None,
+    pfh: Optional[Any] = None,
+) -> Path:
+    """Delegate DuckDB Executive Roadmap rendering to `vulnparse_pin.reporting.renderer`."""
+    from vulnparse_pin.reporting.renderer import render_executive_roadmap_markdown
+
+    content = render_executive_roadmap_markdown(
+        db,
+        run_id,
+        diff_report=diff_report,
+        template_dir=template_dir,
+    )
+    return _write_markdown_output(output_path, content, pfh=pfh, label="Executive Roadmap Markdown")
+
+
+def generate_duckdb_markdown_report(
+    db: Any,
+    run_id: str,
+    output_path: Union[str, Path],
+    *,
+    report_type: str = "dossier",
+    finding_id: Optional[str] = None,
+    diff_report: Optional[Any] = None,
+    template_dir: Optional[Union[str, Path]] = None,
+    pfh: Optional[Any] = None,
+) -> Path:
+    """Render and write a DuckDB v2 Markdown report ('dossier' or 'roadmap'/'executive')."""
+    kind = str(report_type or "dossier").strip().lower()
+    if kind in ("dossier", "technical"):
+        return generate_dossier_markdown_report(
+            db,
+            run_id,
+            output_path,
+            finding_id=finding_id,
+            diff_report=diff_report,
+            template_dir=template_dir,
+            pfh=pfh,
+        )
+    if kind in ("roadmap", "executive", "executive_roadmap"):
+        return generate_executive_roadmap_report(
+            db,
+            run_id,
+            output_path,
+            diff_report=diff_report,
+            template_dir=template_dir,
+            pfh=pfh,
+        )
+    raise ValueError(
+        f"Unknown DuckDB report_type '{report_type}'. Expected 'dossier' or 'roadmap'/'executive'."
+    )
+

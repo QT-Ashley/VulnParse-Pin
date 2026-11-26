@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 from vulnparse_pin.utils.csv_exporter import (
     _sanitize_csv_cell,
@@ -377,3 +379,125 @@ def test_csv_export_does_not_write_doubled_crlf_on_windows_style_writer(tmp_path
     export_to_csv(ctx, scan, csv_path=csvfile)
 
     assert b"\r\r\n" not in csvfile.read_bytes()
+
+
+def test_export_duckdb_csv_sanitizes_all_cells_and_supports_all_profiles(tmp_path):
+    import csv
+    import pytest
+    from vulnparse_pin.storage.db import VppDatabase
+    from vulnparse_pin.storage.repositories import (
+        ensure_run,
+        ingest_normalized_batches,
+        upsert_enrichment_snapshots,
+        upsert_scores,
+        upsert_triage_decisions,
+    )
+    from vulnparse_pin.utils.csv_exporter import (
+        V2_ANALYST_PROFILE_COLUMNS,
+        V2_AUDIT_PROFILE_COLUMNS,
+        V2_FULL_PROFILE_COLUMNS,
+        export_duckdb_csv,
+    )
+
+    db = VppDatabase(tmp_path / "csv_v2.db")
+    run_id = "run-csv-v2"
+    ensure_run(db, run_id, vpp_version="2.0.0", profile="bod-26-04")
+    ingest_normalized_batches(
+        db,
+        run_id,
+        [
+            [
+                {
+                    "ip_address": "10.0.0.5",
+                    "hostname": "=HOST_EVIL()",
+                    "source_format": "nessus-xml",
+                    "scanner_sig": "nessus:1",
+                    "title": "+SUM(1,2)\r\nline2",
+                    "description": "\u2000@HYPERLINK(\"http://evil\")",
+                    "solution": "-IMPERSONATION",
+                    "severity": "Critical",
+                    "cves": ["CVE-2024-5555"],
+                    "detection_mode": "credentialed_host",
+                    "ingestion_confidence": 0.95,
+                }
+            ]
+        ],
+    )
+    fid = db.query_findings_page(run_id)[0][0]["finding_id"]
+    aid = db.query_findings_page(run_id)[0][0]["asset_id"]
+    upsert_enrichment_snapshots(
+        db,
+        run_id,
+        [
+            {
+                "cve_id": "CVE-2024-5555",
+                "cvss_score": 9.8,
+                "cvss_version": "3.1",
+                "cvss_provenance": "NVD",
+                "epss_score": 0.45,
+                "epss_percentile": 0.98,
+                "in_kev": True,
+                "verified_exploit": True,
+            }
+        ],
+    )
+    upsert_scores(
+        db,
+        run_id,
+        [
+            {
+                "finding_id": fid,
+                "asset_id": aid,
+                "scoring_track": "cve_threat",
+                "raw_risk_score": 14.5,
+                "operational_score": 9.0625,
+                "risk_band": "Critical",
+                "score_trace": {"cvss_provenance": "NVD"},
+            }
+        ],
+    )
+    upsert_triage_decisions(
+        db,
+        run_id,
+        [
+            {
+                "finding_id": fid,
+                "asset_id": aid,
+                "profile": "bod-26-04",
+                "priority_tier": "P1",
+                "oal_compat": "OAL-1",
+                "ssvc_action": "Act",
+                "sla_bucket": "3-day + Forensic Triage",
+                "sla_days": 3,
+                "decision_status": "active",
+                "rationale_summary": "\t=TAB_EVIL()",
+            }
+        ],
+    )
+
+    for prof, expected_cols in (
+        ("full", V2_FULL_PROFILE_COLUMNS),
+        ("analyst", V2_ANALYST_PROFILE_COLUMNS),
+        ("audit", V2_AUDIT_PROFILE_COLUMNS),
+    ):
+        out_csv = tmp_path / f"v2_{prof}.csv"
+        export_duckdb_csv(db, run_id, out_csv, profile=prof)
+        with out_csv.open("r", encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            assert reader.fieldnames == expected_cols
+            row = next(reader)
+            assert row["asset_hostname"] == "'=host_evil()"
+            assert row["title"] == "'+SUM(1,2)\\nline2"
+            assert row["epss_percentile"] == "0.98"
+            assert row["cvss_provenance"] == "NVD"
+            assert row["cvss_version"] == "3.1"
+            assert row["ssvc_action"] == "Act"
+            assert row["sla_bucket"] == "3-day + Forensic Triage"
+            if prof == "full":
+                assert row["description"] == "\u2002'@HYPERLINK(\"http://evil\")"
+                assert row["solution"] == "'-IMPERSONATION"
+            if prof == "audit":
+                assert row["rationale_summary"] == "\t'=TAB_EVIL()"
+
+    with pytest.raises(ValueError, match="Unknown csv_profile"):
+        export_duckdb_csv(db, run_id, tmp_path / "bad.csv", profile="unknown")

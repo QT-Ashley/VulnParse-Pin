@@ -1,0 +1,10 @@
+VulnParse-Pin (vpp)
+Copyright 2025-2026 Quashawn Ashley
+
+This product includes software developed by Quashawn Ashley
+(https://github.com/QT-Ashley/VulnParse-Pin).
+
+This product incorporates CVSS v4.0 macrovector lookup data derived from
+FIRST.ORG's cvss-v4-calculator (https://github.com/FIRSTdotorg/cvss-v4-calculator),
+Copyright (c) 2023 FIRST.ORG, Inc., Red Hat, and contributors, licensed under
+the BSD-2-Clause License.

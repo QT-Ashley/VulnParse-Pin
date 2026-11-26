@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VulnParse-Pin Decision Defense Dossier — {{ run.run_id }}</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #475569;
+      --p1: #991b1b;
+      --p1-bg: #fee2e2;
+      --p2: #9a3412;
+      --p2-bg: #ffedd5;
+      --p3: #854d0e;
+      --p3-bg: #fef9c3;
+      --p4: #1e40af;
+      --p4-bg: #dbeafe;
+      --ok: #166534;
+      --ok-bg: #dcfce7;
+      --warn: #b91c1c;
+      --warn-bg: #fef2f2;
+      --shadow-bg: #fffbeb;
+      --shadow-border: #d97706;
+      --code-bg: #f1f5f9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0 0 8px 0; font-size: 24px; }
+    h2 {
+      margin: 28px 0 12px 0;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--border);
+      font-size: 19px;
+    }
+    h3 { margin: 18px 0 8px 0; font-size: 16px; }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .alert {
+      padding: 14px 18px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      border-left: 5px solid;
+    }
+    .alert-danger { background: var(--warn-bg); border-color: var(--warn); color: #7f1d1d; }
+    .alert-warning { background: var(--shadow-bg); border-color: var(--shadow-border); color: #78350f; }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .kpi-val { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge-p1, .badge-kev, .badge-inv { background: var(--p1-bg); color: var(--p1); }
+    .badge-p2 { background: var(--p2-bg); color: var(--p2); }
+    .badge-p3 { background: var(--p3-bg); color: var(--p3); }
+    .badge-p4 { background: var(--p4-bg); color: var(--p4); }
+    .badge-ok { background: var(--ok-bg); color: var(--ok); }
+    .badge-shadow { background: var(--shadow-bg); color: #92400e; border: 1px solid var(--shadow-border); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .card-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .detail-list { margin: 8px 0; padding-left: 18px; }
+    .detail-list li { margin: 4px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      background: var(--surface);
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 7px 10px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: break-word;
+    }
+    th { background: #f1f5f9; font-weight: 600; white-space: nowrap; }
+    code {
+      background: var(--code-bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+    }
+    .compliance-box {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-top: 14px;
+    }
+    footer {
+      margin-top: 28px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media print {
+      body { background: #ffffff; padding: 0; font-size: 11px; }
+      .card, header, .kpi-card, table { page-break-inside: avoid; }
+      h2 { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>VulnParse-Pin Decision Defense Dossier</h1>
+      <div class="meta-grid">
+        <div><strong>Run ID:</strong> <code>{{ run.run_id }}</code></div>
+        <div><strong>Profile:</strong> <code>{{ run.profile }}</code></div>
+        <div><strong>Scope:</strong> {% if single_finding_mode %}Single Finding (<code>{{ requested_finding_id }}</code>){% else %}Full Run{% endif %}</div>
+        <div><strong>Generated (UTC):</strong> {{ generated_at_utc }}</div>
+        <div><strong>VPP Version:</strong> {{ run.vpp_version }}</div>
+        <div><strong>RunManifest Digest:</strong> <code>{{ run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)' }}</code></div>
+      </div>
+    </header>
+
+    {% if invalidated_findings %}
+    <div class="alert alert-danger">
+      <strong>STALE-ASSUMPTION / INVALIDATED DEFERRALS ALERT ({{ invalidated_findings | length }}):</strong>
+      Previously deferred or risk-accepted findings violated their recorded assumption predicates and have been re-elevated for immediate review.
+    </div>
+    {% endif %}
+
+    {% if shadow_assets %}
+    <div class="alert alert-warning">
+      <strong>SHADOW ASSET DISCLOSURE ({{ shadow_assets | length }} unmatched asset(s)):</strong>
+      Findings were detected on infrastructure not matched by <code>assets.yaml</code>. Review Shadow / Unmatched Asset Disclosure below.
+    </div>
+    {% endif %}
+
+    <section class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Total Findings</div><div class="kpi-val">{{ summary.total_findings | default(0) }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Prioritized</div><div class="kpi-val">{{ prioritized_findings | length }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Validly Deferred</div><div class="kpi-val">{{ deferred_findings | length }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Invalidated Alerts</div><div class="kpi-val">{{ invalidated_findings | length }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">CISA KEV (Run)</div><div class="kpi-val">{{ summary.kev_findings | default(0) }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Shadow Assets</div><div class="kpi-val">{{ shadow_assets | length }}</div></div>
+    </section>
+
+    <section>
+      <h2>Why Prioritized</h2>
+      {% if prioritized_findings %}
+      <table>
+        <thead>
+          <tr>
+            <th>Finding ID</th>
+            <th>Asset</th>
+            <th>CVE / Track</th>
+            <th>Priority / SLA</th>
+            <th>SSVC</th>
+            <th>Op Score</th>
+            <th>CVSS (Prov)</th>
+            <th>EPSS</th>
+            <th>KEV</th>
+            <th>Rel</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in prioritized_findings %}
+          <tr>
+            <td><code>{{ f.finding_id }}</code></td>
+            <td>{{ f.asset_display }}</td>
+            <td><code>{{ f.primary_cve or f.scoring_track }}</code></td>
+            <td>
+              <span class="badge {% if (f.priority_tier or '')|upper in ('P1','P1B') %}badge-p1{% elif (f.priority_tier or '')|upper == 'P2' %}badge-p2{% else %}badge-p3{% endif %}">{{ f.priority_tier or 'N/A' }}</span>
+              {{ f.sla_bucket or 'N/A' }}
+            </td>
+            <td>{{ f.ssvc_action or 'N/A' }}</td>
+            <td>{{ f.operational_score | fmt_score }}</td>
+            <td>{% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} ({{ f.effective_cvss_provenance }}{% if f.effective_cvss_version %} v{{ f.effective_cvss_version }}{% endif %}){% else %}Missing{% endif %}</td>
+            <td>{{ f.epss_display }}</td>
+            <td>{% if f.in_kev %}<span class="badge badge-kev">KEV</span>{% else %}No{% endif %}</td>
+            <td>{{ f.signal_reliability | fmt_score }}</td>
+            <td>{% if f.is_invalidated %}<span class="badge badge-inv">{{ f.decision_status }}</span>{% else %}{{ f.decision_status }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% for f in prioritized_findings %}
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <strong>{{ loop.index }}. {{ f.title }}</strong>
+            <code>{{ f.finding_id }}</code>
+          </div>
+          <div>
+            <span class="badge {% if (f.priority_tier or '')|upper in ('P1','P1B') %}badge-p1{% else %}badge-p2{% endif %}">{{ f.priority_tier or 'N/A' }} — {{ f.sla_bucket or 'N/A' }}</span>
+            {% if f.in_kev %}<span class="badge badge-kev">CISA KEV</span>{% endif %}
+            {% if f.is_invalidated %}<span class="badge badge-inv">{{ f.decision_status }}</span>{% endif %}
+          </div>
+        </div>
+        <ul class="detail-list">
+          <li><strong>Asset:</strong> {{ f.asset_display }} (<code>{{ f.asset_id }}</code>, inventory={{ f.inventory_status or 'unknown' }}, internet_facing={{ f.internet_facing }}, owner={{ f.owner or 'Unassigned' }}{% if f.open_ports %}, open_ports={{ f.open_ports | join(', ') }}{% endif %})</li>
+          <li><strong>SSVC / BOD 26-04 Decision:</strong> action={{ f.ssvc_action or 'N/A' }}, oal={{ f.oal_compat or 'N/A' }}{% if f.ssvc_path %}, path=<code>{{ f.ssvc_path }}</code>{% endif %}{% if f.rationale_summary %} — {{ f.rationale_summary }}{% endif %}</li>
+          <li><strong>Scoring Track &amp; Reliability:</strong> <code>{{ f.scoring_track }}</code>, Operational={{ f.operational_score | fmt_score }}/10, Raw={{ f.raw_risk_score | fmt_score }}, Band={{ f.risk_band or 'N/A' }}, Mode={{ f.detection_mode or 'N/A' }}, Signal Reliability={{ f.signal_reliability | fmt_score }}{% if f.sast_p1_capped %} (SAST P1-Cap Applied){% endif %}</li>
+          <li><strong>CVSS &amp; Provenance:</strong> {% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} (v{{ f.effective_cvss_version or '?' }}, {{ f.effective_cvss_provenance }}){% else %}Missing{% endif %}{% if f.effective_cvss_vector %} — <code>{{ f.effective_cvss_vector }}</code>{% endif %}</li>
+          <li><strong>EPSS v5:</strong> {{ f.epss_display }}{% if f.epss_model_version or f.epss_date %} (model={{ f.epss_model_version or 'N/A' }}, date={{ f.epss_date or 'N/A' }}){% endif %}</li>
+          <li><strong>KEV &amp; Exploit Evidence:</strong> in_kev={{ f.in_kev }}{% if f.in_kev %} (added={{ f.kev_date_added or 'N/A' }}, due={{ f.kev_due_date or 'N/A' }}, ransomware={{ f.kev_ransomware or 'Unknown' }}){% endif %}; verified_exploit={{ f.verified_exploit }}; heuristic_mention={{ f.heuristic_exploit_mention }}</li>
+          {% if f.capabilities or f.chains %}
+          <li><strong>ACI Signals:</strong> capabilities=[{{ f.capabilities | join(', ') }}]; chains=[{{ f.chains | join(', ') }}]; confidence={{ f.aci_confidence | fmt_score }}; uplift={{ f.aci_uplift_score | fmt_score }}</li>
+          {% endif %}
+          {% if f.score_breakdown %}
+          <li><strong>Score Trace Breakdown:</strong> {% for k, v in f.score_breakdown | dictsort %}<code>{{ k }}={{ v }}</code>{% if not loop.last %} {% endif %}{% endfor %}</li>
+          {% endif %}
+          <li><strong>Evidence Provenance:</strong> source_count={{ f.source_count | default(1) }}, deduplicated={{ f.is_deduplicated }}{% if f.finding_cves %}, CVEs=[{{ f.finding_cves | join(', ') }}]{% endif %}{% if f.cwes %}, CWEs=[{{ f.cwes | join(', ') }}]{% endif %}</li>
+        </ul>
+        {% if f.evidence %}
+        <table>
+          <thead>
+            <tr><th>#</th><th>Source</th><th>Signature</th><th>Severity</th><th>Raw CVSS</th><th>Location</th><th>Excerpt</th></tr>
+          </thead>
+          <tbody>
+            {% for ev in f.evidence %}
+            <tr>
+              <td>{{ ev.evidence_idx }}</td>
+              <td>{{ ev.source_format or 'N/A' }}</td>
+              <td><code>{{ ev.scanner_sig or 'N/A' }}</code></td>
+              <td>{{ ev.raw_severity or 'N/A' }}</td>
+              <td>{{ ev.raw_cvss if ev.raw_cvss is not none else 'N/A' }}</td>
+              <td>{{ ev.raw_location or 'N/A' }}</td>
+              <td>{{ ev.evidence_excerpt or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </article>
+      {% endfor %}
+      {% else %}
+      <p>No prioritized findings match this scope.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Why Deprioritized / Deferred</h2>
+
+      <h3>Invalidated Deferrals &amp; Stale-Assumption Alerts</h3>
+      {% if invalidated_findings %}
+      <table>
+        <thead>
+          <tr><th>Finding ID</th><th>Asset</th><th>CVE</th><th>Decision ID</th><th>Status</th><th>Violated Predicates</th><th>Owner</th><th>Expires</th><th>Alert Details</th></tr>
+        </thead>
+        <tbody>
+          {% for f in invalidated_findings %}
+          <tr>
+            <td><code>{{ f.finding_id }}</code></td>
+            <td>{{ f.asset_display }}</td>
+            <td><code>{{ f.primary_cve or 'N/A' }}</code></td>
+            <td><code>{{ f.decision_id or 'N/A' }}</code></td>
+            <td><span class="badge badge-inv">{{ f.decision_status }}</span></td>
+            <td><code>{{ f.violated_predicates | join(', ') or 'assumption_violated' }}</code></td>
+            <td>{{ f.decision_owner or 'Unassigned' }}</td>
+            <td>{{ f.decision_expires_at or 'N/A' }}</td>
+            <td>{{ f.decision_reasons | join('; ') or f.rationale_summary or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p>No invalidated deferrals or stale-assumption alerts detected.</p>
+      {% endif %}
+
+      <h3>Validly Deferred / Risk-Accepted / Mitigated Findings</h3>
+      {% if deferred_findings %}
+      <table>
+        <thead>
+          <tr><th>Finding ID</th><th>Asset</th><th>CVE / Title</th><th>Decision ID</th><th>Status</th><th>Owner</th><th>Expires</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>Rationale</th></tr>
+        </thead>
+        <tbody>
+          {% for f in deferred_findings %}
+          <tr>
+            <td><code>{{ f.finding_id }}</code></td>
+            <td>{{ f.asset_display }}</td>
+            <td>{{ f.primary_cve or f.title }}</td>
+            <td><code>{{ f.decision_id or 'N/A' }}</code></td>
+            <td><span class="badge badge-ok">{{ f.decision_status }}</span></td>
+            <td>{{ f.decision_owner or 'Unassigned' }}</td>
+            <td>{{ f.decision_expires_at or 'N/A' }}</td>
+            <td>{% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} ({{ f.effective_cvss_provenance }}){% else %}Missing{% endif %}</td>
+            <td>{{ f.epss_display }}</td>
+            <td>{{ 'Yes' if f.in_kev else 'No' }}</td>
+            <td>{{ f.rationale_summary or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p>No validly deferred, accepted, or mitigated findings in this scope.</p>
+      {% endif %}
+
+      <h3>Threat-Evidence &amp; Exposure Deprioritized Findings</h3>
+      {% if deprioritized_findings %}
+      {% if high_cvss_deprioritized %}
+      <p><strong>High-CVSS / High-Severity Deprioritized ({{ high_cvss_deprioritized | length }}):</strong> Nominal CVSS &ge; 7.0 or High/Critical scanner severity findings deprioritized due to low EPSS, absence from CISA KEV, internal non-exposed asset placement, or static SAST reliability dampening.</p>
+      {% endif %}
+      <table>
+        <thead>
+          <tr><th>Finding ID</th><th>Asset</th><th>CVE / Title</th><th>Tier / SLA</th><th>Op Score</th><th>CVSS (Prov)</th><th>EPSS</th><th>KEV</th><th>Exposed</th><th>Deprioritization Rationale</th></tr>
+        </thead>
+        <tbody>
+          {% for f in deprioritized_findings %}
+          <tr>
+            <td><code>{{ f.finding_id }}</code></td>
+            <td>{{ f.asset_display }}</td>
+            <td>{{ f.primary_cve or f.title }}</td>
+            <td>{{ f.priority_tier or 'N/A' }} / {{ f.sla_bucket or 'N/A' }}</td>
+            <td>{{ f.operational_score | fmt_score }}</td>
+            <td>{% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} ({{ f.effective_cvss_provenance }}){% else %}Missing{% endif %}</td>
+            <td>{{ f.epss_display }}</td>
+            <td>{{ 'Yes' if f.in_kev else 'No' }}</td>
+            <td>{{ 'Yes' if f.internet_facing else 'No' }}</td>
+            <td>{{ f.deprioritization_reasons | join('; ') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p>No non-prioritized findings in this scope.</p>
+      {% endif %}
+
+      <div class="compliance-box">
+        <strong>Auditor-Defense Framing (PCI DSS v4.0.1 &amp; CISA BOD 26-04):</strong>
+        <ul class="detail-list">
+          <li><strong>PCI DSS v4.0.1 (Req. 6.3.1 &amp; 11.3.1):</strong> Prioritization blends authoritative CVSS provenance, CISA KEV status, FIRST EPSS v5 probability &amp; percentile, and asset exposure context. Deferrals require explicit owners, expiry dates, and verifiable predicate assumptions checked automatically on each scan.</li>
+          <li><strong>CISA BOD 26-04 / SSVC:</strong> SLA tiers (<code>3-day + Forensic Triage</code>, <code>14-day</code>, <code>60-day</code>, <code>Fix on Upgrade</code>) align with SSVC operational decision logic over exposure, active exploitation, automatability, and technical impact.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2>Shadow / Unmatched Asset Disclosure</h2>
+      {% if shadow_assets %}
+      <table>
+        <thead>
+          <tr><th>Asset ID</th><th>Canonical Key</th><th>Hostname</th><th>IP</th><th>Target / Image</th><th>Exposed</th><th>Open Ports</th><th>Findings</th><th>KEVs</th><th>Max Op Score</th></tr>
+        </thead>
+        <tbody>
+          {% for a in shadow_assets %}
+          <tr>
+            <td><code>{{ a.asset_id }}</code></td>
+            <td><code>{{ a.canonical_key or 'N/A' }}</code></td>
+            <td>{{ a.hostname or 'N/A' }}</td>
+            <td>{{ a.ip_address or 'N/A' }}</td>
+            <td>{{ a.target_uri or a.image_or_repo or 'N/A' }}</td>
+            <td>{{ 'Yes' if a.internet_facing else 'No' }}</td>
+            <td>{{ a.open_ports | join(', ') or 'None' }}</td>
+            <td>{{ a.finding_count }}</td>
+            <td>{{ a.kev_count }}</td>
+            <td>{{ a.max_operational_score | fmt_score }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p>All scanned assets matched known inventory rules (<code>0</code> unmatched shadow assets).</p>
+      {% endif %}
+    </section>
+
+    {% if diff %}
+    <section>
+      <h2>Scan-over-Scan Diff Context (<code>{{ diff.base_run_id }}</code> &rarr; <code>{{ diff.target_run_id }}</code>)</h2>
+      <table>
+        <thead><tr><th>Delta Category</th><th>Count</th></tr></thead>
+        <tbody>
+          <tr><td>Newly Introduced High-Risk</td><td>{{ diff.summary.newly_introduced_high_risk | default(0) }} (of {{ diff.summary.newly_introduced_all | default(0) }} total new)</td></tr>
+          <tr><td>Threat-Intel Escalated</td><td>{{ diff.summary.threat_intel_escalated | default(0) }}</td></tr>
+          <tr><td>Verified Remediated</td><td>{{ diff.summary.verified_remediated | default(0) }} (patched={{ diff.summary.verified_remediated_confirmed | default(0) }}, asset_missing={{ diff.summary.verified_remediated_asset_missing | default(0) }})</td></tr>
+          <tr><td>Invalidated Assumptions</td><td>{{ diff.summary.invalidated_assumptions | default(0) }}</td></tr>
+          <tr><td>Shadow Assets New / Resolved</td><td>{{ diff.summary.shadow_assets_new | default(0) }} / {{ diff.summary.shadow_assets_resolved | default(0) }}</td></tr>
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <footer>
+      <strong>Linked RunManifest &amp; Threat-Intel Provenance</strong>
+      <div>Run ID: <code>{{ run.run_id }}</code> | Created (UTC): {{ run.created_at_utc }} | RunManifest Digest: <code>{{ run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)' }}</code></div>
+      <div>Config SHA-256: <code>{{ run.config_sha256 or 'N/A' }}</code> | Assets SHA-256: <code>{{ run.assets_sha256 or 'N/A' }}</code> | Decisions SHA-256: <code>{{ run.decisions_sha256 or 'N/A' }}</code></div>
+      <div>EPSS: model={{ run.intel_metadata.epss_model_version or 'N/A' }}, date={{ run.intel_metadata.epss_score_date or run.intel_metadata.epss_date or 'N/A' }}, sha256=<code>{{ run.intel_metadata.epss_sha256 or 'N/A' }}</code> | KEV: version={{ run.intel_metadata.kev_catalog_version or 'N/A' }}, released={{ run.intel_metadata.kev_date_released or 'N/A' }}, sha256=<code>{{ run.intel_metadata.kev_sha256 or 'N/A' }}</code></div>
+      <div>NVD: {{ run.intel_metadata.nvd_status or 'N/A' }} | GHSA: {{ run.intel_metadata.ghsa_enabled }} | OSV: {{ run.intel_metadata.osv_enabled }}</div>
+    </footer>
+  </div>
+</body>
+</html>

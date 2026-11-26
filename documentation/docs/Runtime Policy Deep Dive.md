@@ -1,137 +1,82 @@
 # Runtime Policy Deep Dive
 
-This page explains runtime control-plane policy in VulnParse-Pin: path/file policy (PFH), logging policy, and run context/service wiring.
+This page explains runtime control-plane policy in VulnParse-Pin v2.0.0 (`Apache-2.0`): `PermFileHandler` (PFH), `_UMASK_LOCK` & non-PFH atomic writes, DuckDB workspace permissions, read-only `vpp verify` enforcement, logging policy, and `RunContext` / `Services` wiring.
 
 ## Scope
 
 Primary implementation files:
 
 - `src/vulnparse_pin/app/bootstrap.py`
-- `src/vulnparse_pin/core/classes/dataclass.py`
-- `src/vulnparse_pin/io/pfhandler.py`
+- `src/vulnparse_pin/cli/commands.py` (`_build_verify_pfh`, `run_verify_command`, `run_intel_command`)
+- `src/vulnparse_pin/core/classes/dataclass.py` (`RunContext`, `Services`)
+- `src/vulnparse_pin/io/pfhandler.py` (`PermFileHandler`, `_UMASK_LOCK`)
+- `src/vulnparse_pin/storage/db.py` (`VppDatabase`, `_validate_duckdb_paths`, `ensure_safe_dir_non_pfh`, `open_for_write_non_pfh`)
 - `src/vulnparse_pin/utils/logger.py`
 - `src/vulnparse_pin/cli/args.py`
 
-## Runtime bootstrap sequence
+## Runtime bootstrap sequence (`initialize_runtime`)
 
-`initialize_runtime(args)` assembles the runtime in this order:
+1. Resolve `AppPaths.resolve(portable=...)` (XDG/platform app-data vs `--portable` `./data/`).
+2. Create required directories (`paths.ensure_dirs()`).
+3. Initialize bootstrap `LoggerWrapper` (`bootstrap.log`).
+4. Construct `PermFileHandler` via `build_pfh(paths, logger, args)`.
+5. Load, validate, and project configs via `ConfigSource -> ConfigValidator -> ConfigProjector`.
+6. Initialize `FeedCacheManager`, optional `NVDFeedCache`, `LedgerService`, and `WebhookRuntimeConfig`.
+7. Assemble frozen `Services` and `RunContext`.
+8. Rebind `LoggerWrapper` to the run-specific log file (`build_run_log()`).
+9. Construct `SchemaDetector(PARSER_SPECS)`.
 
-1. Resolve app paths (`AppPaths.resolve(...)`).
-2. Initialize bootstrap logger.
-3. Initialize `PermFileHandler` with root and symlink policy.
-4. Build initial `RunContext`.
-5. Ensure/load configs.
-6. Load scoring and TopN policy objects.
-7. Build `FeedCacheManager` and optional `NVDFeedCache`.
-8. Build immutable `Services` container.
-9. Rebind logger to run-specific log file.
-10. Build pass list (`ScoringPass`, `TopNPass`, `SummaryPass`).
+## `RunContext` and `Services`
 
-## Run context and services
+`RunContext` (`paths`, `pfh`, `logger`, `services`) and `Services` (`feed_cache`, `nvd_cache`, `scoring_config`, `topn_config`, `ledger`, `runmanifest_mode`, `nmap_ctx_config`, `webhook_config`, `global_config`, plus v2 fields `db`, `run_id`, `asset_matcher`, `decisions_registry`) are frozen dataclasses so runtime policy cannot be mutated mid-run.
 
-`RunContext` is the runtime dependency object passed through parsing, enrichment, and pass execution.
+## PFH Policy (`PermFileHandler`) and CLI Defaults
 
-`RunContext` fields:
+`build_pfh()` constructs `PermFileHandler` with secure-by-default flags from `cli/args.py`:
 
-- `paths`
-- `pfh`
-- `logger`
-- `services`
+| Flag / Attribute | Default | Override Flag | Effect |
+| --- | --- | --- | --- |
+| `forbid_symlinks_read` | `True` | `--allow-symlinks-read` | Rejects symlinks and symlink ancestors on read |
+| `forbid_symlinks_write` | `True` | (fail-closed) | Rejects symlinks and symlink ancestors on write |
+| `enforce_roots_on_read` | `False` | `--enforce-root-read` (`-err`) | Confines reads to `allowed_roots` (`paths.base_dir`, `config_dir`, `cache_dir`, `log_dir`, `output_dir`) |
+| `enforce_roots_on_write` | `True` | (enforced) | Confines writes to authorized output paths & `allowed_roots` |
+| `file_mode` (POSIX) | `0o600` | `--file-mode` (`-fm`) | Owner-only read/write permissions on created files |
+| `dir_mode` (POSIX) | `0o700` | `--dir-mode` (`-dm`) | Owner-only permissions on created directories |
 
-`Services` fields:
+> [!IMPORTANT]
+> **`--enforce-root-read` with vs. without `--portable`:** `build_pfh()` anchors `root_dir` to `paths.base_dir`. When `--portable` (`-P`) is **not** set, `paths.base_dir` is the OS user data directory (e.g., `~/.local/share/VulnParse-Pin/`), so `--enforce-root-read` fails closed (`FilePathError`) on scan or manifest files under `$PWD`. When `--portable` **is** set, `paths.base_dir` is `$PWD`, allowing reads under `$PWD` while still blocking reads outside `$PWD` and `./data/`.
 
-- `feed_cache`
-- `nvd_cache`
-- `scoring_config`
-- `topn_config`
+Diagnostic mode:
 
-`RunContext` and `Services` are frozen dataclasses to prevent accidental mutation after assembly.
+```bash
+vpp scan --debug-path-policy
+```
 
-## PFH policy (`PermFileHandler`)
+prints `pfh.describe_policy()` and exits without running a scan.
 
-PFH centralizes path validation and safe file operations.
+## `_UMASK_LOCK`, Non-PFH Atomic Writes, and DuckDB Path Hardening
 
-### Policy controls
+Because `os.umask()` is process-global, `src/vulnparse_pin/io/pfhandler.py` defines `_UMASK_LOCK = threading.Lock()`. Both PFH and `src/vulnparse_pin/storage/db.py` serialize `umask` transitions under `_UMASK_LOCK`:
 
-Constructor policy controls include:
+- **`ensure_safe_dir_non_pfh(dir_path, dir_mode=0o700)`:** Checks every path ancestor against symlinks and `ELOOP` loops (`_check_no_symlinks_or_loops`), creates missing directories with `0o777 & ~dir_mode` under `_UMASK_LOCK`, and re-verifies post-create.
+- **`open_for_write_non_pfh(target_path, file_mode=0o600, dir_mode=0o700)`:** Validates ancestors and existing targets against symlinks/non-regular files, creates a sibling staging temp file under restricted `umask` (`_UMASK_LOCK`), applies `0o600` POSIX permissions, and atomically replaces the target via `os.replace()`.
+- **`VppDatabase` & `_validate_duckdb_paths()`:** Before opening `.vpp.db`, validates the DB path, all ancestors, and `.wal` / `.tmp` sidecars against symlinks and `ELOOP`. In read-write mode on POSIX, `duckdb.connect()` and `BEGIN TRANSACTION` execute with `umask(0o177)` under `_UMASK_LOCK` so `.vpp.db` and `.wal` are born `0o600` without a race window, followed by `_chmod_0600_if_exists()`.
 
-- allowed root set
-- `forbid_symlinks_read`
-- `forbid_symlinks_write`
-- `enforce_roots_on_read`
-- `enforce_roots_on_write`
-- `file_mode` (POSIX)
-- `dir_mode` (POSIX)
+## Read-Only Default Policy on `vpp verify` (`_build_verify_pfh`)
 
-### Typical enforcement
+`run_verify_command()` (`src/vulnparse_pin/cli/commands.py`) uses `_build_verify_pfh(args)` rather than `initialize_runtime(args)`:
 
-- Read path: readable regular file and optional root confinement.
-- Write path: writable target and enforced root confinement by default.
-- Symlink handling: write symlinks forbidden by default.
+- Attaches a silent `logging.NullHandler()` logger and calls `build_pfh(paths, silent_logger, args)` **without** calling `paths.ensure_dirs()`, so `vpp verify` performs **zero writes** to `$HOME`, `$XDG_DATA_HOME`, `$XDG_CONFIG_HOME`, or `$XDG_CACHE_HOME` (allowing execution in read-only containers and `0o500` home environments).
+- Directories and log files are created only if the operator explicitly passes a non-default `--log-file` (`!= "vulnparse_pin.log"`).
+- All security flags (`forbid_symlinks_read=True`, `--allow-symlinks-read`, `--enforce-root-read`, `--portable`) remain strictly enforced across both the RunManifest file and every non-null artifact listed in `manifest["outputs"]`.
 
-### Runtime diagnostics
+## Logging Policy (`LoggerWrapper`)
 
-`--debug-path-policy` prints policy (`describe_policy()`) and exits.
-
-## CLI flags for PFH/runtime security
-
-Path policy flags are defined in `cli/args.py`:
-
-- `--forbid-symlinks-read`
-- `--forbid-symlinks-write`
-- `--enforce-root-read`
-- `--enforce-root-write`
-- `--file-mode`
-- `--dir-mode`
-- `--debug-path-policy`
-
-These values are injected directly into `PermFileHandler` during bootstrap.
-
-## Logging policy (`LoggerWrapper`)
-
-`LoggerWrapper` sets up two handlers:
-
-1. File handler at `DEBUG` level.
-2. Console handler at selected CLI log level.
-
-### Logging channels
-
-- `vulnparse` logger: console + file
-- `vulnparse.fileonly` logger: file only
-
-### Formats and labels
-
-- Console: colored level tags and icons.
-- File: timestamped plain text with ANSI stripped.
-- Label propagation through `VulnParseRecordFilter` (`vp_label` to `label`).
-
-### Custom level
-
-A `SUCCESS` level (`25`) is registered between INFO and WARNING for status reporting.
-
-## Run log resolution
-
-Run logs are generated by `build_run_log(...)` and created in `paths.log_dir` with timestamp-based names.
-
-Bootstrap starts with `bootstrap.log`, then transitions to a run-specific log file after runtime context initialization.
-
-## Policy interactions
-
-1. PFH gates file-system access for cache, output, and log operations.
-2. Logger captures policy decisions and fallback behavior.
-3. `RunContext` ensures every subsystem receives the same policy instances.
-4. Services object controls policy consistency for pass and enrichment execution.
-
-## Operational tuning guidance
-
-- Keep `--enforce-root-write` enabled for production workloads.
-- Keep `--forbid-symlinks-write` enabled unless there is a controlled operational exception.
-- Increase log level from `INFO` to `WARNING` or `ERROR` for very large runs to reduce log overhead.
-- Use `--debug-path-policy` when validating deployment hardening before first production run.
+`LoggerWrapper` (`src/vulnparse_pin/utils/logger.py`) configures a `DEBUG` file handler (ANSI-stripped) and a CLI-level console handler (`INFO` default, custom `SUCCESS` level `25`).
 
 ## Related pages
 
 - [Security Features](Security%20Features.md)
+- [Threat Model](Threat%20Model.md)
+- [Caching Deep Dive](Caching%20Deep%20Dive.md)
 - [Usage](Usage.md)
-- [Pipeline System](Pipeline%20System.md)
-- [Pass Phases](Pass%20Phases.md)

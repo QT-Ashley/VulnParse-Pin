@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -551,3 +554,34 @@ def test_markdown_reports_render_lightweight_oal2_priority_tags() -> None:
     assert "OAL-2 Priority: Immediate Analyst Validation" in technical
     assert "OAL-2 tag legend:" in executive
     assert "OAL-2 tag legend:" in technical
+
+
+def test_duckdb_markdown_delegation_helpers(tmp_path) -> None:
+    from vulnparse_pin.storage.db import VppDatabase
+    from vulnparse_pin.storage.repositories import ensure_run, ingest_normalized_batches
+    from vulnparse_pin.utils.markdown_report import (
+        generate_dossier_markdown_report,
+        generate_duckdb_markdown_report,
+        generate_executive_roadmap_report,
+    )
+
+    db = VppDatabase(tmp_path / "md_delegate.db")
+    run_id = "run-md-del"
+    ensure_run(db, run_id, vpp_version="2.0.0", profile="default")
+    ingest_normalized_batches(
+        db,
+        run_id,
+        [[{"ip_address": "10.0.0.1", "hostname": "h1", "source_format": "nessus-xml", "scanner_sig": "n:1", "title": "Test", "severity": "High", "cves": ["CVE-2024-0001"]}]],
+    )
+
+    dossier_path = tmp_path / "dossier.md"
+    roadmap_path = tmp_path / "roadmap.md"
+    via_router_path = tmp_path / "routed_dossier.md"
+
+    generate_dossier_markdown_report(db, run_id, dossier_path)
+    generate_executive_roadmap_report(db, run_id, roadmap_path)
+    generate_duckdb_markdown_report(db, run_id, via_router_path, report_type="dossier")
+
+    assert "VulnParse-Pin Decision Defense Dossier" in dossier_path.read_text(encoding="utf-8")
+    assert "Executive Vulnerability Summary & Client Remediation Roadmap" in roadmap_path.read_text(encoding="utf-8")
+    assert "VulnParse-Pin Decision Defense Dossier" in via_router_path.read_text(encoding="utf-8")

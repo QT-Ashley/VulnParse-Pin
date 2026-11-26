@@ -1,45 +1,29 @@
 # ACI Rule Authoring Tutorial
 
-This tutorial shows how to design, implement, validate, and inspect Attack Capability Inference (ACI) rules in VulnParse-Pin.
+This tutorial shows how to design, configure, validate, and inspect Attack Capability Inference (`ACI@2.0`) rules in VulnParse-Pin v2.0.
 
 Use this guide when you want to:
 
-- Enable ACI for ranking support
-- Add or tune capability and chain rules
-- Extend token vocabulary safely
-- Verify your changes in output artifacts
+- Configure ACI capability and chain rules in `tn_triage.json`
+- Tune triage/reliability interactions in `config.yaml`
+- Extend the token vocabulary with `signal_aliases` or suppress noisy core tokens
+- Run `vpp scan` and inspect `ACI@2.0` signals in JSON, CSV, `vpp ui`, and Decision Defense Dossiers
 
-## What ACI does
+## Where Configuration Lives
 
-ACI is a derived pass that infers likely attacker capabilities from finding evidence, then contributes bounded rank uplift used by TopN as a tie-break signal.
-
-Important behavior:
-
-- ACI never mutates raw scanner truth
-- ACI emits versioned derived output at `derived["ACI@1.0"]`
-- TopN consumes ACI signals during ordering
-- Uplift is bounded by policy (`max_uplift`)
-
-## Where to edit rules
-
-Primary config file:
-
-- `src/vulnparse_pin/resources/tn_triage.json`
-
-ACI section path:
-
-- `aci`
+1. **`tn_triage.json` (`aci` section):** Controls `enabled`, `min_confidence`, `max_uplift`, `asset_uplift_weight`, `token_mode`, `signal_aliases`, `disabled_core_tokens`, `exploit_boost`, `capability_rules`, and `chain_rules`.
+2. **`config.yaml` (`triage` and `signal_reliability` sections):** Controls `triage.static_sast_p1_cap` (whether ACI/CWE corroboration is required to lift `static_sast` findings into `P1`) and per-`detection_mode` `signal_reliability` weights that govern how `Scoring@3.0` Track B (`exposure_weakness`) scales ACI capability bonuses.
 
 Runtime validation layers:
 
-1. JSON schema validation (`topN.schema.json`)
-2. Semantic validation (`TN_triage_semantics.py`)
+1. JSON Schema Draft 2020-12 validation (`topN.schema.json`, `config.schema.json`)
+2. Semantic validation (`TN_triage_semantics.py`, `config_validator.py`)
 
-If validation fails in strict mode, startup fails. In non-strict mode, a safe fallback is used.
+If validation fails under strict config checks, startup fails; in non-strict mode, safe packaged defaults are used.
 
-## Step 1: Enable ACI
+## Step 1: Review `aci` Defaults in `tn_triage.json`
 
-In `tn_triage.json`:
+`ACI@2.0` is enabled by default in v2.0.0:
 
 ```json
 "aci": {
@@ -60,17 +44,15 @@ In `tn_triage.json`:
 }
 ```
 
-Recommended starting values:
+Recommended starting ranges:
 
-- `min_confidence`: `0.5-0.7`
-- `max_uplift`: `1.0-2.0`
-- `asset_uplift_weight`: `0.3-0.6`
+- `min_confidence`: `0.5–0.7` (default `0.6`)
+- `max_uplift`: `1.0–2.0` (default `2.0`)
+- `asset_uplift_weight`: `0.3–0.6` (default `0.5`)
 
-## Step 2: Add a capability rule
+## Step 2: Add or Tune a Capability Rule
 
-Capability rules map observed signals to a capability label.
-
-Example:
+Capability rules map normalized signals (extracted from finding text, structured tags, CWEs, and `scanner_sig` rule IDs) to a capability label:
 
 ```json
 {
@@ -84,20 +66,17 @@ Example:
 
 Authoring checklist:
 
-- Rule `id` is stable, lowercase, and unique
-- `capability` is a normalized label you will reuse in chains
-- `signals` are lower-case normalized terms
-- `weight` is in `[0.0, 1.0]`
+- Keep `id` stable, lowercase, and unique.
+- Use normalized lowercase `signals`.
+- Keep `weight` in `[0.0, 1.0]`.
+- Note built-in precision guardrails in `aci_pass.py`:
+  - `remote_service` alone (open port without other signals) will **not** trigger `remote_execution` or `initial_access`.
+  - Protocol-only signals (`smb`, `ssh`, `rdp`, `rpc`) will **not** trigger `lateral_movement` without exploit, KEV, credential, or lateral context keywords.
+- Keep `Scoring@3.0` Track B alignment in mind: capabilities in `{remote_execution, command_execution, auth_bypass, sql_injection, privilege_escalation, initial_access, deserialization, ssrf}` grant `+3.5` Track B `aci_high_impact_bonus` before `signal_reliability` scaling; other capabilities grant `+2.0`.
 
-Design tip:
+## Step 3: Add a Chain Rule
 
-- Start with specific signals first, then broaden only after checking precision in outputs.
-
-## Step 3: Add a chain rule
-
-Chain rules infer multi-step pathways when required capabilities are all present.
-
-Example:
+Chain rules detect multi-step attack pathways when all `requires_all` capabilities are inferred on a finding:
 
 ```json
 {
@@ -108,22 +87,11 @@ Example:
 }
 ```
 
-Authoring checklist:
+In `Triage@2.0`, findings with matched `aci_chains` automatically qualify for at least `P2` (`Attend`, `60-day` in `bod-26-04`; `14-day` in `default`), and in Track B (`exposure_weakness`) they receive `+1.0` `aci_chain_bonus`.
 
-- `requires_all` must reference existing capability labels
-- Use concise labels that analysts can read quickly
-- Keep chain labels decision-oriented (pathway language)
+## Step 4: Extend or Trim the Token Vocabulary
 
-## Step 4: Extend vocabulary with aliases
-
-ACI supports a hybrid token model:
-
-- Maintainer-managed core tokens are always available in `merge` mode
-- User aliases can be added in config
-- Specific core tokens can be disabled if noisy
-- Full replacement is available with `token_mode: "replace"`
-
-### Add aliases (recommended)
+### Add Custom Aliases (`merge` mode, recommended)
 
 ```json
 "token_mode": "merge",
@@ -134,7 +102,7 @@ ACI supports a hybrid token model:
 ]
 ```
 
-### Disable noisy core tokens
+### Disable Noisy Core Tokens
 
 ```json
 "disabled_core_tokens": [
@@ -143,7 +111,7 @@ ACI supports a hybrid token model:
 ]
 ```
 
-### Replace mode (advanced)
+### Full Replacement (`replace` mode, advanced)
 
 ```json
 "token_mode": "replace",
@@ -153,160 +121,53 @@ ACI supports a hybrid token model:
 ]
 ```
 
-Use `replace` only when you fully control vocabulary quality and coverage.
+> [!WARNING]
+> Setting `token_mode: "replace"` suppresses core text tokens, extended text tokens, structured Nuclei/SARIF tag mappings, CWE mappings, and `_EXTRA_CAPABILITY_SIGNALS` (`deserialization`, `ssrf`, `panel`, `misconfig`, `exposure`, `xss`) so only your explicit `signal_aliases` and `capability_rules` apply.
 
-## Step 5: Validate and run
+## Step 5: Run a Scan and Inspect ACI Outputs
 
-Run an offline-friendly pass to inspect effects:
+Run an offline v2.0 scan across any supported scanner input (Nessus, OpenVAS, Qualys, SARIF, Nuclei JSONL) into a `.vpp.db` workspace and export artifacts:
 
 ```bash
-vpp -P -f tests_output/mock_openvas.json \
-  --no-kev --no-epss --no-exploit --no-nvd \
-  -oA tests_output/aci_tutorial \
-  -oRM tests_output/aci_tutorial_runmanifest.json -pp
+vpp scan scan.nessus \
+  --offline --no-kev --no-epss --no-exploit --no-nvd \
+  --db workspace.vpp.db \
+  --output-all out/aci_tutorial \
+  --pretty-print
 ```
 
-Generated artifacts:
+Or run the built-in offline multi-scanner demo (`demo.nessus` + `demo_trivy.sarif` + `demo_nuclei.jsonl` + `demo_semgrep.sarif`):
 
-- `tests_output/aci_tutorial.json`
-- `tests_output/aci_tutorial_summary.md`
-- `tests_output/aci_tutorial_technical.md`
-- `tests_output/aci_tutorial_runmanifest.json`
+```bash
+vpp demo --no-ui --profile bod-26-04 --output-dir out/demo_aci
+```
 
-## Step 6: Inspect output
+### Inspect Where ACI@2.0 Surfaces
 
-### ACI pass output
+1. **Interactive TUI (`vpp ui --db workspace.vpp.db`):** Select any finding to view `ACI Caps` and `ACI Chains` in the right-hand inspector pane.
+2. **Decision Defense Dossier (`out/aci_tutorial_dossier.md` / `.html` or `vpp export --format dossier-md`):** Prioritized findings display `ACI Signals: capabilities=[...]; chains=[...]; confidence=...; uplift=...`.
+3. **JSON (`out/aci_tutorial.json`):** Under `namespace` overlay mode (default), inspect `assets[].findings[].derived["ACI@2.0"]` (`capabilities`, `chains`, `matched_tokens`, `confidence`, `uplift_score`) and `score_trace.aci_capabilities` / `score_trace.aci_chains`.
+4. **CSV (`out/aci_tutorial.csv`):** `full` and `audit` profiles export `aci_capabilities`, `aci_chains`, `aci_confidence`, and `aci_uplift_score`.
+5. **DuckDB SQL:** Query `aci_signals` directly (`SELECT finding_id, capabilities_json, chains_json, confidence, uplift_score FROM aci_signals`).
 
-Inspect:
+## Core Token Reference
 
-- `derived["ACI@1.0"].metrics`
-- `derived["ACI@1.0"].finding_semantics`
-- `derived["ACI@1.0"].asset_semantics`
+In `merge` mode, `aci_pass.py` evaluates:
 
-Look for:
+- **Core text tokens (`_CORE_TEXT_TOKENS`):**
+  - Initial access & execution: `initial access`, `auth bypass`, `authentication bypass`, `bypass login`, `default credential`, `rce`, `remote code execution`, `command injection`, `cmd injection`, `os command`, `command execution`, `exploit`
+  - Privilege escalation: `privesc`, `privilege escalation`, `sudo`, `setuid`, `kernel`
+  - Credential & secret access: `credential`, `password`, `hash`, `api key`, `token`, `secret`, `private key`, `hardcoded credential`
+  - Disclosure & inclusion: `info disclosure`, `information disclosure`, `sensitive data`, `leak`, `lfi`, `local file inclusion`, `path traversal`, `file read`, `etc/passwd`
+  - SQL & data plane: `sqli`, `sql injection`, `union select`, `database`, `query`
+  - Persistence & lateral movement: `persistence`, `startup`, `autorun`, `scheduled task`, `service install`, `smb`, `ssh`, `rdp`, `rpc`
+- **Extended text tokens (`_EXTENDED_TEXT_TOKENS`):** `deserialization`, `unsafe deserialization`, `ssrf`, `server-side request forgery`, `default-login`, `auth-bypass`, `misconfig`, `misconfiguration`, `admin panel`, `login panel`
+- **Structured tags & `scanner_sig` rule hints (`_STRUCTURED_TAG_SIGNALS`, `_scan_sig`):** Nuclei tags (e.g. `default-login`, `panel`, `exposure`, `misconfig`, `ssrf`, `xss`, `hardcoded-secret`), Semgrep/CodeQL/Trivy rule IDs, and CWE mappings (`CWE-22`, `CWE-77`, `CWE-78`, `CWE-79`, `CWE-89`, `CWE-94`, `CWE-200`, `CWE-250`, `CWE-269`, `CWE-287`, `CWE-306`, `CWE-434`, `CWE-502`, `CWE-522`, `CWE-798`, `CWE-918`).
 
-- coverage ratio
-- uplifted finding count
-- capability distribution
-- chain candidate distribution
+## Related Docs
 
-### TopN output
-
-Inspect:
-
-- `derived["TopN@1.0"].findings_by_asset`
-- `derived["TopN@1.0"].assets`
-
-Look for tie-break reasons that mention ACI uplift.
-
-### Markdown output
-
-Executive and technical reports include:
-
-- ACI metrics snapshot
-- Top capability signals
-- Top asset mapping from findings to inferred capabilities
-- Explicit disclaimer that capabilities are inferred and require analyst due diligence
-
-## Core token reference
-
-The default core token vocabulary is maintained in code and used when `token_mode` is `merge`.
-
-### Initial access and execution
-
-- `initial access`
-- `auth bypass`
-- `authentication bypass`
-- `bypass login`
-- `default credential`
-- `rce`
-- `remote code execution`
-- `command injection`
-- `cmd injection`
-- `os command`
-- `command execution`
-- `exploit`
-
-### Privilege escalation
-
-- `privesc`
-- `privilege escalation`
-- `sudo`
-- `setuid`
-- `kernel`
-
-### Credential and secret access
-
-- `credential`
-- `password`
-- `hash`
-- `api key`
-- `token`
-- `secret`
-- `private key`
-- `hardcoded credential`
-
-### Disclosure and inclusion
-
-- `info disclosure`
-- `information disclosure`
-- `sensitive data`
-- `leak`
-- `exposure`
-- `lfi`
-- `local file inclusion`
-- `path traversal`
-- `file read`
-- `etc/passwd`
-
-### SQL and data-plane signals
-
-- `sqli`
-- `sql injection`
-- `union select`
-- `database`
-- `query`
-
-### Persistence and movement
-
-- `persistence`
-- `startup`
-- `autorun`
-- `scheduled task`
-- `service install`
-- `smb`
-- `ssh`
-- `rdp`
-- `rpc`
-
-## Tuning strategy that works
-
-1. Enable ACI with conservative uplift.
-2. Add one capability rule at a time.
-3. Validate chain rules after capability quality is stable.
-4. Add aliases for your environment-specific language.
-5. Disable only proven noisy tokens.
-6. Keep a before/after output pair for regression review.
-
-## Common mistakes
-
-1. Overweighting broad rules (`weight` too high) causes many low-signal findings to uplift.
-2. Using `replace` mode too early removes useful defaults.
-3. Adding chain rules before capability labels are stable creates noisy pathways.
-4. Treating inferred capabilities as confirmed compromise.
-
-## Safety and interpretation
-
-ACI is decision support. It is not an incident verdict.
-
-Always pair ACI outputs with:
-
-- source evidence review
-- exploitability context
-- environment-specific validation
-
-## Related docs
-
+- [ACI Feature Explanation](ACI%20Feature%20Explanation.md)
+- [ACI Technical Deep Dive](ACI%20Technical%20Deep%20Dive.md)
 - [Configs](Configs.md)
 - [Scoring and Prioritization Deep Dive](Scoring%20and%20Prioritization%20Deep%20Dive.md)
 - [Output Interpretation](Output%20Interpretation.md)

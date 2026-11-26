@@ -1,0 +1,141 @@
+# Executive Vulnerability Summary & Client Remediation Roadmap
+
+- **Run ID:** {{ run.run_id | md_escape }}
+- **Triage Profile:** {{ run.profile | md_escape }}
+- **Generated At (UTC):** {{ generated_at_utc | md_escape }}
+- **RunManifest Digest:** {{ (run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)') | md_escape }}
+
+{% if kpis.invalidated_count > 0 %}
+> **ALERT — {{ kpis.invalidated_count }} INVALIDATED DEFERRAL(S):** Prior risk-acceptance or deferral assumptions no longer hold and require immediate re-triage.
+
+{% endif %}
+{% if kpis.shadow_assets > 0 %}
+> **INVENTORY GAP WARNING — {{ kpis.shadow_assets }} SHADOW ASSET(S):** Unmatched assets were discovered in scan output outside `assets.yaml`.
+
+{% endif %}
+## Key Posture Indicators (KPIs)
+
+| Metric | Value |
+|--------|-------|
+| Total Assets (Matched / Shadow) | {{ kpis.total_assets }} ({{ kpis.matched_assets }} / {{ kpis.shadow_assets }}) |
+| Total Findings (CVE / Exposure) | {{ kpis.total_findings }} ({{ kpis.cve_findings }} / {{ kpis.exposure_findings }}) |
+| Priority Tiers (P1 / P2 / P3 / P4) | {{ kpis.p1_count }} / {{ kpis.p2_count }} / {{ kpis.p3_count }} / {{ kpis.p4_count }} |
+| CISA KEV / Verified Exploits | {{ kpis.kev_findings }} / {{ kpis.verified_exploit_findings }} |
+| Invalidated Deferrals / Acceptances | {{ kpis.invalidated_count }} |
+| Average / Max Operational Score | {{ kpis.avg_operational_score | fmt_score }} / {{ kpis.max_operational_score | fmt_score }} |
+
+---
+
+## BOD 26-04 / Priority SLA Remediation Roadmap
+
+{% if sla_roadmap %}
+| SLA Bucket | SSVC Action | Findings | Assets | KEVs | Max Op Score |
+|------------|-------------|----------|--------|------|--------------|
+{% for bucket in sla_roadmap %}
+| {{ bucket.sla_bucket | md_escape }} | {{ bucket.ssvc_action | md_escape }} | {{ bucket.finding_count }} | {{ bucket.asset_count }} | {{ bucket.kev_count }} | {{ bucket.max_operational_score | fmt_score }} |
+{% endfor %}
+
+{% for bucket in sla_roadmap %}
+### {{ bucket.sla_bucket | md_escape }} ({{ bucket.ssvc_action | md_escape }})
+
+{% if bucket.top_findings %}
+| Finding ID | Asset | CVE / Title | Owner | Tier | Op Score | KEV | Status |
+|------------|-------|-------------|-------|------|----------|-----|--------|
+{% for f in bucket.top_findings %}
+| {{ f.finding_id | md_escape }} | {{ f.asset_display | md_escape }} | {{ (f.primary_cve or f.title) | md_escape }} | {{ (f.owner or 'Unassigned') | md_escape }} | {{ (f.priority_tier or 'N/A') | md_escape }} | {{ f.operational_score | fmt_score }} | {{ 'Yes' if f.in_kev else 'No' }} | {{ (f.decision_status or 'active') | md_escape }} |
+{% endfor %}
+{% else %}
+No active findings in this SLA bucket.
+{% endif %}
+
+{% endfor %}
+{% else %}
+No active remediation SLA buckets found for this run.
+
+{% endif %}
+---
+
+## Owner-Grouped Remediation Batches
+
+{% if owner_batches %}
+| Owner | Assets | Findings | P1 | P2 | KEVs | Invalidated | Max Op Score |
+|-------|--------|----------|----|----|------|-------------|--------------|
+{% for batch in owner_batches %}
+| {{ batch.owner | md_escape }} | {{ batch.asset_count }} | {{ batch.finding_count }} | {{ batch.p1_count }} | {{ batch.p2_count }} | {{ batch.kev_count }} | {{ batch.invalidated_count }} | {{ batch.max_operational_score | fmt_score }} |
+{% endfor %}
+
+{% for batch in owner_batches %}
+### Owner: {{ batch.owner | md_escape }} ({{ batch.finding_count }} findings across {{ batch.asset_count }} asset(s))
+
+{% for f in batch.top_findings %}
+- **{{ f.finding_id | md_escape }}** on {{ f.asset_display | md_escape }} — {{ (f.primary_cve or f.title) | md_escape }} (Tier={{ (f.priority_tier or 'N/A') | md_escape }}, SLA={{ (f.sla_bucket or 'N/A') | md_escape }}, Op={{ f.operational_score | fmt_score }}{% if f.in_kev %}, **KEV**{% endif %})
+{% endfor %}
+
+{% endfor %}
+{% else %}
+No owner-assigned remediation batches found.
+
+{% endif %}
+---
+
+## Top Quick-Win Fixes
+
+| # | CVE / Finding Root Cause | Findings | Assets Affected | KEV | Priority / SLA | Max Op Score | Recommended Fix |
+|---|--------------------------|----------|-----------------|-----|----------------|--------------|-----------------|
+{% if quick_wins %}
+{% for qw in quick_wins %}
+| {{ loop.index }} | {{ qw.fix_key | md_escape }} — {{ qw.title | md_escape }} | {{ qw.finding_count }} | {{ qw.asset_count }} | {{ 'Yes' if qw.in_kev else 'No' }} | {{ (qw.priority_tier or 'N/A') | md_escape }} / {{ (qw.sla_bucket or 'N/A') | md_escape }} | {{ qw.max_operational_score | fmt_score }} | {{ (qw.solution or 'Apply vendor patch / mitigate exposure') | md_escape }} |
+{% endfor %}
+{% else %}
+| - | No quick-win fixes identified | 0 | 0 | No | N/A | 0.00 | N/A |
+{% endif %}
+
+{% if invalidated_findings %}
+---
+
+## Stale-Assumption / Invalidated Deferral Alerts
+
+| Finding ID | Asset | CVE | Decision ID | Status | Violated Predicates | Owner |
+|------------|-------|-----|-------------|--------|---------------------|-------|
+{% for f in invalidated_findings %}
+| {{ f.finding_id | md_escape }} | {{ f.asset_display | md_escape }} | {{ (f.primary_cve or 'N/A') | md_escape }} | {{ (f.decision_id or 'N/A') | md_escape }} | {{ f.decision_status | md_escape }} | {{ (f.violated_predicates | join(', ') or 'assumption_violated') | md_escape }} | {{ (f.decision_owner or 'Unassigned') | md_escape }} |
+{% endfor %}
+
+{% endif %}
+{% if diff %}
+---
+
+## Scan-over-Scan Remediation Velocity (`{{ diff.base_run_id | md_escape }}` -> `{{ diff.target_run_id | md_escape }}`)
+
+| Velocity Metric | Count |
+|-----------------|-------|
+| Baseline Total Findings | {{ diff.summary.base_total_findings | default(0) }} |
+| Target Total Findings | {{ diff.summary.target_total_findings | default(0) }} |
+| Persisting Findings | {{ diff.summary.persisting_findings | default(0) }} |
+| Newly Introduced High-Risk (All New) | {{ diff.summary.newly_introduced_high_risk | default(0) }} ({{ diff.summary.newly_introduced_all | default(0) }}) |
+| Threat-Intel Escalated | {{ diff.summary.threat_intel_escalated | default(0) }} |
+| Verified Remediated (Patched / Asset Missing) | {{ diff.summary.verified_remediated | default(0) }} ({{ diff.summary.verified_remediated_confirmed | default(0) }} / {{ diff.summary.verified_remediated_asset_missing | default(0) }}) |
+| Invalidated Assumptions | {{ diff.summary.invalidated_assumptions | default(0) }} |
+| Shadow Assets New / Resolved | {{ diff.summary.shadow_assets_new | default(0) }} / {{ diff.summary.shadow_assets_resolved | default(0) }} |
+
+{% endif %}
+---
+
+## Shadow / Unmatched Asset Disclosure
+
+{% if shadow_assets %}
+| Asset ID | Hostname / IP / Target | Exposed | Findings | KEVs | Max Op Score |
+|----------|------------------------|---------|----------|------|--------------|
+{% for a in shadow_assets %}
+| {{ a.asset_id | md_escape }} | {{ (a.hostname or a.ip_address or a.target_uri or a.image_or_repo or a.canonical_key or 'N/A') | md_escape }} | {{ 'Yes' if a.internet_facing else 'No' }} | {{ a.finding_count }} | {{ a.kev_count }} | {{ a.max_operational_score | fmt_score }} |
+{% endfor %}
+{% else %}
+All scanned assets matched known inventory rules (`0` shadow assets).
+{% endif %}
+
+---
+
+## Provenance & Integrity Footer
+
+- **Run ID:** {{ run.run_id | md_escape }} | **Created (UTC):** {{ run.created_at_utc | md_escape }} | **Manifest Digest:** {{ (run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)') | md_escape }}
+- **Threat Intel Feeds:** EPSS={{ (run.intel_metadata.epss_model_version or 'N/A') | md_escape }} ({{ (run.intel_metadata.epss_score_date or run.intel_metadata.epss_date or 'N/A') | md_escape }}), KEV={{ (run.intel_metadata.kev_catalog_version or 'N/A') | md_escape }} ({{ (run.intel_metadata.kev_date_released or 'N/A') | md_escape }}), NVD={{ (run.intel_metadata.nvd_status or 'N/A') | md_escape }}

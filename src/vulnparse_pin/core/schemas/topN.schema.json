@@ -7,6 +7,10 @@
     "additionalProperties": false,
     "required": ["topn", "inference"],
     "properties": {
+        "version": {
+            "type": "string",
+            "enum": ["v1", "v2"]
+        },
         "meta": {
             "type": "object",
             "additionalProperties": false,
@@ -282,6 +286,21 @@
                 "preserve_p1_precedence": {
                     "type": "boolean",
                     "default": true
+                },
+                "profile": {
+                    "type": ["string", "null"]
+                },
+                "sla_days": {
+                    "type": "object",
+                    "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 3650 }
+                },
+                "bod_26_04": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "ssvc": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },
@@ -294,6 +313,16 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Enable Attack Capability Inference derived pass influence for TopN ranking tie-break keys."
+                },
+                "exposure_track_enabled": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "non_cve_uplift_weight": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "default": 1.0
                 },
                 "min_confidence": {
                     "type": "number",

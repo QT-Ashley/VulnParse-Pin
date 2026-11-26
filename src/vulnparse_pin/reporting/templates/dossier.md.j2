@@ -1,0 +1,171 @@
+# VulnParse-Pin Decision Defense Dossier
+
+- **Run ID:** {{ run.run_id | md_escape }}
+- **Profile:** {{ run.profile | md_escape }}
+- **Scope:** {% if single_finding_mode %}Single Finding (`{{ requested_finding_id | md_escape }}`){% else %}Full Run{% endif %}
+- **Generated At (UTC):** {{ generated_at_utc | md_escape }}
+- **VPP Version:** {{ run.vpp_version | md_escape }}
+- **RunManifest Digest:** {{ (run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)') | md_escape }}
+
+{% if invalidated_findings %}
+> **ALERT — STALE-ASSUMPTION / INVALIDATED DEFERRALS DETECTED ({{ invalidated_findings | length }}):** Previously deferred or risk-accepted findings have violated their assumption predicates (e.g., added to CISA KEV, EPSS exceeded, exposure flipped, or expired) and are re-elevated for immediate action.
+
+{% endif %}
+{% if shadow_assets %}
+> **SHADOW ASSET WARNING ({{ shadow_assets | length }} unmatched asset(s)):** Findings were observed on assets not covered by `assets.yaml`. Review the Shadow / Unmatched Asset Disclosure section below.
+
+{% endif %}
+## Executive Posture Snapshot
+
+| Metric | Value |
+|--------|-------|
+| Total Findings (Run) | {{ summary.total_findings | default(0) }} |
+| Track A (`cve_threat`) / Track B (`exposure_weakness`) | {{ summary.cve_findings | default(0) }} / {{ summary.exposure_findings | default(0) }} |
+| Prioritized Findings (Shown) | {{ prioritized_findings | length }} |
+| Validly Deferred / Accepted / Mitigated | {{ deferred_findings | length }} |
+| Invalidated Deferrals / Acceptances | {{ invalidated_findings | length }} |
+| CISA KEV Findings (Run) | {{ summary.kev_findings | default(0) }} |
+| Unmatched Shadow Assets | {{ shadow_assets | length }} |
+
+---
+
+## Why Prioritized
+
+Findings below require scheduled remediation under the active triage profile (`{{ run.profile | md_escape }}`) based on verified exploitation signals, EPSS v5 probability and percentile, network/operational exposure, attack capability inference (ACI), or invalidated prior deferrals.
+
+{% if prioritized_findings %}
+| Finding ID | Asset | CVE / Track | Priority / SLA | SSVC | Op Score | CVSS (Prov / Ver) | EPSS (Prob / Pct) | KEV | Signal Rel | Status |
+|------------|-------|-------------|----------------|------|----------|-------------------|-------------------|-----|------------|--------|
+{% for f in prioritized_findings %}
+| {{ f.finding_id | md_escape }} | {{ f.asset_display | md_escape }} | {{ (f.primary_cve or f.scoring_track) | md_escape }} | {{ (f.priority_tier or 'N/A') | md_escape }} / {{ (f.sla_bucket or 'N/A') | md_escape }} | {{ (f.ssvc_action or 'N/A') | md_escape }} | {{ f.operational_score | fmt_score }} | {% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} ({{ f.effective_cvss_provenance | md_escape }}{% if f.effective_cvss_version %} v{{ f.effective_cvss_version | md_escape }}{% endif %}){% else %}Missing{% endif %} | {{ f.epss_display | md_escape }} | {{ 'Yes' if f.in_kev else 'No' }} | {{ f.signal_reliability | fmt_score }} | {{ f.decision_status | md_escape }} |
+{% endfor %}
+
+{% for f in prioritized_findings %}
+### {{ loop.index }}. {{ f.title | md_escape }} (`{{ f.finding_id | md_escape }}`)
+
+- **Asset:** {{ f.asset_display | md_escape }} (`{{ f.asset_id | md_escape }}`, inventory={{ (f.inventory_status or 'unknown') | md_escape }}, internet_facing={{ f.internet_facing }}, owner={{ (f.owner or 'Unassigned') | md_escape }}{% if f.open_ports %}, open_ports={{ f.open_ports | join(', ') }}{% endif %})
+- **Triage & BOD 26-04 / SSVC Decision:** Tier={{ (f.priority_tier or 'N/A') | md_escape }}, SLA={{ (f.sla_bucket or 'N/A') | md_escape }}, SSVC={{ (f.ssvc_action or 'N/A') | md_escape }}, OAL={{ (f.oal_compat or 'N/A') | md_escape }}, Status={{ f.decision_status | md_escape }}{% if f.ssvc_path %}, SSVC Path=`{{ f.ssvc_path | replace('\r', ' ') | replace('\n', ' ') | replace('<', '&lt;') | replace('>', '&gt;') }}`{% endif %}
+{% if f.rationale_summary %}
+- **Triage Rationale:** {{ f.rationale_summary | md_escape }}
+{% endif %}
+- **Risk Scoring & Track:** Track=`{{ f.scoring_track | md_escape }}`, Operational={{ f.operational_score | fmt_score }}/10, Raw={{ f.raw_risk_score | fmt_score }}, Band={{ (f.risk_band or 'N/A') | md_escape }}, Mode={{ (f.detection_mode or 'N/A') | md_escape }}, Signal Reliability={{ f.signal_reliability | fmt_score }}{% if f.sast_p1_capped %} (SAST P1-Cap Guardrail Applied){% endif %}
+- **CVSS & Provenance:** {% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} (v{{ (f.effective_cvss_version or '?') | md_escape }}, {{ f.effective_cvss_provenance | md_escape }}){% else %}Missing{% endif %}{% if f.effective_cvss_vector %} — `{{ f.effective_cvss_vector | md_escape }}`{% endif %}
+- **EPSS v5:** {{ f.epss_display | md_escape }}{% if f.epss_model_version or f.epss_date %} (model={{ (f.epss_model_version or 'N/A') | md_escape }}, date={{ (f.epss_date or 'N/A') | md_escape }}){% endif %}
+- **CISA KEV & Exploit Evidence:** in_kev={{ f.in_kev }}{% if f.in_kev %} (added={{ (f.kev_date_added or 'N/A') | md_escape }}, due={{ (f.kev_due_date or 'N/A') | md_escape }}, ransomware={{ (f.kev_ransomware or 'Unknown') | md_escape }}){% endif %}; verified_exploit={{ f.verified_exploit }}; heuristic_exploit_mention={{ f.heuristic_exploit_mention }}
+{% if f.capabilities or f.chains %}
+- **ACI Signals:** capabilities=[{{ f.capabilities | join(', ') | md_escape }}]; chains=[{{ f.chains | join(', ') | md_escape }}]; confidence={{ f.aci_confidence | fmt_score }}; uplift={{ f.aci_uplift_score | fmt_score }}
+{% endif %}
+{% if f.score_breakdown %}
+- **Score Trace Breakdown:** {% for k, v in f.score_breakdown | dictsort %}{{ k | md_escape }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+- **Cross-Scanner Evidence Provenance:** source_count={{ f.source_count | default(1) }}, deduplicated={{ f.is_deduplicated }}{% if f.finding_cves %}, CVEs=[{{ f.finding_cves | join(', ') | md_escape }}]{% endif %}{% if f.cwes %}, CWEs=[{{ f.cwes | join(', ') | md_escape }}]{% endif %}
+
+{% if f.evidence %}
+| # | Source Format | Scanner Signature | Raw Severity | Raw CVSS | Location | Excerpt |
+|---|---------------|-------------------|--------------|----------|----------|---------|
+{% for ev in f.evidence %}
+| {{ ev.evidence_idx }} | {{ (ev.source_format or 'N/A') | md_escape }} | {{ (ev.scanner_sig or 'N/A') | md_escape }} | {{ (ev.raw_severity or 'N/A') | md_escape }} | {{ ev.raw_cvss if ev.raw_cvss is not none else 'N/A' }} | {{ (ev.raw_location or 'N/A') | md_escape }} | {{ (ev.evidence_excerpt or '') | md_escape }} |
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% else %}
+No prioritized findings match this scope.
+
+{% endif %}
+---
+
+## Why Deprioritized / Deferred
+
+This section documents findings explicitly deferred/risk-accepted under `decisions.yaml`, alerts on any **invalidated deferrals**, and explains why high-CVSS or lower-priority findings were excluded from immediate remediation queues.
+
+### Invalidated Deferrals & Stale-Assumption Alerts
+
+{% if invalidated_findings %}
+> **ACTION REQUIRED:** The following {{ invalidated_findings | length }} finding(s) have invalidated deferral or risk-acceptance records. Previous assumptions no longer hold against live threat intelligence or asset exposure.
+
+| Finding ID | Asset | CVE | Decision ID | Status | Violated Predicates | Owner | Expires | Alert Details |
+|------------|-------|-----|-------------|--------|---------------------|-------|---------|---------------|
+{% for f in invalidated_findings %}
+| {{ f.finding_id | md_escape }} | {{ f.asset_display | md_escape }} | {{ (f.primary_cve or 'N/A') | md_escape }} | {{ (f.decision_id or 'N/A') | md_escape }} | {{ f.decision_status | md_escape }} | {{ (f.violated_predicates | join(', ') or 'assumption_violated') | md_escape }} | {{ (f.decision_owner or 'Unassigned') | md_escape }} | {{ (f.decision_expires_at or 'N/A') | md_escape }} | {{ (f.decision_reasons | join('; ') or f.rationale_summary or '') | md_escape }} |
+{% endfor %}
+{% else %}
+No invalidated deferrals or stale-assumption alerts detected.
+{% endif %}
+
+### Validly Deferred / Risk-Accepted / Mitigated Findings
+
+{% if deferred_findings %}
+| Finding ID | Asset | CVE / Title | Decision ID | Status | Owner | Expires | CVSS | EPSS | KEV | Rationale |
+|------------|-------|-------------|-------------|--------|-------|---------|------|------|-----|-----------|
+{% for f in deferred_findings %}
+| {{ f.finding_id | md_escape }} | {{ f.asset_display | md_escape }} | {{ (f.primary_cve or f.title) | md_escape }} | {{ (f.decision_id or 'N/A') | md_escape }} | {{ f.decision_status | md_escape }} | {{ (f.decision_owner or 'Unassigned') | md_escape }} | {{ (f.decision_expires_at or 'N/A') | md_escape }} | {% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} ({{ f.effective_cvss_provenance | md_escape }}){% else %}Missing{% endif %} | {{ f.epss_display | md_escape }} | {{ 'Yes' if f.in_kev else 'No' }} | {{ (f.rationale_summary or '') | md_escape }} |
+{% endfor %}
+{% else %}
+No validly deferred, accepted, or mitigated findings in this scope.
+{% endif %}
+
+### Threat-Evidence & Exposure Deprioritized Findings
+
+{% if deprioritized_findings %}
+{% if high_cvss_deprioritized %}
+**High-CVSS / High-Severity Findings Deprioritized ({{ high_cvss_deprioritized | length }}):** Even where nominal CVSS >= 7.0 or scanner severity is High/Critical, empirical EPSS exploitation probability, absence from CISA KEV, internal/non-exposed asset posture, or static SAST signal reliability places these outside urgent remediation tiers.
+{% endif %}
+
+| Finding ID | Asset | CVE / Title | Tier / SLA | Op Score | CVSS (Prov) | EPSS | KEV | Exposed | Rationale / Score Trace |
+|------------|-------|-------------|------------|----------|-------------|------|-----|---------|-------------------------|
+{% for f in deprioritized_findings %}
+| {{ f.finding_id | md_escape }} | {{ f.asset_display | md_escape }} | {{ (f.primary_cve or f.title) | md_escape }} | {{ (f.priority_tier or 'N/A') | md_escape }} / {{ (f.sla_bucket or 'N/A') | md_escape }} | {{ f.operational_score | fmt_score }} | {% if f.effective_cvss is not none %}{{ f.effective_cvss | fmt_score(1) }} ({{ f.effective_cvss_provenance | md_escape }}){% else %}Missing{% endif %} | {{ f.epss_display | md_escape }} | {{ 'Yes' if f.in_kev else 'No' }} | {{ 'Yes' if f.internet_facing else 'No' }} | {{ (f.deprioritization_reasons | join('; ')) | md_escape }} |
+{% endfor %}
+{% else %}
+No non-prioritized findings in this scope.
+{% endif %}
+
+### Auditor-Defense Compliance Framing (PCI DSS v4.0.1 & CISA BOD 26-04)
+
+- **PCI DSS v4.0.1 (Requirements 6.3.1 & 11.3.1):** Risk-based prioritization combines authoritative CVSS provenance (`NVD > CNA > GHSA > OSV > Scanner-Supplied`), CISA KEV active exploitation status, FIRST EPSS v5 exploit prediction probabilities/percentiles, and asset exposure context. Documented deferrals carry explicit owners, compensating/environmental assumptions, and expiration dates, with automated stale-assumption re-evaluation on every scan.
+- **CISA BOD 26-04 / SSVC:** Remediation SLAs (`3-day + Forensic Triage`, `14-day`, `60-day`, `Fix on Upgrade`) follow Stakeholder-Specific Vulnerability Categorization (SSVC) decision trees over public exposure, exploitation maturity, automatability, and technical impact rather than raw scanner severity labels alone.
+
+---
+
+## Shadow / Unmatched Asset Disclosure
+
+Assets listed below were observed in scanner or Nmap outputs (`inventory_status = 'unmatched_shadow'`) and did **not** match any rule in `assets.yaml`. Stale inventories cannot conceal unowned or shadow infrastructure.
+
+{% if shadow_assets %}
+| Asset ID | Canonical Key | Hostname | IP Address | Target / Image | Exposed | Open Ports | Findings | KEVs | Max Op Score |
+|----------|---------------|----------|------------|----------------|---------|------------|----------|------|--------------|
+{% for a in shadow_assets %}
+| {{ a.asset_id | md_escape }} | {{ (a.canonical_key or 'N/A') | md_escape }} | {{ (a.hostname or 'N/A') | md_escape }} | {{ (a.ip_address or 'N/A') | md_escape }} | {{ (a.target_uri or a.image_or_repo or 'N/A') | md_escape }} | {{ 'Yes' if a.internet_facing else 'No' }} | {{ (a.open_ports | join(', ') or 'None') | md_escape }} | {{ a.finding_count }} | {{ a.kev_count }} | {{ a.max_operational_score | fmt_score }} |
+{% endfor %}
+{% else %}
+All scanned assets matched known inventory rules (`0` unmatched shadow assets).
+{% endif %}
+
+{% if diff %}
+---
+
+## Scan-over-Scan Diff Context (`{{ diff.base_run_id | md_escape }}` -> `{{ diff.target_run_id | md_escape }}`)
+
+| Delta Category | Count |
+|----------------|-------|
+| Newly Introduced High-Risk | {{ diff.summary.newly_introduced_high_risk | default(0) }} (of {{ diff.summary.newly_introduced_all | default(0) }} total new) |
+| Threat-Intel Escalated | {{ diff.summary.threat_intel_escalated | default(0) }} |
+| Verified Remediated | {{ diff.summary.verified_remediated | default(0) }} (patched={{ diff.summary.verified_remediated_confirmed | default(0) }}, asset_missing={{ diff.summary.verified_remediated_asset_missing | default(0) }}) |
+| Invalidated Assumptions | {{ diff.summary.invalidated_assumptions | default(0) }} |
+| Shadow Assets New / Resolved | {{ diff.summary.shadow_assets_new | default(0) }} / {{ diff.summary.shadow_assets_resolved | default(0) }} |
+
+{% endif %}
+---
+
+## Linked RunManifest & Feed Provenance Footer
+
+| Artifact / Feed | Provenance Detail |
+|-----------------|-------------------|
+| Run ID | {{ run.run_id | md_escape }} |
+| Run Created (UTC) | {{ run.created_at_utc | md_escape }} |
+| RunManifest Digest | {{ (run.manifest_digest or 'Pending post-export RunManifest seal (see runmanifest.json)') | md_escape }} |
+| Config / Assets / Decisions SHA-256 | config={{ (run.config_sha256 or 'N/A') | md_escape }} / assets={{ (run.assets_sha256 or 'N/A') | md_escape }} / decisions={{ (run.decisions_sha256 or 'N/A') | md_escape }} |
+| EPSS Feed | version={{ (run.intel_metadata.epss_model_version or 'N/A') | md_escape }}, date={{ (run.intel_metadata.epss_score_date or run.intel_metadata.epss_date or 'N/A') | md_escape }}, sha256={{ (run.intel_metadata.epss_sha256 or 'N/A') | md_escape }} |
+| CISA KEV Feed | version={{ (run.intel_metadata.kev_catalog_version or 'N/A') | md_escape }}, released={{ (run.intel_metadata.kev_date_released or 'N/A') | md_escape }}, sha256={{ (run.intel_metadata.kev_sha256 or 'N/A') | md_escape }} |
+| NVD / GHSA / OSV | nvd={{ (run.intel_metadata.nvd_status or 'N/A') | md_escape }}, ghsa={{ run.intel_metadata.ghsa_enabled }}, osv={{ run.intel_metadata.osv_enabled }} |

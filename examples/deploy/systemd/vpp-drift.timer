@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily VulnParse-Pin KEV/EPSS Drift Check Timer
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=15m
+Persistent=true
+Unit=vpp-drift.service
+
+[Install]
+WantedBy=timers.target

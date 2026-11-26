@@ -12,8 +12,84 @@
     "version": {
       "type": "string",
       "enum": [
-        "v1"
+        "v1",
+        "v2"
       ]
+    },
+    "profile": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "legacy_oal",
+        "bod_26_04",
+        "ssvc",
+        "oal",
+        "default",
+        null
+      ]
+    },
+    "signal_reliability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 2.0
+          }
+        }
+      }
+    },
+    "triage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_profile": {
+          "type": "string",
+          "enum": [
+            "default",
+            "bod_26_04",
+            "bod-26-04",
+            "ssvc",
+            "legacy_oal",
+            "oal"
+          ]
+        },
+        "static_sast_p1_cap": {
+          "type": "boolean"
+        }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "decisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "feed_cache": {
       "type": "object",
@@ -70,6 +146,16 @@
               "maximum": 8760
             },
             "nvd_modified": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8760
+            },
+            "osv": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8760
+            },
+            "ghsa": {
               "type": "integer",
               "minimum": 1,
               "maximum": 8760
@@ -174,9 +260,49 @@
                   "maximum": 2100
                 },
                 "end_year": {
-                  "type": "integer",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
                   "minimum": 2002,
                   "maximum": 2100
+                },
+                "sqlite_enforce_permissions": {
+                  "type": "boolean"
+                },
+                "sqlite_file_mode": {
+                  "type": "string",
+                  "pattern": "^0o[0-7]{3}$"
+                },
+                "sqlite_max_age_hours": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000
+                },
+                "sqlite_max_rows": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000000
+                }
+              }
+            },
+            "osv": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "ttl_hours": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 8760
+                },
+                "source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "sqlite_enforce_permissions": {
                   "type": "boolean"
@@ -260,6 +386,29 @@
             }
           }
         },
+        "osv_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "osv_cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sqlite_max_age_hours": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "sqlite_max_rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000
+            }
+          }
+        },
         "confidence": {
           "type": "object",
           "additionalProperties": false,
@@ -273,7 +422,8 @@
             "model_version": {
               "type": "string",
               "enum": [
-                "v1"
+                "v1",
+                "v2"
               ]
             },
             "max_score": {
@@ -318,6 +468,11 @@
                   "maximum": 100
                 },
                 "ghsa": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "osv": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 100

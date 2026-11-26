@@ -1,5 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 from __future__ import annotations
 
+from hashlib import sha256
+import hmac
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -11,7 +16,7 @@ from vulnparse_pin.core.classes.execution_manifest import LedgerService
 from vulnparse_pin.core.classes.pass_classes import DerivedContext, DerivedPassResult, PassMeta
 from vulnparse_pin.utils.runmanifest import verify_runmanifest_file
 from vulnparse_pin.app.output import run_output_and_summary
-from vulnparse_pin.utils.webhook_delivery import emit_configured_webhooks
+from vulnparse_pin.utils.webhook_delivery import _lane_matches, _sign_body, emit_configured_webhooks
 
 
 class _PFH:
@@ -160,7 +165,14 @@ def test_emit_configured_webhooks_delivers_signed_payload(tmp_path: Path, monkey
     assert isinstance(headers, dict)
     assert headers["X-VPP-Signature"].startswith("sha256=")
     assert headers["X-VPP-Key-Id"] == "primary"
+    assert headers["X-VPP-Timestamp"]
     assert headers["X-VPP-Nonce"]
+    expected_mac = hmac.new(
+        b"super-secret",
+        f"{headers['X-VPP-Timestamp']}.{headers['X-VPP-Nonce']}.".encode("utf-8") + captured["data"],
+        sha256,
+    ).hexdigest()
+    assert headers["X-VPP-Signature"] == f"sha256={expected_mac}"
     body = captured["data"].decode("utf-8")
     assert '"oal_filter_applied":"P1"' in body
     assert '"top_findings"' in body
@@ -373,3 +385,209 @@ def test_run_output_default_json_omits_scoring_overlay_without_presentation(tmp_
     assert "risk_score" not in out_finding
     assert "risk_band" not in out_finding
     assert "score_trace" not in out_finding
+
+
+def test_sign_body_binds_timestamp_and_nonce_against_replay_tampering() -> None:
+    body = b'{"event":"test"}'
+    sig = _sign_body("my-secret", body, "2026-11-24T00:00:00Z", "nonce-123")
+    expected = hmac.new(
+        b"my-secret",
+        b"2026-11-24T00:00:00Z.nonce-123." + body,
+        sha256,
+    ).hexdigest()
+    assert sig == f"sha256={expected}"
+    assert sig != _sign_body("my-secret", body, "2026-11-24T00:00:01Z", "nonce-123")
+    assert sig != _sign_body("my-secret", body, "2026-11-24T00:00:00Z", "nonce-999")
+    assert _sign_body("my-secret", body) == f"sha256={hmac.new(b'my-secret', body, sha256).hexdigest()}"
+
+
+def _make_multi_tier_scan() -> ScanResult:
+    findings = [
+        Finding(
+            finding_id="f-oal1-3d",
+            vuln_id="p-1",
+            title="External KEV RCE",
+            description="test",
+            severity="Critical",
+            cves=["CVE-2026-0001"],
+            exploit_available=True,
+            cisa_kev=True,
+            asset_id="asset-ext",
+        ),
+        Finding(
+            finding_id="f-oal2-14d",
+            vuln_id="p-2",
+            title="External Chain Path",
+            description="test",
+            severity="High",
+            cves=["CVE-2026-0002"],
+            exploit_available=False,
+            cisa_kev=False,
+            asset_id="asset-ext",
+        ),
+        Finding(
+            finding_id="f-int-kev-14d",
+            vuln_id="p-3",
+            title="Internal KEV",
+            description="test",
+            severity="High",
+            cves=["CVE-2026-0003"],
+            exploit_available=True,
+            cisa_kev=True,
+            asset_id="asset-int",
+        ),
+        Finding(
+            finding_id="f-med-60d",
+            vuln_id="p-4",
+            title="Internal Medium",
+            description="test",
+            severity="Medium",
+            cves=["CVE-2026-0004"],
+            exploit_available=False,
+            cisa_kev=False,
+            asset_id="asset-int",
+        ),
+        Finding(
+            finding_id="f-low-p4",
+            vuln_id="p-5",
+            title="Internal Low",
+            description="test",
+            severity="Low",
+            cves=["CVE-2026-0005"],
+            exploit_available=False,
+            cisa_kev=False,
+            asset_id="asset-int",
+        ),
+    ]
+    asset_ext = Asset(hostname="ext1", ip_address="198.51.100.10", asset_id="asset-ext", findings=findings[:2])
+    asset_int = Asset(hostname="int1", ip_address="10.0.0.10", asset_id="asset-int", findings=findings[2:])
+    derived = DerivedContext()
+    derived = derived.put(
+        DerivedPassResult(
+            meta=PassMeta(name="TopN", version="1.0", created_at_utc="2026-04-22T00:00:00Z"),
+            data={
+                "assets": [
+                    {
+                        "asset_id": "asset-ext",
+                        "rank": 1,
+                        "score": 9.9,
+                        "score_basis": "operational",
+                        "inference": {"externally_facing_inferred": True},
+                    },
+                    {
+                        "asset_id": "asset-int",
+                        "rank": 2,
+                        "score": 7.0,
+                        "score_basis": "operational",
+                        "inference": {"externally_facing_inferred": False},
+                    },
+                ],
+                "global_top_findings": [
+                    {"finding_id": "f-oal1-3d", "asset_id": "asset-ext", "score": 9.9, "risk_band": "Critical", "port": 443, "proto": "tcp"},
+                    {"finding_id": "f-oal2-14d", "asset_id": "asset-ext", "score": 8.2, "risk_band": "High", "port": 8443, "proto": "tcp"},
+                    {"finding_id": "f-int-kev-14d", "asset_id": "asset-int", "score": 8.0, "risk_band": "High", "port": 8080, "proto": "tcp"},
+                    {"finding_id": "f-med-60d", "asset_id": "asset-int", "score": 5.0, "risk_band": "Medium", "port": 8081, "proto": "tcp"},
+                    {"finding_id": "f-low-p4", "asset_id": "asset-int", "score": 2.0, "risk_band": "Low", "port": 8082, "proto": "tcp"},
+                ],
+            },
+        )
+    )
+    derived = derived.put(
+        DerivedPassResult(
+            meta=PassMeta(name="Summary", version="1.0", created_at_utc="2026-04-22T00:00:01Z"),
+            data={"overview": {"scored_findings": 5}},
+        )
+    )
+    derived = derived.put(
+        DerivedPassResult(
+            meta=PassMeta(name="ACI", version="1.0", created_at_utc="2026-04-22T00:00:02Z"),
+            data={
+                "metrics": {"inferred_findings": 2, "coverage_ratio": 0.4},
+                "finding_semantics": {
+                    "f-oal1-3d": {"confidence": 0.95, "chain_candidates": ["chain-1"]},
+                    "f-oal2-14d": {"confidence": 0.90, "chain_candidates": ["chain-2"]},
+                },
+            },
+        )
+    )
+    return ScanResult(
+        scan_metadata=ScanMetaData(
+            source="nessus",
+            scan_date=__import__("datetime").datetime(2026, 4, 22),
+            asset_count=2,
+            vulnerability_count=5,
+            source_file="scan.nessus",
+        ),
+        assets=[asset_ext, asset_int],
+        derived=derived,
+    )
+
+
+@pytest.mark.parametrize(
+    ("oal_filter", "expected_ids"),
+    [
+        ("P1", {"f-oal1-3d"}),
+        ("OAL-1", {"f-oal1-3d"}),
+        ("P1b", {"f-oal2-14d"}),
+        ("OAL-2", {"f-oal2-14d"}),
+        ("P2", {"f-oal2-14d", "f-int-kev-14d"}),
+        ("OAL-3", {"f-int-kev-14d", "f-med-60d", "f-low-p4"}),
+        ("P3", {"f-med-60d"}),
+        ("P4", {"f-low-p4"}),
+        ("3-day", {"f-oal1-3d"}),
+        ("14-day", {"f-oal2-14d", "f-int-kev-14d"}),
+        ("60-day", {"f-med-60d"}),
+        ("all", {"f-oal1-3d", "f-oal2-14d", "f-int-kev-14d", "f-med-60d", "f-low-p4"}),
+    ],
+)
+def test_emit_configured_webhooks_supports_priority_sla_and_oal_filters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    oal_filter: str,
+    expected_ids: set[str],
+) -> None:
+    import json
+
+    webhook_cfg = WebhookRuntimeConfig(
+        enabled=True,
+        endpoints=(WebhookEndpointConfig(url="https://hooks.example.org/vpp", oal_filter=oal_filter),),
+    )
+    ctx = _make_ctx(tmp_path, webhook_cfg)
+    scan = _make_multi_tier_scan()
+    monkeypatch.setenv("VP_WEBHOOK_HMAC_KEY", "super-secret")
+
+    captured: dict[str, bytes] = {}
+
+    class _Resp:
+        status_code = 202
+        url = "https://hooks.example.org/vpp"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _fake_post(_url, data=None, **_kwargs):
+        captured["data"] = data
+        return _Resp()
+
+    monkeypatch.setattr("vulnparse_pin.utils.webhook_delivery.requests.post", _fake_post)
+
+    result = emit_configured_webhooks(
+        ctx=ctx,
+        scan_result=scan,
+        scanner_input=Path("scan.nessus"),
+        output_paths={"json": tmp_path / "out.json"},
+    )
+
+    assert result == {"sent": 1, "failed": 0, "spooled": 0, "skipped": 0}
+    payload = json.loads(captured["data"].decode("utf-8"))
+    got_ids = {item["finding_id"] for item in payload["top_findings"]}
+    assert got_ids == expected_ids
+
+
+def test_lane_matches_preserves_legacy_two_arg_checks() -> None:
+    assert _lane_matches("P1", "OAL-1 Immediate Exploitable") is True
+    assert _lane_matches("P1b", "OAL-2 High-Confidence Chain Path") is True
+    assert _lane_matches("P2", "OAL-3 Remaining High Risk") is True
+    assert _lane_matches("OAL-1", "OAL-1 Immediate Exploitable") is True
+    assert _lane_matches("OAL-2", "OAL-2 High-Confidence Chain Path") is True
+    assert _lane_matches("OAL-3", "OAL-3 Remaining High Risk") is True

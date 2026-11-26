@@ -1,11 +1,5 @@
-# VulnParse-Pin – Vulnerability Intelligence and Decision Support Engine
-# Copyright (C) 2026 Quashawn Ashley
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# any later version.
-# See the LICENSE file for full terms.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
 
 """
 GitHub Security Advisory (GHSA) hybrid enrichment source.
@@ -17,7 +11,10 @@ Supports both online (GitHub REST API) and offline (local database) modes.
 from typing import Dict, Optional, List, Any, Set, Tuple
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from urllib.parse import unquote
 import concurrent.futures
+import contextlib
+import math
 import os
 import re
 import requests
@@ -29,8 +26,68 @@ import stat
 import threading
 
 from vulnparse_pin.core.classes.dataclass import RunContext, ScanResult
+from vulnparse_pin.utils.cvss_utils import compute_cvss_base_score, detect_cvss_exact_version, is_valid_cvss_vector
 from vulnparse_pin.utils.logger import colorize
 from vulnparse_pin import UA
+
+_SQLITE_CHUNK_SIZE = 900
+_PURL_ECOSYSTEM_ALIASES: Dict[str, str] = {
+    "pypi": "pypi",
+    "npm": "npm",
+    "golang": "go",
+    "go": "go",
+    "maven": "maven",
+    "nuget": "nuget",
+    "gem": "rubygems",
+    "rubygems": "rubygems",
+    "cargo": "crates.io",
+    "crates.io": "crates.io",
+    "composer": "packagist",
+    "packagist": "packagist",
+    "pub": "pub",
+    "hex": "hex",
+    "swift": "swift",
+    "apk": "alpine",
+    "deb": "debian",
+    "rpm": "redhat",
+    "github": "github actions",
+}
+
+
+def parse_purl(purl: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Parse a Package URL (PURL) into normalized (ecosystem, package_name).
+    Example: 'pkg:pypi/requests@2.31.0' -> ('pypi', 'requests')
+             'pkg:npm/%40babel/core@7.24.0' -> ('npm', '@babel/core')
+             'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1' -> ('maven', 'org.apache.logging.log4j:log4j-core')
+    """
+    if not isinstance(purl, str):
+        return None, None
+    raw = purl.strip()
+    if not raw.lower().startswith("pkg:"):
+        return None, None
+    body = raw[4:].lstrip("/")
+    body = body.split("#", 1)[0].split("?", 1)[0]
+    if "/" not in body:
+        return None, None
+    eco_raw, rest = body.split("/", 1)
+    eco = _PURL_ECOSYSTEM_ALIASES.get(eco_raw.strip().lower(), eco_raw.strip().lower())
+    if not eco or not rest:
+        return None, None
+    # Strip version suffix '@...' from the final segment (after namespace if any)
+    if "@" in rest:
+        idx = rest.rfind("@")
+        # Be careful with scoped npm packages like '@scope/pkg@1.0.0' or '@scope/pkg'
+        slash_idx = rest.rfind("/")
+        if idx > slash_idx:
+            rest = rest[:idx]
+    decoded = unquote(rest).strip("/")
+    if not decoded:
+        return eco, None
+    if eco == "maven" and "/" in decoded:
+        ns, name = decoded.split("/", 1)
+        decoded = f"{ns}:{name}"
+    return eco, decoded.lower()
 
 _GHSA_ID_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz-")
 _CVE_PREFIX = "CVE-"
@@ -76,6 +133,7 @@ class GHSAEnrichmentSource:
         self.token_env_name = self._sanitize_token_env_name(token_env_name)
         self.ghsa_by_cve: Dict[str, List[Dict[str, Any]]] = {}
         self.ghsa_by_package: Dict[str, List[Dict[str, Any]]] = {}
+        self.ghsa_by_ecosystem_package: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
         self._is_loaded = False
         self._advisory_cache: Dict[str, Dict[str, Any]] = {}
         self._cve_search_cache: Dict[str, List[Dict[str, Any]]] = {}
@@ -95,20 +153,74 @@ class GHSAEnrichmentSource:
     # SQLite init
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _ensure_ghsa_schema(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ghsa_cve_index (
+                cve_id    TEXT NOT NULL,
+                advisory_id TEXT NOT NULL,
+                advisory_json TEXT NOT NULL,
+                updated_at TEXT,
+                PRIMARY KEY (cve_id, advisory_id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ghsa_cve_id ON ghsa_cve_index(cve_id)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ghsa_package_index (
+                ecosystem TEXT NOT NULL,
+                package_name TEXT NOT NULL,
+                advisory_id TEXT NOT NULL,
+                cve_id TEXT,
+                cvss_score REAL,
+                cvss_vector TEXT,
+                severity TEXT,
+                summary TEXT,
+                advisory_json TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (ecosystem, package_name, advisory_id)
+            )
+            """
+        )
+        existing_pkg_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(ghsa_package_index)").fetchall()
+            if len(row) > 1
+        }
+        for col_name, col_type in (("advisory_json", "TEXT"), ("updated_at", "TEXT")):
+            if col_name not in existing_pkg_cols:
+                conn.execute(f"ALTER TABLE ghsa_package_index ADD COLUMN {col_name} {col_type}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ghsa_pkg_name ON ghsa_package_index(package_name)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ghsa_pkg_eco_name ON ghsa_package_index(ecosystem, package_name)"
+        )
+
     def _init_sqlite_index(self) -> None:
-        """Initialize optional GHSA SQLite index for warm-run CVE lookups."""
+        """Initialize optional GHSA SQLite index for warm-run CVE & package/PURL lookups."""
         try:
             paths = getattr(self.ctx, "paths", None)
-            if not paths or not getattr(paths, "cache_dir", None):
+            cache_dir = getattr(paths, "cache_dir", None) if paths else None
+            if not cache_dir or not isinstance(cache_dir, (str, os.PathLike)):
                 return
 
-            db_path = paths.cache_dir / "ghsa_cache.sqlite3"
-            if not db_path.exists():
-                db_path = self.ctx.pfh.ensure_writable_file(
-                    db_path,
-                    label="GHSA SQLite Index",
-                    create_parents=True,
-                    overwrite=False,
+            db_path = Path(cache_dir) / "ghsa_cache.sqlite3"
+            sig_path = f"{db_path}.sig.json"
+            db_existed = db_path.exists()
+
+            if not db_existed:
+                db_path = Path(
+                    self.ctx.pfh.ensure_writable_file(
+                        db_path,
+                        label="GHSA SQLite Index",
+                        create_parents=True,
+                        overwrite=False,
+                    )
                 )
             else:
                 self.ctx.pfh.ensure_readable_file(db_path, label="GHSA SQLite Index")
@@ -117,34 +229,29 @@ class GHSAEnrichmentSource:
                         f"GHSA SQLite index is not writable: {self.ctx.pfh.format_for_log(db_path)}"
                     )
 
-            with sqlite3.connect(str(db_path)) as conn:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS ghsa_cve_index (
-                        cve_id    TEXT NOT NULL,
-                        advisory_id TEXT NOT NULL,
-                        advisory_json TEXT NOT NULL,
-                        updated_at TEXT,
-                        PRIMARY KEY (cve_id, advisory_id)
-                    )
-                    """
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_ghsa_cve_id ON ghsa_cve_index(cve_id)"
-                )
-                conn.execute("PRAGMA integrity_check")
-
             self._sqlite_enabled = True
             self._sqlite_path = str(db_path)
-            self._sqlite_sig_path = f"{self._sqlite_path}.sig.json"
+            self._sqlite_sig_path = sig_path
+
+            if db_existed:
+                self._sqlite_harden_permissions()
+                if not self._sqlite_verify_signature():
+                    self.ctx.logger.warning(
+                        "GHSA SQLite signature verification failed; quarantining and rebuilding index."
+                    )
+                    self._sqlite_quarantine_and_reset()
+                else:
+                    with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
+                        with conn:
+                            self._ensure_ghsa_schema(conn)
+                            conn.execute("PRAGMA integrity_check")
+            else:
+                with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
+                    with conn:
+                        self._ensure_ghsa_schema(conn)
+                        conn.execute("PRAGMA integrity_check")
+
             self._sqlite_harden_permissions()
-
-            if not self._sqlite_verify_signature():
-                self.ctx.logger.warning(
-                    "GHSA SQLite signature verification failed; quarantining and rebuilding index."
-                )
-                self._sqlite_quarantine_and_reset()
-
             self._sqlite_prune()
 
             # Re-sign after all schema operations so the sig reflects the
@@ -154,7 +261,9 @@ class GHSAEnrichmentSource:
             self.ctx.logger.debug(
                 f"GHSA SQLite index enabled at {self.ctx.pfh.format_for_log(db_path)}"
             )
-        except (OSError, sqlite3.DatabaseError, ValueError, TypeError) as e:
+        except PermissionError:
+            raise
+        except (OSError, sqlite3.DatabaseError, ValueError, TypeError, AttributeError) as e:
             self._sqlite_enabled = False
             self._sqlite_path = None
             self._sqlite_sig_path = None
@@ -237,7 +346,7 @@ class GHSAEnrichmentSource:
 
     def _build_headers(self) -> Dict[str, str]:
         headers = dict(self.GHSA_HEADERS)
-        headers["User-Agent"] = UA or "VulnParse-Pin/1.2"
+        headers["User-Agent"] = UA or "VulnParse-Pin/2.0"
         token = self._get_github_token()
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -270,32 +379,48 @@ class GHSAEnrichmentSource:
         max_rows = policy["max_rows"]
 
         try:
-            with sqlite3.connect(self._sqlite_path) as conn:
-                before_changes = conn.total_changes
-                if max_age_hours > 0:
-                    cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat().replace("+00:00", "Z")
-                    conn.execute("DELETE FROM ghsa_cve_index WHERE updated_at < ?", (cutoff,))
-                after_age_changes = conn.total_changes
-                age_deleted = max(after_age_changes - before_changes, 0)
+            with contextlib.closing(sqlite3.connect(self._sqlite_path)) as conn:
+                with conn:
+                    before_changes = conn.total_changes
+                    if max_age_hours > 0:
+                        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat().replace("+00:00", "Z")
+                        conn.execute("DELETE FROM ghsa_cve_index WHERE updated_at < ?", (cutoff,))
+                        conn.execute("DELETE FROM ghsa_package_index WHERE updated_at < ?", (cutoff,))
+                    after_age_changes = conn.total_changes
+                    age_deleted = max(after_age_changes - before_changes, 0)
 
-                if max_rows > 0:
-                    row_count = conn.execute("SELECT COUNT(*) FROM ghsa_cve_index").fetchone()[0]
-                    if row_count > max_rows:
-                        trim = row_count - max_rows
-                        conn.execute(
-                            """
-                            DELETE FROM ghsa_cve_index
-                            WHERE rowid IN (
-                                SELECT rowid FROM ghsa_cve_index
-                                ORDER BY COALESCE(updated_at, '') ASC
-                                LIMIT ?
+                    if max_rows > 0:
+                        row_count = conn.execute("SELECT COUNT(*) FROM ghsa_cve_index").fetchone()[0]
+                        if row_count > max_rows:
+                            trim = row_count - max_rows
+                            conn.execute(
+                                """
+                                DELETE FROM ghsa_cve_index
+                                WHERE rowid IN (
+                                    SELECT rowid FROM ghsa_cve_index
+                                    ORDER BY COALESCE(updated_at, '') ASC
+                                    LIMIT ?
+                                )
+                                """,
+                                (trim,),
                             )
-                            """,
-                            (trim,),
-                        )
-                after_cap_changes = conn.total_changes
-                cap_deleted = max(after_cap_changes - after_age_changes, 0)
-                final_row_count = conn.execute("SELECT COUNT(*) FROM ghsa_cve_index").fetchone()[0]
+                        pkg_count = conn.execute("SELECT COUNT(*) FROM ghsa_package_index").fetchone()[0]
+                        if pkg_count > max_rows:
+                            pkg_trim = pkg_count - max_rows
+                            conn.execute(
+                                """
+                                DELETE FROM ghsa_package_index
+                                WHERE rowid IN (
+                                    SELECT rowid FROM ghsa_package_index
+                                    ORDER BY COALESCE(updated_at, '') ASC
+                                    LIMIT ?
+                                )
+                                """,
+                                (pkg_trim,),
+                            )
+                    after_cap_changes = conn.total_changes
+                    cap_deleted = max(after_cap_changes - after_age_changes, 0)
+                    final_row_count = conn.execute("SELECT COUNT(*) FROM ghsa_cve_index").fetchone()[0]
 
             self._sqlite_prune_stats["runs"] += 1
             self._sqlite_prune_stats["age_deleted"] += age_deleted
@@ -367,19 +492,28 @@ class GHSAEnrichmentSource:
         )
         with self.ctx.pfh.open_for_write(sig_path, mode="w", encoding="utf-8", label="GHSA SQLite Signature") as f:
             json.dump(payload, f, indent=2)
+        if os.name != "nt":
+            try:
+                os.chmod(sig_path, 0o600)
+            except OSError:
+                pass
 
     def _sqlite_verify_signature(self) -> bool:
-        """Return False when tampering or corruption is detected."""
+        """Return False when signature is missing, downgraded, tampered, or corrupt."""
         if not self._sqlite_enabled or not self._sqlite_path:
             return False
         if not self._sqlite_sig_path or not os.path.exists(self._sqlite_sig_path):
-            # First run – bootstrap signature.
-            self._sqlite_write_signature()
-            return True
+            return False
         try:
+            if os.name != "nt":
+                st = os.stat(self._sqlite_sig_path)
+                if bool(st.st_mode & stat.S_IWOTH):
+                    return False
             with self.ctx.pfh.open_for_read(self._sqlite_sig_path, mode="r", encoding="utf-8", label="GHSA SQLite Signature", log=False) as f:
                 payload = json.load(f)
-            mode = str(payload.get("mode", "sha256"))
+            if not isinstance(payload, dict):
+                return False
+            mode = str(payload.get("mode", "")).strip()
             expected_sig = str(payload.get("signature", ""))
             expected_digest = str(payload.get("digest", ""))
             current_digest = self._sqlite_compute_digest()
@@ -387,15 +521,19 @@ class GHSAEnrichmentSource:
                 return False
             if not hmac.compare_digest(expected_digest, current_digest):
                 return False
+            secret = self._sqlite_secret()
+            if secret is not None and mode != "hmac-sha256":
+                return False
             if mode == "hmac-sha256":
-                secret = self._sqlite_secret()
                 if secret is None:
                     return False
                 current_sig = hmac.new(secret, current_digest.encode("utf-8"), hashlib.sha256).hexdigest()
-            else:
+            elif mode == "sha256":
                 current_sig = current_digest
+            else:
+                return False
             return hmac.compare_digest(expected_sig, current_sig)
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        except (OSError, ValueError, TypeError, json.JSONDecodeError, PermissionError):
             return False
 
     def _sqlite_quarantine_and_reset(self) -> None:
@@ -410,21 +548,10 @@ class GHSAEnrichmentSource:
             pass
         if not self._sqlite_path:
             return
-        with sqlite3.connect(self._sqlite_path) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ghsa_cve_index (
-                    cve_id    TEXT NOT NULL,
-                    advisory_id TEXT NOT NULL,
-                    advisory_json TEXT NOT NULL,
-                    updated_at TEXT,
-                    PRIMARY KEY (cve_id, advisory_id)
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ghsa_cve_id ON ghsa_cve_index(cve_id)"
-            )
+        with contextlib.closing(sqlite3.connect(self._sqlite_path)) as conn:
+            with conn:
+                self._ensure_ghsa_schema(conn)
+        self._sqlite_harden_permissions()
         self._sqlite_write_signature()
 
     def _normalize_target_cves(self, target_cves: Optional[Set[str]]) -> Set[str]:
@@ -433,7 +560,7 @@ class GHSAEnrichmentSource:
         return {
             c.strip().upper()
             for c in target_cves
-            if isinstance(c, str) and c.strip().upper().startswith("CVE-")
+            if isinstance(c, str) and self._is_valid_cve_id(c)
         }
 
     def _sqlite_has_rows(self) -> bool:
@@ -446,9 +573,11 @@ class GHSAEnrichmentSource:
             self._sqlite_quarantine_and_reset()
             return False
         try:
-            with sqlite3.connect(self._sqlite_path) as conn:
-                row_count = conn.execute("SELECT COUNT(*) FROM ghsa_cve_index").fetchone()[0]
-            return row_count > 0
+            with contextlib.closing(sqlite3.connect(self._sqlite_path)) as conn:
+                with conn:
+                    cve_count = conn.execute("SELECT COUNT(*) FROM ghsa_cve_index").fetchone()[0]
+                    pkg_count = conn.execute("SELECT COUNT(*) FROM ghsa_package_index").fetchone()[0]
+            return (cve_count + pkg_count) > 0
         except (OSError, sqlite3.DatabaseError):
             return False
 
@@ -472,16 +601,15 @@ class GHSAEnrichmentSource:
 
         try:
             all_rows: List[Tuple[str, str]] = []
-            with sqlite3.connect(self._sqlite_path) as conn:
-                batch = list(valid_targets)
-                chunk_size = 900          # stay under SQLite 999-parameter limit
-                for i in range(0, len(batch), chunk_size):
-                    chunk = batch[i:i + chunk_size]
-                    # Parameterised placeholders — no string interpolation of user data.
-                    placeholders = ",".join("?" for _ in chunk)
-                    sql = f"SELECT cve_id, advisory_json FROM ghsa_cve_index WHERE cve_id IN ({placeholders})"
-                    rows = conn.execute(sql, tuple(chunk)).fetchall()
-                    all_rows.extend(rows)
+            with contextlib.closing(sqlite3.connect(self._sqlite_path)) as conn:
+                with conn:
+                    batch = list(valid_targets)
+                    for i in range(0, len(batch), _SQLITE_CHUNK_SIZE):
+                        chunk = batch[i:i + _SQLITE_CHUNK_SIZE]
+                        placeholders = ",".join("?" for _ in chunk)
+                        sql = f"SELECT cve_id, advisory_json FROM ghsa_cve_index WHERE cve_id IN ({placeholders})"
+                        rows = conn.execute(sql, tuple(chunk)).fetchall()
+                        all_rows.extend(rows)
 
             for cve_id, advisory_json in all_rows:
                 try:
@@ -501,6 +629,86 @@ class GHSAEnrichmentSource:
         return unresolved
 
     @staticmethod
+    def _extract_advisory_cvss_fields(advisory: Dict[str, Any]) -> Tuple[Optional[float], Optional[str]]:
+        vec: Optional[str] = None
+        score: Optional[float] = None
+
+        def _try_vec(raw_vec: Any, raw_score: Any = None) -> bool:
+            nonlocal vec, score
+            if isinstance(raw_vec, str) and is_valid_cvss_vector(raw_vec.strip()):
+                vec = raw_vec.strip()
+                computed = compute_cvss_base_score(vec)
+                if computed is not None:
+                    score = computed
+                    return True
+            if raw_score is not None and score is None and not isinstance(raw_score, bool):
+                try:
+                    parsed_score = float(raw_score)
+                    if math.isfinite(parsed_score) and 0.0 <= parsed_score <= 10.0:
+                        score = parsed_score
+                except (TypeError, ValueError):
+                    pass
+            return False
+
+        sev = advisory.get("severity")
+        if isinstance(sev, list):
+            for entry in sev:
+                if isinstance(entry, dict) and _try_vec(entry.get("score")):
+                    return score, vec
+        cvss_sevs = advisory.get("cvss_severities")
+        if isinstance(cvss_sevs, dict):
+            for key in ("cvss_v4", "cvss_v3", "cvss_v2"):
+                item = cvss_sevs.get(key)
+                if isinstance(item, dict) and _try_vec(item.get("vector_string") or item.get("vectorString"), item.get("score")):
+                    return score, vec
+        cvss_obj = advisory.get("cvss")
+        if isinstance(cvss_obj, dict) and _try_vec(
+            cvss_obj.get("vector_string") or cvss_obj.get("vectorString"),
+            cvss_obj.get("score") or cvss_obj.get("baseScore"),
+        ):
+            return score, vec
+        _try_vec(advisory.get("cvss_vector"), advisory.get("cvss_score"))
+        return score, vec
+
+    @staticmethod
+    def _extract_severity_label(advisory: Dict[str, Any]) -> Optional[str]:
+        sev = advisory.get("severity")
+        if isinstance(sev, str) and sev.strip():
+            return sev.strip().upper()
+        db_spec = advisory.get("database_specific")
+        if isinstance(db_spec, dict) and isinstance(db_spec.get("severity"), str):
+            return db_spec["severity"].strip().upper()
+        return None
+
+    @staticmethod
+    def _extract_package_entries(advisory: Dict[str, Any]) -> List[Tuple[str, str]]:
+        """Extract normalized (ecosystem, package_name) tuples from an advisory."""
+        out: List[Tuple[str, str]] = []
+        pkg_name = advisory.get("package_name")
+        if isinstance(pkg_name, str) and pkg_name.strip():
+            eco = str(advisory.get("ecosystem") or "").strip().lower()
+            out.append((eco, pkg_name.strip().lower()))
+
+        affected = advisory.get("affected")
+        if isinstance(affected, list):
+            for item in affected:
+                if not isinstance(item, dict):
+                    continue
+                package = item.get("package")
+                if not isinstance(package, dict):
+                    continue
+                name = package.get("name")
+                eco = str(package.get("ecosystem") or "").strip().lower()
+                if isinstance(name, str) and name.strip():
+                    out.append((eco, name.strip().lower()))
+                purl = package.get("purl")
+                if isinstance(purl, str) and purl.strip():
+                    p_eco, p_name = parse_purl(purl)
+                    if p_name:
+                        out.append((p_eco or eco, p_name))
+        return list(dict.fromkeys(out))
+
+    @staticmethod
     def _advisory_id(advisory: Dict[str, Any]) -> str:
         aid = advisory.get("ghsa_id") or advisory.get("id")
         if isinstance(aid, str) and aid.strip():
@@ -517,8 +725,42 @@ class GHSAEnrichmentSource:
         updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         return [(cve, advisory_id, advisory_json, updated_at) for cve in cves]
 
-    def _sqlite_upsert_rows(self, rows: List[Tuple[str, str, str, str]]) -> None:
-        if not self._sqlite_enabled or not self._sqlite_path or not rows:
+    def _sqlite_package_rows_for_advisory(self, advisory: Dict[str, Any]) -> List[Tuple[Any, ...]]:
+        pkg_entries = self._extract_package_entries(advisory)
+        if not pkg_entries:
+            return []
+        advisory_id = self._advisory_id(advisory)
+        cves = self._extract_cves(advisory)
+        cve_id = cves[0] if cves else None
+        cvss_score, cvss_vector = self._extract_advisory_cvss_fields(advisory)
+        severity = self._extract_severity_label(advisory)
+        summary = advisory.get("summary")
+        if summary is not None and not isinstance(summary, str):
+            summary = str(summary)
+        advisory_json = json.dumps(advisory, separators=(",", ":"))
+        updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return [
+            (
+                eco,
+                pkg_name,
+                advisory_id,
+                cve_id,
+                cvss_score,
+                cvss_vector,
+                severity,
+                summary,
+                advisory_json,
+                updated_at,
+            )
+            for eco, pkg_name in pkg_entries
+        ]
+
+    def _sqlite_upsert_rows(
+        self,
+        rows: List[Tuple[str, str, str, str]],
+        package_rows: Optional[List[Tuple[Any, ...]]] = None,
+    ) -> None:
+        if not self._sqlite_enabled or not self._sqlite_path or (not rows and not package_rows):
             return
         if not self._sqlite_verify_signature():
             self.ctx.logger.warning(
@@ -526,28 +768,138 @@ class GHSAEnrichmentSource:
             )
             self._sqlite_quarantine_and_reset()
         try:
-            with sqlite3.connect(self._sqlite_path) as conn:
-                conn.executemany(
-                    """
-                    INSERT INTO ghsa_cve_index (cve_id, advisory_id, advisory_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(cve_id, advisory_id) DO UPDATE SET
-                        advisory_json=excluded.advisory_json,
-                        updated_at=excluded.updated_at
-                    """,
-                    rows,
-                )
+            with contextlib.closing(sqlite3.connect(self._sqlite_path)) as conn:
+                with conn:
+                    if rows:
+                        conn.executemany(
+                            """
+                            INSERT INTO ghsa_cve_index (cve_id, advisory_id, advisory_json, updated_at)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(cve_id, advisory_id) DO UPDATE SET
+                                advisory_json=excluded.advisory_json,
+                                updated_at=excluded.updated_at
+                            """,
+                            rows,
+                        )
+                    if package_rows:
+                        conn.executemany(
+                            """
+                            INSERT INTO ghsa_package_index (
+                                ecosystem, package_name, advisory_id, cve_id,
+                                cvss_score, cvss_vector, severity, summary,
+                                advisory_json, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(ecosystem, package_name, advisory_id) DO UPDATE SET
+                                cve_id=excluded.cve_id,
+                                cvss_score=excluded.cvss_score,
+                                cvss_vector=excluded.cvss_vector,
+                                severity=excluded.severity,
+                                summary=excluded.summary,
+                                advisory_json=excluded.advisory_json,
+                                updated_at=excluded.updated_at
+                            """,
+                            package_rows,
+                        )
             self._sqlite_prune()
             self._sqlite_write_signature()
         except (OSError, sqlite3.DatabaseError) as e:
             self.ctx.logger.warning(f"GHSA SQLite upsert failed; continuing with in-memory index only: {e}")
 
+    def _sqlite_hydrate_packages(
+        self,
+        *,
+        target_packages: Optional[Set[str]] = None,
+        target_purls: Optional[Set[str]] = None,
+    ) -> int:
+        """Hydrate ghsa_by_package & ghsa_by_ecosystem_package from SQLite ghsa_package_index."""
+        if not self._sqlite_enabled or not self._sqlite_path:
+            return 0
+
+        pkg_names: Set[str] = set()
+        eco_pkg_pairs: Set[Tuple[str, str]] = set()
+        for raw_pkg in target_packages or set():
+            if isinstance(raw_pkg, str) and raw_pkg.strip():
+                pkg_names.add(raw_pkg.strip().lower())
+        for raw_purl in target_purls or set():
+            eco, name = parse_purl(raw_purl)
+            if name:
+                pkg_names.add(name)
+                if eco:
+                    eco_pkg_pairs.add((eco, name))
+
+        if not pkg_names and not eco_pkg_pairs:
+            return 0
+
+        if not self._sqlite_verify_signature():
+            self.ctx.logger.warning(
+                "GHSA SQLite signature check failed during package hydrate; quarantining and rebuilding."
+            )
+            self._sqlite_quarantine_and_reset()
+            return 0
+
+        hydrated = 0
+        try:
+            all_rows: List[Tuple[Any, ...]] = []
+            batch = sorted(pkg_names)
+            with contextlib.closing(sqlite3.connect(self._sqlite_path)) as conn:
+                with conn:
+                    for i in range(0, len(batch), _SQLITE_CHUNK_SIZE):
+                        chunk = batch[i:i + _SQLITE_CHUNK_SIZE]
+                        placeholders = ",".join("?" for _ in chunk)
+                        sql = (
+                            "SELECT ecosystem, package_name, advisory_id, cve_id, "
+                            "cvss_score, cvss_vector, severity, summary, advisory_json "
+                            f"FROM ghsa_package_index WHERE LOWER(package_name) IN ({placeholders})"
+                        )
+                        all_rows.extend(conn.execute(sql, tuple(chunk)).fetchall())
+
+            for eco, pkg_name, adv_id, cve_id, cvss_score, cvss_vector, severity, summary, adv_json in all_rows:
+                eco_norm = str(eco or "").strip().lower()
+                pkg_norm = str(pkg_name or "").strip().lower()
+                target_pkg_names_lower = {str(p).strip().lower() for p in (target_packages or set()) if p}
+                if eco_pkg_pairs and eco_norm and (eco_norm, pkg_norm) not in eco_pkg_pairs and pkg_norm not in target_pkg_names_lower:
+                    continue
+                advisory: Optional[Dict[str, Any]] = None
+                if isinstance(adv_json, str) and adv_json:
+                    try:
+                        advisory = json.loads(adv_json)
+                    except json.JSONDecodeError:
+                        advisory = None
+                if advisory is None:
+                    advisory = {
+                        "id": adv_id,
+                        "ghsa_id": adv_id,
+                        "cve": cve_id,
+                        "aliases": [cve_id] if cve_id else [],
+                        "package_name": pkg_norm,
+                        "ecosystem": eco_norm,
+                        "cvss_score": cvss_score,
+                        "cvss_vector": cvss_vector,
+                        "severity": severity,
+                        "summary": summary,
+                    }
+
+                existing_pkg_list = self.ghsa_by_package.setdefault(pkg_norm, [])
+                if not any(self._advisory_id(a) == adv_id for a in existing_pkg_list):
+                    existing_pkg_list.append(advisory)
+                if eco_norm:
+                    eco_list = self.ghsa_by_ecosystem_package.setdefault((eco_norm, pkg_norm), [])
+                    if not any(self._advisory_id(a) == adv_id for a in eco_list):
+                        eco_list.append(advisory)
+                hydrated += 1
+        except Exception as e:
+            self.ctx.logger.warning(f"GHSA SQLite package hydrate failed: {e}")
+
+        return hydrated
+
     def _sqlite_clear(self) -> None:
         if not self._sqlite_enabled or not self._sqlite_path:
             return
         try:
-            with sqlite3.connect(self._sqlite_path) as conn:
-                conn.execute("DELETE FROM ghsa_cve_index")
+            with contextlib.closing(sqlite3.connect(self._sqlite_path)) as conn:
+                with conn:
+                    conn.execute("DELETE FROM ghsa_cve_index")
+                    conn.execute("DELETE FROM ghsa_package_index")
             self._sqlite_write_signature()
         except (OSError, sqlite3.DatabaseError) as e:
             self.ctx.logger.warning(f"GHSA SQLite reset failed: {e}")
@@ -605,6 +957,9 @@ class GHSAEnrichmentSource:
             self.ghsa_by_cve.setdefault(cve, []).append(advisory)
         for package_name in self._extract_packages(advisory):
             self.ghsa_by_package.setdefault(package_name, []).append(advisory)
+        for eco, pkg_norm in self._extract_package_entries(advisory):
+            if eco:
+                self.ghsa_by_ecosystem_package.setdefault((eco, pkg_norm), []).append(advisory)
 
     def _load_json_file(self, path: Path, *, label: str) -> Optional[Any]:
         """Load JSON content via PFH-governed file access."""
@@ -704,7 +1059,7 @@ class GHSAEnrichmentSource:
 
     @staticmethod
     def _extract_package_tokens_from_finding(finding: Any) -> Set[str]:
-        """Extract normalized package-like tokens from finding text fields."""
+        """Extract normalized package-like tokens from finding text and PURL fields."""
         fields = [
             getattr(finding, "title", "") or "",
             getattr(finding, "description", "") or "",
@@ -714,23 +1069,66 @@ class GHSAEnrichmentSource:
         ]
         text = "\n".join(str(x) for x in fields if x)
         tokens = {t.lower() for t in _PKG_TOKEN_RE.findall(text)}
+        purl = getattr(finding, "package_purl", None)
+        if isinstance(purl, str) and purl.strip():
+            _, pkg_name = parse_purl(purl)
+            if pkg_name:
+                tokens.add(pkg_name)
+                if ":" in pkg_name:
+                    tokens.add(pkg_name.split(":", 1)[1])
+                if "/" in pkg_name:
+                    tokens.add(pkg_name.rsplit("/", 1)[1])
         return tokens
 
-    def _lookup_by_package(self, finding: Any) -> List[Dict[str, Any]]:
-        if not self.ghsa_by_package:
+    def lookup_by_purl(self, purl: str) -> List[Dict[str, Any]]:
+        """Resolve advisories by PURL using in-memory index or warm SQLite ghsa_package_index."""
+        eco, pkg_name = parse_purl(purl)
+        if not pkg_name:
             return []
+
+        if eco and (eco, pkg_name) in self.ghsa_by_ecosystem_package:
+            return list(self.ghsa_by_ecosystem_package[(eco, pkg_name)])
+
+        if self._sqlite_enabled:
+            self._sqlite_hydrate_packages(target_purls={purl})
+            if eco and (eco, pkg_name) in self.ghsa_by_ecosystem_package:
+                return list(self.ghsa_by_ecosystem_package[(eco, pkg_name)])
+
+        matched: List[Dict[str, Any]] = []
+        for k, advs in self.ghsa_by_package.items():
+            if str(k).strip().lower() == pkg_name:
+                matched.extend(advs)
+        return matched
+
+    def _lookup_by_package(self, finding: Any) -> List[Dict[str, Any]]:
+        matched: List[Dict[str, Any]] = []
+        seen_ids: Set[str] = set()
+
+        purl = getattr(finding, "package_purl", None)
+        if isinstance(purl, str) and purl.strip():
+            for advisory in self.lookup_by_purl(purl):
+                aid = self._advisory_id(advisory)
+                if aid in seen_ids:
+                    continue
+                seen_ids.add(aid)
+                matched.append(advisory)
+            if matched:
+                return matched
+
+        tokens = self._extract_package_tokens_from_finding(finding)
+        if (not self.ghsa_by_package) and self._sqlite_enabled and tokens:
+            self._sqlite_hydrate_packages(target_packages=tokens)
+
+        if not self.ghsa_by_package:
+            return matched
+
         pkg_lookup: Dict[str, List[Dict[str, Any]]] = {}
         for pkg_name, advisories in self.ghsa_by_package.items():
             key = str(pkg_name).strip().lower()
             if key and isinstance(advisories, list):
                 pkg_lookup.setdefault(key, []).extend(a for a in advisories if isinstance(a, dict))
 
-        if not pkg_lookup:
-            return []
-
-        matched: List[Dict[str, Any]] = []
-        seen_ids: Set[str] = set()
-        for token in self._extract_package_tokens_from_finding(finding):
+        for token in tokens:
             for advisory in pkg_lookup.get(token, []):
                 aid = str(advisory.get("id") or advisory.get("ghsa_id") or "")
                 if aid and aid in seen_ids:
@@ -787,30 +1185,12 @@ class GHSAEnrichmentSource:
         db_path: Optional[str] = None,
         target_cves: Optional[Set[str]] = None,
         force_reindex: bool = False,
+        target_purls: Optional[Set[str]] = None,
+        target_packages: Optional[Set[str]] = None,
     ) -> bool:
         """
-        Load GHSA data from local offline database.
-        
-        Expected file format: JSON array of GHSA advisory objects:
-        [
-          {
-            "ghsa_id": "GHSA-1234-abcd-efgh",
-            "cve": "CVE-2023-12345",
-            "package_name": "example-lib",
-            "affected_versions": ["<1.2.3"],
-            "fixed_version": "1.2.3",
-            "severity": "HIGH",
-            "published_at": "2023-04-01T00:00:00Z",
-            "references": [...]
-          },
-          ...
-        ]
-        
-        Args:
-            db_path: Path to GHSA database JSON file
-            
-        Returns:
-            bool: True if load succeeded, False otherwise
+        Load GHSA data from local offline database (JSON file or advisory-database directory),
+        indexing both CVEs (ghsa_cve_index) and packages/PURLs (ghsa_package_index).
         """
         if not db_path:
             self.ctx.logger.debug("GHSA offline load: no database path provided")
@@ -820,22 +1200,26 @@ class GHSAEnrichmentSource:
             source_path = Path(db_path)
             loaded_count = 0
             target_cve_set = self._normalize_target_cves(target_cves)
+            has_pkg_targets = bool(target_purls or target_packages)
 
             if source_path.is_file():
                 advisories = self._load_json_file(source_path, label="ghsa advisory source")
                 if advisories is None:
                     return False
                 sqlite_rows: List[Tuple[str, str, str, str]] = []
+                pkg_rows: List[Tuple[Any, ...]] = []
 
                 if isinstance(advisories, dict):
                     self._index_advisory(advisories)
                     sqlite_rows.extend(self._sqlite_rows_for_advisory(advisories))
+                    pkg_rows.extend(self._sqlite_package_rows_for_advisory(advisories))
                     loaded_count = 1
                 elif isinstance(advisories, list):
                     for advisory in advisories:
                         if isinstance(advisory, dict):
                             self._index_advisory(advisory)
                             sqlite_rows.extend(self._sqlite_rows_for_advisory(advisory))
+                            pkg_rows.extend(self._sqlite_package_rows_for_advisory(advisory))
                             loaded_count += 1
                 else:
                     self.ctx.logger.warning(
@@ -843,11 +1227,9 @@ class GHSAEnrichmentSource:
                     )
                     return False
 
-                if sqlite_rows:
-                    self._sqlite_upsert_rows(sqlite_rows)
+                if sqlite_rows or pkg_rows:
+                    self._sqlite_upsert_rows(sqlite_rows, package_rows=pkg_rows)
             elif source_path.is_dir():
-                # Supports github/advisory-database layout:
-                # advisories/github-reviewed/YYYY/MM/GHSA-XXXX-XXXX-XXXX/*.json
                 reviewed_root = source_path / "advisories" / "github-reviewed"
                 if not reviewed_root.exists():
                     reviewed_root = source_path
@@ -863,22 +1245,21 @@ class GHSAEnrichmentSource:
                     self._sqlite_clear()
                     sqlite_had_rows = False
 
-                unresolved = set(target_cve_set)
-                if target_cve_set and self._sqlite_enabled and not force_reindex:
-                    unresolved = self._sqlite_hydrate_targets(target_cve_set)
-                    if not unresolved:
-                        self._is_loaded = True
-                        self.ctx.logger.info(
-                            f"GHSA SQLite warm-hit satisfied all {len(target_cve_set)} target CVEs; skipped directory parse."
+                if self._sqlite_enabled and not force_reindex and sqlite_had_rows:
+                    if target_cve_set or has_pkg_targets:
+                        unresolved = self._sqlite_hydrate_targets(target_cve_set) if target_cve_set else set()
+                        pkg_hits = (
+                            self._sqlite_hydrate_packages(
+                                target_packages=target_packages,
+                                target_purls=target_purls,
+                            )
+                            if has_pkg_targets
+                            else 0
                         )
-                        return True
-
-                    # If SQLite already has historical data, avoid a full repository rescan on every run.
-                    if sqlite_had_rows:
                         self._is_loaded = True
                         self.ctx.logger.info(
-                            f"GHSA SQLite warm-hit partial: {len(target_cve_set) - len(unresolved)} resolved, "
-                            f"{len(unresolved)} unresolved (treated as no GHSA advisory match)."
+                            f"GHSA SQLite warm-hit: cves_resolved={len(target_cve_set) - len(unresolved)}/{len(target_cve_set)}, "
+                            f"pkg_rows={pkg_hits}; skipped directory parse."
                         )
                         return True
 
@@ -886,12 +1267,9 @@ class GHSAEnrichmentSource:
                 if not candidate_files:
                     candidate_files = list(reviewed_root.rglob("GHSA-*.json"))
 
-                # ----------------------------------------------------------
-                # Parallel JSON read: IO-bound, so threads scale well here.
-                # Workers return (advisory_dict | None) per file.
-                # ----------------------------------------------------------
                 max_workers = min(os.cpu_count() or 4, 8)
                 sqlite_batch: List[Tuple[str, str, str, str]] = []
+                pkg_batch: List[Tuple[Any, ...]] = []
 
                 def _read_one(fp: Path) -> Optional[Dict[str, Any]]:
                     adv = self._load_json_file(fp, label="ghsa advisory file")
@@ -904,24 +1282,32 @@ class GHSAEnrichmentSource:
                         self._index_advisory(advisory)
                         if self._sqlite_enabled:
                             sqlite_batch.extend(self._sqlite_rows_for_advisory(advisory))
-                            if len(sqlite_batch) >= 2000:
-                                self._sqlite_upsert_rows(sqlite_batch)
+                            pkg_batch.extend(self._sqlite_package_rows_for_advisory(advisory))
+                            if len(sqlite_batch) >= 2000 or len(pkg_batch) >= 2000:
+                                self._sqlite_upsert_rows(sqlite_batch, package_rows=pkg_batch)
                                 sqlite_batch.clear()
+                                pkg_batch.clear()
                         loaded_count += 1
 
-                if sqlite_batch:
-                    self._sqlite_upsert_rows(sqlite_batch)
+                if sqlite_batch or pkg_batch:
+                    self._sqlite_upsert_rows(sqlite_batch, package_rows=pkg_batch)
 
-                # After a cold parse, hydrate only requested CVEs to keep in-memory map compact.
-                if target_cve_set and self._sqlite_enabled:
+                if (target_cve_set or has_pkg_targets) and self._sqlite_enabled:
                     self.ghsa_by_cve = {}
                     self.ghsa_by_package = {}
-                    self._sqlite_hydrate_targets(target_cve_set)
+                    self.ghsa_by_ecosystem_package = {}
+                    if target_cve_set:
+                        self._sqlite_hydrate_targets(target_cve_set)
+                    if has_pkg_targets:
+                        self._sqlite_hydrate_packages(
+                            target_packages=target_packages,
+                            target_purls=target_purls,
+                        )
             else:
                 self.ctx.logger.warning(f"GHSA source path not found: {db_path}")
                 return False
 
-            if loaded_count <= 0 and not self.ghsa_by_cve:
+            if loaded_count <= 0 and not self.ghsa_by_cve and not self.ghsa_by_package:
                 self.ctx.logger.warning("GHSA offline load completed with 0 advisory files.")
                 return False
 
@@ -931,7 +1317,7 @@ class GHSAEnrichmentSource:
                 f"{len(self.ghsa_by_cve)} CVE mappings, {len(self.ghsa_by_package)} package mappings"
             )
             return True
-        
+
         except (IOError, json.JSONDecodeError) as e:
             self.ctx.logger.warning(f"GHSA database load failed: {e}")
             return False

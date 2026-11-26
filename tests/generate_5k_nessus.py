@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 Quashawn Ashley
+
 """Generate a 5k-finding Nessus sample derived from Lab_test.nessus.
 
 Output characteristics:

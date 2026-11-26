@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnparse-pin.local/schemas/decisions.schema.json",
+  "title": "VulnParse-Pin Triage Decisions Registry Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["v1", "v2"]
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DecisionEntry"
+      }
+    }
+  },
+  "$defs": {
+    "DecisionEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "cve_or_rule_id", "status", "rationale"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "asset_id": {
+          "type": ["string", "null"]
+        },
+        "asset_pattern": {
+          "type": ["string", "null"]
+        },
+        "cve_or_rule_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "status": {
+          "type": "string",
+          "enum": ["deferred", "accepted", "mitigated"]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": ["string", "null"]
+        },
+        "created_at": {
+          "type": ["string", "null"]
+        },
+        "expires_at": {
+          "type": ["string", "null"]
+        },
+        "assumptions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "in_kev": {
+              "type": ["boolean", "null"]
+            },
+            "max_epss": {
+              "type": ["number", "null"],
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "max_epss_percentile": {
+              "type": ["number", "null"],
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "internet_facing": {
+              "type": ["boolean", "null"]
+            },
+            "max_cvss": {
+              "type": ["number", "null"],
+              "minimum": 0.0,
+              "maximum": 10.0
+            }
+          }
+        }
+      }
+    }
+  }
+}
