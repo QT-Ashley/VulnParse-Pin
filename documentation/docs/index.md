@@ -7,6 +7,7 @@ Welcome to the VulnParse-Pin documentation index! This page serves as a comprehe
 - [Overview](Overview.md)
 - [Installation](Installation.md)
 - [Getting Started In 5 Minutes](Getting%20Started%20In%205%20Minutes.md)
+- [Operator Tutorial](Operator%20Tutorial.md)
 - [Usage](Usage.md)
 - [Workflow Examples](Workflow%20Examples.md)
 - [Deployment Options](Deployment%20Options.md)

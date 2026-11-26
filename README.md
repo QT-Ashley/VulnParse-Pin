@@ -238,6 +238,7 @@ See [`documentation/docs/Installation.md`](https://github.com/QT-Ashley/VulnPars
 - [Docs Index](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/index.md)
 - [Overview](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Overview.md)
 - [Getting Started In 5 Minutes](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Getting%20Started%20In%205%20Minutes.md)
+- [Operator Tutorial](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Operator%20Tutorial.md)
 - [Usage Guide](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Usage.md)
 - [Workflow Examples](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Workflow%20Examples.md)
 - [Deployment Options](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/documentation/docs/Deployment%20Options.md)

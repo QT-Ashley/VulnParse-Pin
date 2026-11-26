@@ -141,6 +141,7 @@ The v2.0 DuckDB pipeline runs end-to-end:
 
 ## Next Steps
 
+- [Operator Tutorial](Operator%20Tutorial.md) — End-to-end engineering walkthrough (multi-scanner fusion, 5-tier `assets.yaml`, `Scoring@3.0` + `BOD 26-04`, full `vpp ui` keymap, drift gates, dossiers, and air-gapped/container ops)
 - [Usage](Usage.md) — Authoritative reference for all 8 subcommands, flags, and exit codes
 - [Workflow Examples](Workflow%20Examples.md) — End-to-end MSSP, air-gapped, CI, and scheduled drift workflows
 - [Deployment Options](Deployment%20Options.md) — Docker, Docker Compose, Kubernetes CronJob, and systemd units
