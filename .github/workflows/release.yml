@@ -238,7 +238,13 @@ jobs:
           /tmp/sbom-tool-venv/bin/pip install "cyclonedx-bom>=7.3.0"
           python -m venv /tmp/runtime-venv
           /tmp/runtime-venv/bin/python -m pip install --upgrade pip
-          /tmp/runtime-venv/bin/pip install "dist/"*.whl"[ui]"
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 1 )); then
+            echo "Expected exactly 1 wheel in dist/, found: ${wheels[*]}"
+            exit 1
+          fi
+          /tmp/runtime-venv/bin/pip install "${wheels[0]}[ui]"
           /tmp/sbom-tool-venv/bin/cyclonedx-py environment /tmp/runtime-venv/bin/python --of JSON > dist/vulnparse-pin-sbom.json
           /tmp/sbom-tool-venv/bin/python - <<'PY'
           import json

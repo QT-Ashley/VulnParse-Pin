@@ -1,6 +1,6 @@
 # Workflow Examples
 
-This guide provides seven end-to-end recipes for **VulnParse-Pin v2.0.0 (`vpp`)**, pairing the subcommand CLI (`scan`, `demo`, `diff`, `ui`, `export`, `verify`, `defer`, `intel`) with the runnable configs, CI pipelines, and shell workflows in [`examples/`](../../examples/README.md).
+This guide provides seven end-to-end recipes for **VulnParse-Pin v2.0.0 (`vpp`)**, pairing the subcommand CLI (`scan`, `demo`, `diff`, `ui`, `export`, `verify`, `defer`, `intel`) with the runnable configs, CI pipelines, and shell workflows in [`examples/`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/README.md).
 
 > **Honest Reachability Boundary:** `vpp` performs **Network & Operational Reachability** (Nmap open-port reconciliation, `assets.yaml` exposure rules, `ACI@2.0` capability inference, and `detection_mode` Signal Reliability weighting). It does **not** perform AST source-code call-graph reachability or eBPF kernel execution tracing.
 
@@ -57,8 +57,8 @@ Key bindings available inside `vpp ui`:
 
 Ingest infrastructure, container, DAST, and Nmap discovery files into a persistent engagement DuckDB workspace (`.vpp.db`), deliver offline HTML/Markdown reports, verify the `RunManifest`, and track remediation velocity on re-test.
 
-- Runnable script: [`examples/workflows/mssp-assessment.sh`](../../examples/workflows/mssp-assessment.sh)
-- Example configs: [`examples/configs/assets.example.yaml`](../../examples/configs/assets.example.yaml), [`examples/configs/decisions.example.yaml`](../../examples/configs/decisions.example.yaml)
+- Runnable script: [`examples/workflows/mssp-assessment.sh`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/workflows/mssp-assessment.sh)
+- Example configs: [`examples/configs/assets.example.yaml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/configs/assets.example.yaml), [`examples/configs/decisions.example.yaml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/configs/decisions.example.yaml)
 
 ```bash
 # 1. Initial multi-scanner assessment
@@ -137,8 +137,8 @@ vpp verify out/federal/bod_26_04_runmanifest.json
 
 Run Trivy to produce SARIF 2.1.0, triage with `vpp scan`, verify `RunManifest` integrity, and fail the build (`exit 2`) if any deferred finding breaks its underlying assumptions or introduces unreviewed risk.
 
-- GitHub Actions template: [`examples/ci/github-actions-trivy-vpp.yml`](../../examples/ci/github-actions-trivy-vpp.yml)
-- GitLab CI template: [`examples/ci/gitlab-ci-trivy-vpp.yml`](../../examples/ci/gitlab-ci-trivy-vpp.yml)
+- GitHub Actions template: [`examples/ci/github-actions-trivy-vpp.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/github-actions-trivy-vpp.yml)
+- GitLab CI template: [`examples/ci/gitlab-ci-trivy-vpp.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/gitlab-ci-trivy-vpp.yml)
 
 ```bash
 # 1. Produce Trivy SARIF (vuln + misconfig)
@@ -221,8 +221,8 @@ vpp intel sync --feed nvd --years 2021-2026
 vpp diff --db .vpp.db --decisions decisions.yaml --re-enrich --fail-on stale-assumption --output-json out/drift_report.json
 ```
 
-- Runnable script: [`examples/workflows/scheduled-kev-drift-check.sh`](../../examples/workflows/scheduled-kev-drift-check.sh)
-- Scheduler templates: [`examples/deploy/k8s-cronjob-vpp-drift.yaml`](../../examples/deploy/k8s-cronjob-vpp-drift.yaml), [`examples/deploy/systemd/vpp-drift.service`](../../examples/deploy/systemd/vpp-drift.service)
+- Runnable script: [`examples/workflows/scheduled-kev-drift-check.sh`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/workflows/scheduled-kev-drift-check.sh)
+- Scheduler templates: [`examples/deploy/k8s-cronjob-vpp-drift.yaml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/k8s-cronjob-vpp-drift.yaml), [`examples/deploy/systemd/vpp-drift.service`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/systemd/vpp-drift.service)
 
 ```bash
 export VP_FEED_CACHE_HMAC_KEY="replace-with-strong-random-secret"
@@ -256,7 +256,7 @@ See [Deployment Options — Signed Webhook Receiver Verification](Deployment%20O
 
 Prepare HMAC-signed threat-intelligence caches on a connected staging host, verify integrity metadata, transfer the bundle across the air gap, and scan strictly offline inside the enclave with `--portable --enforce-root-read`.
 
-- Runnable script: [`examples/workflows/airgapped-sync-and-scan.sh`](../../examples/workflows/airgapped-sync-and-scan.sh)
+- Runnable script: [`examples/workflows/airgapped-sync-and-scan.sh`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/workflows/airgapped-sync-and-scan.sh)
 
 ```bash
 # === On connected staging host ===
@@ -292,4 +292,4 @@ export VP_SQLITE_HMAC_KEY="shared-staging-enclave-sqlite-secret"
 - [Usage Guide](Usage.md)
 - [RunManifest Overview](RunManifest.md)
 - [Output Interpretation](Output%20Interpretation.md)
-- [Runnable Examples Index](../../examples/README.md)
+- [Runnable Examples Index](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/README.md)

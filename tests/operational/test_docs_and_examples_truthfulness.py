@@ -190,15 +190,26 @@ def test_mkdocs_nav_parity() -> None:
 
 
 def test_zero_broken_relative_markdown_links() -> None:
-    """Every relative Markdown link in documentation/docs/**/*.md and examples/README.md resolves."""
+    """Every relative Markdown link and GitHub repo URL in docs/examples resolves cleanly (and docs stay inside docs_dir)."""
+    docs_root_resolved = DOCS_ROOT.resolve()
     md_files = sorted(DOCS_ROOT.rglob("*.md")) + [EXAMPLES_ROOT / "README.md"]
     broken: List[Tuple[str, str]] = []
+    escaped_docs: List[Tuple[str, str]] = []
+    missing_github_targets: List[Tuple[str, str]] = []
 
     for md_path in md_files:
+        in_docs_dir = md_path.resolve().is_relative_to(docs_root_resolved)
         cleaned = _strip_code_from_markdown(md_path.read_text(encoding="utf-8"))
         for match in _MD_LINK_RE.finditer(cleaned):
             raw_target = match.group(1).strip()
-            if not raw_target or raw_target.startswith(("http://", "https://", "mailto:", "#")):
+            if not raw_target or raw_target.startswith(("mailto:", "#")):
+                continue
+            if raw_target.startswith(("http://", "https://")):
+                for prefix in (_GITHUB_RAW_PREFIX, _GITHUB_BLOB_PREFIX, _GITHUB_TREE_PREFIX):
+                    if raw_target.startswith(prefix):
+                        rel_part = unquote(raw_target[len(prefix):].split("#", 1)[0])
+                        if rel_part and not (REPO_ROOT / rel_part).exists():
+                            missing_github_targets.append((md_path.relative_to(REPO_ROOT).as_posix(), raw_target))
                 continue
             target_no_fragment = unquote(raw_target.split("#", 1)[0])
             if not target_no_fragment:
@@ -206,8 +217,12 @@ def test_zero_broken_relative_markdown_links() -> None:
             resolved = (md_path.parent / target_no_fragment).resolve()
             if not resolved.exists():
                 broken.append((md_path.relative_to(REPO_ROOT).as_posix(), raw_target))
+            elif in_docs_dir and not resolved.is_relative_to(docs_root_resolved):
+                escaped_docs.append((md_path.relative_to(REPO_ROOT).as_posix(), raw_target))
 
     assert not broken, f"Broken relative Markdown links detected: {broken}"
+    assert not escaped_docs, f"Markdown links escaping documentation/docs (breaks mkdocs --strict): {escaped_docs}"
+    assert not missing_github_targets, f"GitHub URLs point to nonexistent repo paths: {missing_github_targets}"
 
 
 def test_cli_truthfulness_against_build_parser() -> None:

@@ -48,7 +48,13 @@ jobs:
         run: |
           python -m venv /tmp/ci-runtime-venv
           /tmp/ci-runtime-venv/bin/python -m pip install --upgrade pip
-          /tmp/ci-runtime-venv/bin/pip install "dist/"*.whl"[ui]"
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 1 )); then
+            echo "Expected exactly 1 wheel in dist/, found: ${wheels[*]}"
+            exit 1
+          fi
+          /tmp/ci-runtime-venv/bin/pip install "${wheels[0]}[ui]"
           /tmp/ci-venv/bin/cyclonedx-py environment /tmp/ci-runtime-venv/bin/python --of JSON > /tmp/ci-sbom.json
 
       - name: Verify PEP 639 metadata and zero copyleft licenses
@@ -90,7 +96,8 @@ jobs:
                   raise SystemExit(f"Expected 1 METADATA in wheel, found: {metadata_files}")
 
               metadata = zf.read(metadata_files[0]).decode("utf-8")
-              metadata_lines = metadata.splitlines()
+              metadata_headers = re.split(r"\r?\n\r?\n", metadata, maxsplit=1)[0]
+              metadata_lines = metadata_headers.splitlines()
 
               if "License-Expression: Apache-2.0" not in metadata_lines:
                   raise SystemExit("Wheel METADATA missing 'License-Expression: Apache-2.0'")
@@ -101,7 +108,7 @@ jobs:
                       raise SystemExit(f"Wheel missing .dist-info/licenses/{required_license_file}")
               if not any(n.endswith("vulnparse_pin/py.typed") for n in names):
                   raise SystemExit("Wheel missing vulnparse_pin/py.typed")
-              if forbidden_license_re.search(metadata):
+              if forbidden_license_re.search(metadata_headers):
                   raise SystemExit("Forbidden copyleft license text found in wheel METADATA")
 
           # 3. Verify CycloneDX SBOM reports VulnParse-Pin as Apache-2.0 and zero copyleft runtime licenses

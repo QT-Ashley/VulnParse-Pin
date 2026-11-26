@@ -7,11 +7,11 @@ VulnParse-Pin (`vpp`) v2.0.0 is licensed under **Apache-2.0** with zero copyleft
 | Option | Best For | Persistence | Non-Root / Hardening | Offline / Air-Gap | Template |
 | --- | --- | --- | --- | --- | --- |
 | **Isolated CLI (`pipx` / `uv tool`)** | Analyst workstations, MSSP laptops, `vpp ui` | Local `.vpp.db` + XDG or `./data` | `PermFileHandler` (`0o600`/`0o700`, symlink reject) | Supported via wheelhouse + `--offline` | [Installation](Installation.md) |
-| **Container / Compose (`ghcr.io` or Local Build)** | Reproducible runners, isolated multi-user hosts | Host bind `/work` + volume `/cache` | `uid=10001`, `--read-only`, `cap_drop: ALL` | Supported via wheelhouse `--build-arg PIP_NO_INDEX=1` | [Root `Dockerfile`](../../Dockerfile), [`examples/deploy/Dockerfile`](../../examples/deploy/Dockerfile), [`docker-compose.yml`](../../examples/deploy/docker-compose.yml) |
-| **CI/CD Runners** | PR priority gates, stale-assumption checks | CI cache for `.vpp.db` + artifact upload | Ephemeral runner + exit codes `0`/`1`/`2` | Supported with cached wheelhouse & feeds | [`github-actions`](../../examples/ci/github-actions-trivy-vpp.yml), [`gitlab-ci`](../../examples/ci/gitlab-ci-trivy-vpp.yml) |
-| **Kubernetes `CronJob`** | Daily KEV/EPSS drift checks across clusters | `PersistentVolumeClaim` + `Secret` | `runAsNonRoot`, `readOnlyRootFilesystem`, `RuntimeDefault` | Supported via pre-seeded PVC & private registry | [`k8s-cronjob-vpp-drift.yaml`](../../examples/deploy/k8s-cronjob-vpp-drift.yaml) |
-| **`systemd` Service & Timer** | Linux bastion / VM scheduled drift alerts | `/var/lib/vulnparse-pin` + `/var/cache/vulnparse-pin` | `ProtectSystem=strict`, `NoNewPrivileges=yes`, `UMask=0077` | Supported via `--offline` + synced cache | [`vpp-drift.service`](../../examples/deploy/systemd/vpp-drift.service), [`vpp-drift.timer`](../../examples/deploy/systemd/vpp-drift.timer) |
-| **Air-Gapped Enclave** | Classified / isolated OT & SCIF networks | Portable `./data` bundle (`--portable`) | `--enforce-root-read`, HMAC sidecars, read-only `vpp verify` | First-class (`--offline`, wheelhouse) | [`airgapped-sync-and-scan.sh`](../../examples/workflows/airgapped-sync-and-scan.sh) |
+| **Container / Compose (`ghcr.io` or Local Build)** | Reproducible runners, isolated multi-user hosts | Host bind `/work` + volume `/cache` | `uid=10001`, `--read-only`, `cap_drop: ALL` | Supported via wheelhouse `--build-arg PIP_NO_INDEX=1` | [Root `Dockerfile`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/Dockerfile), [`examples/deploy/Dockerfile`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/Dockerfile), [`docker-compose.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/docker-compose.yml) |
+| **CI/CD Runners** | PR priority gates, stale-assumption checks | CI cache for `.vpp.db` + artifact upload | Ephemeral runner + exit codes `0`/`1`/`2` | Supported with cached wheelhouse & feeds | [`github-actions`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/github-actions-trivy-vpp.yml), [`gitlab-ci`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/gitlab-ci-trivy-vpp.yml) |
+| **Kubernetes `CronJob`** | Daily KEV/EPSS drift checks across clusters | `PersistentVolumeClaim` + `Secret` | `runAsNonRoot`, `readOnlyRootFilesystem`, `RuntimeDefault` | Supported via pre-seeded PVC & private registry | [`k8s-cronjob-vpp-drift.yaml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/k8s-cronjob-vpp-drift.yaml) |
+| **`systemd` Service & Timer** | Linux bastion / VM scheduled drift alerts | `/var/lib/vulnparse-pin` + `/var/cache/vulnparse-pin` | `ProtectSystem=strict`, `NoNewPrivileges=yes`, `UMask=0077` | Supported via `--offline` + synced cache | [`vpp-drift.service`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/systemd/vpp-drift.service), [`vpp-drift.timer`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/systemd/vpp-drift.timer) |
+| **Air-Gapped Enclave** | Classified / isolated OT & SCIF networks | Portable `./data` bundle (`--portable`) | `--enforce-root-read`, HMAC sidecars, read-only `vpp verify` | First-class (`--offline`, wheelhouse) | [`airgapped-sync-and-scan.sh`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/workflows/airgapped-sync-and-scan.sh) |
 
 ---
 
@@ -87,7 +87,7 @@ vpp verify out/runmanifest.json --portable --enforce-root-read
 
 ## 3. Portable Container (`ghcr.io` & Docker Compose)
 
-Tagged releases publish attested multi-arch (`linux/amd64`, `linux/arm64`) OCI images to `ghcr.io/qt-ashley/vulnparse-pin` via [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
+Tagged releases publish attested multi-arch (`linux/amd64`, `linux/arm64`) OCI images to `ghcr.io/qt-ashley/vulnparse-pin` via [`.github/workflows/release.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/.github/workflows/release.yml).
 
 ### Pull Official GHCR Image or Build from Source
 
@@ -120,7 +120,7 @@ docker run --rm \
 
 ### Docker Compose Stack
 
-[`examples/deploy/docker-compose.yml`](../../examples/deploy/docker-compose.yml) defines three hardened non-root services sharing `/work` and `vpp-cache`:
+[`examples/deploy/docker-compose.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/docker-compose.yml) defines three hardened non-root services sharing `/work` and `vpp-cache`:
 
 - `vpp-scan`: Runs `vpp scan` with `--profile bod-26-04`, generating `.vpp.db`, `out/dossier`, and `out/runmanifest.json`.
 - `vpp-drift`: Syncs `kev` and `epss` feeds and runs `vpp diff --re-enrich --fail-on stale-assumption` (no re-scan required).
@@ -141,8 +141,8 @@ docker compose -f examples/deploy/docker-compose.yml --profile ui run --rm vpp-u
 
 Copy-pasteable CI pipelines are provided in:
 
-- [`examples/ci/github-actions-trivy-vpp.yml`](../../examples/ci/github-actions-trivy-vpp.yml)
-- [`examples/ci/gitlab-ci-trivy-vpp.yml`](../../examples/ci/gitlab-ci-trivy-vpp.yml)
+- [`examples/ci/github-actions-trivy-vpp.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/github-actions-trivy-vpp.yml)
+- [`examples/ci/gitlab-ci-trivy-vpp.yml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/ci/gitlab-ci-trivy-vpp.yml)
 
 Both workflows restore `.vpp.db` from runner cache, scan Trivy SARIF with `--assets` and `--decisions`, verify `out/runmanifest.json` with `vpp verify`, export Decision Defense Dossiers, and gate PRs via `vpp diff --fail-on stale-assumption`.
 
@@ -158,7 +158,7 @@ Both workflows restore `.vpp.db` from runner cache, scan Trivy SARIF with `--ass
 
 ## 5. Kubernetes `CronJob`
 
-[`examples/deploy/k8s-cronjob-vpp-drift.yaml`](../../examples/deploy/k8s-cronjob-vpp-drift.yaml) provisions:
+[`examples/deploy/k8s-cronjob-vpp-drift.yaml`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/k8s-cronjob-vpp-drift.yaml) provisions:
 
 - `Secret` (`vpp-hmac-secrets`) holding `VP_FEED_CACHE_HMAC_KEY`, `VP_SQLITE_HMAC_KEY`, and `VP_WEBHOOK_HMAC_KEY`.
 - `PersistentVolumeClaim` (`vpp-workspace-pvc`) persisting `.vpp.db`, `decisions.yaml`, outputs, and `/cache`.
@@ -174,7 +174,7 @@ kubectl apply -f examples/deploy/k8s-cronjob-vpp-drift.yaml
 
 ## 6. `systemd` Service & Daily Timer
 
-For dedicated Linux hosts, install [`examples/deploy/systemd/vpp-drift.service`](../../examples/deploy/systemd/vpp-drift.service), [`examples/deploy/systemd/vpp-drift.timer`](../../examples/deploy/systemd/vpp-drift.timer), and [`examples/workflows/scheduled-kev-drift-check.sh`](../../examples/workflows/scheduled-kev-drift-check.sh):
+For dedicated Linux hosts, install [`examples/deploy/systemd/vpp-drift.service`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/systemd/vpp-drift.service), [`examples/deploy/systemd/vpp-drift.timer`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/deploy/systemd/vpp-drift.timer), and [`examples/workflows/scheduled-kev-drift-check.sh`](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/workflows/scheduled-kev-drift-check.sh):
 
 ```bash
 sudo useradd --system --home-dir /var/lib/vulnparse-pin --shell /usr/sbin/nologin vpp

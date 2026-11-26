@@ -78,7 +78,7 @@ vpp demo --no-ui --profile bod-26-04 --output-dir ./vpp_demo_output --db ./.vpp-
 
 ### 5-Tier Canonical Asset Matching (`assets.yaml`)
 
-Define your inventory rules once using [assets.example.yaml](../../examples/configs/assets.example.yaml) and [Configs](Configs.md):
+Define your inventory rules once using [assets.example.yaml](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/configs/assets.example.yaml) and [Configs](Configs.md):
 
 1. **Tier 1 (`asset_id` / `aliases`):** Bridge disjoint scanner identifiers onto one asset — for example mapping IP `"203.0.113.10"`, FQDN `"api.example.org"`, URL `"https://api.example.org"`, and container `"ghcr.io/example/edge-api"` into one `aid_v2_edge_api_prod`.
 2. **Tier 2 (Exact Match):** Exact `hostnames`, `uris`, `images`, or source `repos`.
@@ -149,7 +149,7 @@ vpp ui --db .vpp-demo.db --decisions decisions.yaml --output-dir ./exports
 
 ## 5. Lab 5 — Assumption-Bound Deferrals (`vpp defer`) & Continuous Drift (`vpp diff --re-enrich`)
 
-Instead of static *"ignore forever"* spreadsheets, [decisions.example.yaml](../../examples/configs/decisions.example.yaml) binds every `deferred`, `accepted`, or `mitigated` record to explicit **validity predicates**:
+Instead of static *"ignore forever"* spreadsheets, [decisions.example.yaml](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/configs/decisions.example.yaml) binds every `deferred`, `accepted`, or `mitigated` record to explicit **validity predicates**:
 
 ```bash
 # Upsert a deferral via CLI and immediately re-evaluate the latest run in .vpp.db:
@@ -166,7 +166,7 @@ vpp defer \
   --db .vpp.db
 ```
 
-You can now run scheduled threat-intel drift checks **without retaining or re-parsing raw scanner XML/SARIF files** (see [scheduled-kev-drift-check.sh](../../examples/workflows/scheduled-kev-drift-check.sh)):
+You can now run scheduled threat-intel drift checks **without retaining or re-parsing raw scanner XML/SARIF files** (see [scheduled-kev-drift-check.sh](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/workflows/scheduled-kev-drift-check.sh)):
 
 ```bash
 # 1. Refresh threat-intel SQLite caches (or pass --years 2021-2026 for NVD history)
@@ -206,7 +206,7 @@ If `CVE-2024-3094` enters CISA KEV or crosses `epss > 0.02` in your refreshed ca
 
 ## 7. Lab 7 — Air-Gapped Enclaves, Signed Webhooks, & Hardened Containers
 
-- **Air-Gapped HMAC Bundles ([airgapped-sync-and-scan.sh](../../examples/workflows/airgapped-sync-and-scan.sh)):** Set `VP_FEED_CACHE_HMAC_KEY` + `VP_SQLITE_HMAC_KEY` on connected staging (`vpp intel sync --feed all --portable`), verify via read-only `vpp intel status --portable --json`, transfer `./data/cache`, and run offline scans inside the enclave with **`--portable --enforce-root-read`**. Always pair `--enforce-root-read` with `--portable` when scanning inputs under `$PWD`; tampered SQLite, feed, or NVD sidecars fail closed (`exit 1`) before auto-quarantine or scoring (see [Security Features](Security%20Features.md)).
+- **Air-Gapped HMAC Bundles ([airgapped-sync-and-scan.sh](https://github.com/QT-Ashley/VulnParse-Pin/blob/main/examples/workflows/airgapped-sync-and-scan.sh)):** Set `VP_FEED_CACHE_HMAC_KEY` + `VP_SQLITE_HMAC_KEY` on connected staging (`vpp intel sync --feed all --portable`), verify via read-only `vpp intel status --portable --json`, transfer `./data/cache`, and run offline scans inside the enclave with **`--portable --enforce-root-read`**. Always pair `--enforce-root-read` with `--portable` when scanning inputs under `$PWD`; tampered SQLite, feed, or NVD sidecars fail closed (`exit 1`) before auto-quarantine or scoring (see [Security Features](Security%20Features.md)).
 - **Signed Webhooks:** Passing `--webhook-endpoint https://... --webhook-oal-filter P1` emits canonical `vpp.topn.summary` JSON signed with `VP_WEBHOOK_HMAC_KEY` (`X-VPP-Signature: sha256=...`, `X-VPP-Timestamp`, `X-VPP-Nonce`), excludes validly suppressed findings while still alerting on `DEFERRED_INVALIDATED`, enforces HTTPS + no redirects + SSRF/DNS-rebinding checks, logs a `WEBHOOK_DELIVERY` ledger event, and fails closed if the signing key environment variable is missing.
 - **Hardened Portable Container (`ghcr.io` / `Dockerfile`):**
   ```bash
