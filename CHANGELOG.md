@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-11-24 Apache-2.0, DuckDB Workspace, Streaming Parsers, BOD 26-04, Diff Engine & TUI
+## [2.0.0] - 2026-11-25 Apache-2.0, DuckDB Workspace, Streaming Parsers, BOD 26-04, Diff Engine & TUI
 
 ### Licensing & Supply-Chain Cut
 
@@ -58,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Streaming Exporters & Chunked `RunManifest` (`utils/csv_exporter.py`, `utils/reportgen.py`, `utils/runmanifest.py`)**: Added `export_duckdb_csv` (with `_sanitize_csv_cell`), `export_duckdb_json` (streaming asset-by-asset), `build_runmanifest_from_db`, and 1 MB chunked `_file_sha256`.
 - **Subcommand CLI, Offline Demo & Textual TUI (`cli/args.py`, `main.py`, `ui/app.py`, `resources/demo/`)**: Added `scan`, `demo` (<2s 100% offline multi-scanner pack), `diff`, `ui` (optional `vulnparse-pin[ui]` Textual TUI with filters `1–4`/`t`/`k`/`u`/`/`, live `score_trace`, `d` diff tab, `e`/`E` dossier export, `f` deferral modal), `export`, `verify`, `defer`, and `intel` subcommands plus legacy flag compatibility shim.
 - **CI Templates, Scale Benchmark & Demo Capture**: Added copy-pasteable Trivy + `vpp` workflows in `examples/ci/` (`github-actions-trivy-vpp.yml`, `gitlab-ci-trivy-vpp.yml`), reproducible 500k–700k scale benchmark harness `benchmarks/bench_scale.py`, and Charm VHS script `documentation/demo/vpp-demo.tape`.
+- **Portable Multi-Arch OCI Container (`ghcr.io/qt-ashley/vulnparse-pin`)**: Added multi-stage non-root `Dockerfile` (`uid=10001`, `--read-only` rootfs compatible, `[ui]` Textual support) and multi-arch (`linux/amd64`, `linux/arm64`) GHCR publishing in `.github/workflows/release.yml` with pre-push read-only container smoke checks, SBOMs, and build provenance attestations.
+- **Operational Regression Harness (`tests/operational/`)**: Added end-to-end operational test suites covering proprietary vendor-export torture cases, real-world workflows and deployment artifacts, TUI/CLI ergonomics, and documentation/examples truthfulness.
 
 ### Changed
 
@@ -73,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `EnrichmentHandoffBuilder.build()` silently dropping `nmap_ctx_config`, `webhook_config`, and `global_config` from `Services`.
 - Fixed `nvdcacher.py` `ctx.pfh.open_for_write(..., log=False)` `TypeError`, chunked `WHERE cve_id IN (...)` queries at `<= 900` params, filtered non-CVE sentinels before hydration, fixed `get()` missing-CVE `last_modified` key casing, and replaced hardcoded `end_year: 2025` with dynamic UTC year.
 - Fixed `enrichment_source_loader.py` `plan.kev_source == "offline"` check, `aci_pass.py` dead `cap_lateral_movement` guardrail & duplicate `asset_uplift_weight` multiplication, `nessusXML_parser.py` 250-char text truncation & v2 CVSS `#` `IndexError`, `openvasXML_parser.py` `"SENINTEL"` typo, `reportgen.py` `namespace`/`namespaced` mismatch & full-RAM `json.dumps`, and `apppaths.py` `sys.frozen` check.
+- Hardened empty-run scan/UI handling, TUI banner scroll clipping, webhook SSRF guardrails, feed/intel cache validation, and real-world vendor parser edge cases across Nessus, OpenVAS, Qualys, Nmap, SARIF, and Nuclei.
 
 ## [1.2.2] - 2026-04-27
 
